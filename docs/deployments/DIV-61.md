@@ -1,0 +1,206 @@
+# Open-Inspect development pilot: DIV-61
+
+Verified on 2026-09-14. The deployment is live and the first manual coding session completed
+successfully. This runbook is the current handoff; early local files under `docs/internal/` are
+historical setup notes, not prerequisites still waiting to be completed.
+
+## Open it and use it
+
+[Open the app](https://open-inspect-web-mdumas38-div61-dev.mason-587.workers.dev/login), sign in
+with GitHub as `mdumas38`, and select `mdumas38/background-agents` for a new session. This account
+has the workspace Owner role. Choose a configured Anthropic model and submit one bounded task. You
+can work elsewhere while the remote session runs, then return to inspect its output. Keep the
+session URL so you can reopen it. Closing the browser is not a sandbox stop command.
+
+A good first task is:
+
+> Summarize this repository's architecture. Do not modify any files.
+
+For a change, describe the expected result, allowed scope, constraints, and verification:
+
+> Fix [specific behavior] in [area]. Keep the public API unchanged. Run the relevant tests and
+> report the files changed, results, and any uncertainty. Do not merge or deploy.
+
+Background sessions are useful for work that can proceed without frequent decisions: investigating
+one bug, adding a focused test, drafting documentation, or implementing a small well-specified fix.
+Keep exploratory product decisions and ambiguous requirements conversational until there is a clear
+task to hand off. Start with one session at a time and review any diff and test results before
+merging. The first acceptance run only summarized the repository; PR creation and push were not
+validated. Broader workflow ideation is intentionally deferred.
+
+## Deployment inventory
+
+| Item                      | Value                                                                          |
+| ------------------------- | ------------------------------------------------------------------------------ |
+| Fork                      | `https://github.com/mdumas38/background-agents`                                |
+| Source branch             | `mdumas38/div-61-deploy-the-minimum-open-inspect-stack`                        |
+| Initial upstream revision | `c395971f`                                                                     |
+| Deployment name           | `mdumas38-div61-dev`                                                           |
+| Web / control plane       | Cloudflare Workers, subdomain `mason-587`                                      |
+| Sandbox provider          | Modal workspace `mason-94865`, environment `div61-dev`, web suffix `div61-dev` |
+| D1 name                   | `open-inspect-mdumas38-div61-dev`                                              |
+| D1 ID                     | `c8a349af-f7a5-49fa-a900-9daf949a7cd1`                                         |
+| Terraform state bucket    | `open-inspect-tfstate-mdumas38-div61-dev` (private R2)                         |
+| Terraform state key       | `div61-dev/terraform.tfstate`                                                  |
+| GitHub App                | `open-inspect-mdumas38-div61-dev`                                              |
+| Pilot repository          | `mdumas38/background-agents` only                                              |
+| Sign-in allowlist         | `allowed_users = "mdumas38"`; other allowlists empty; unrestricted access off  |
+| Bots                      | Slack, Linear, GitHub bots disabled                                            |
+| Binding flags             | `enable_durable_object_bindings = true`, `enable_service_bindings = true`      |
+
+The directory is named `terraform/environments/production`, but these values identify the isolated
+development deployment. Do not substitute the backend defaults, which use a different bucket/key.
+
+Working copy on Orca Core:
+`/home/orca/orca/workspaces/background-agents/div-61-deploy-the-minimum-open-inspect-stack`. The
+homelab-operator worktree is not this application's source.
+
+## Reproduce or recover
+
+Use the pinned fork revision and its [getting-started guide](../GETTING_STARTED.md). Tool versions
+used here: Node 22.22.1, npm 9.2.0, Terraform 1.16.2, jq 1.8.2, uv 0.12.13, Python 3.14, and Modal
+1.4.3. Dependency lockfiles are authoritative. A future upstream upgrade needs a new plan, migration
+review, and acceptance run.
+
+1. Clone the fork and check out the deployment branch (or its recorded commit in DIV-61). Run
+   `bash .openinspect/setup.sh` from the repository root. Install Terraform, jq and uv; build shared
+   code before dependent workers. For Modal development, run `uv sync --frozen --extra dev` in
+   `packages/modal-infra`.
+2. Restore the private configuration described below. For a new deployment, copy the `.example`
+   files, choose distinct resource names/state and a dedicated Modal environment, and create new
+   credentials. For the existing deployment, preserve its state and encryption secrets.
+3. Set `TMPDIR=/home/orca/.cache/div61-tf` on this host. Create it with mode 0700. This avoids the
+   constrained `/tmp` filesystem and overly long Terraform provider socket paths.
+4. From `terraform/environments/production`, initialize and review a saved plan:
+
+   ```sh
+   umask 077
+   export TMPDIR=/home/orca/.cache/div61-tf
+   mkdir -p "$TMPDIR"
+   chmod 700 "$TMPDIR"
+   terraform init -reconfigure -backend-config=backend.tfvars
+   terraform validate
+   terraform plan -out=reviewed.tfplan
+   ```
+
+5. For a **brand-new** deployment only, set both binding flags false before the first plan; apply
+   that reviewed plan, set both true, then plan and apply again. For this existing deployment leave
+   both true. Apply with `terraform apply reviewed.tfplan` only after reviewing its scope. Terraform
+   manages D1 migrations, worker/web builds and Modal deployment.
+6. Check the health endpoints below, sign in once, and bootstrap the first Owner as described below.
+   Run a manual session and verify completion before declaring a recovered deployment ready.
+
+Do not blindly reapply after an uncertain failure. Inspect state, live resources and migration
+ledger first. The original deployment applied 75 migration files successfully. Preserve the private
+R2 state and D1 data when rebuilding a host; recreating an empty database loses users and session
+records. A restore drill and disaster-recovery backup automation were not tested here.
+
+## Credentials and account setup
+
+Private files on Orca Core, relative to the working copy:
+
+- `terraform/environments/production/terraform.tfvars`: provider credentials, model key, GitHub App
+  details and application encryption/authentication secrets.
+- `terraform/environments/production/backend.tfvars`: R2 endpoint, access key, secret key, and the
+  explicit bucket/key overrides listed above.
+- `terraform/environments/production/.keys/github-app-original.pem` and
+  `.keys/github-app-pkcs8.pem`: original and converted App key.
+- `~/.modal.toml`: Modal CLI profile. Token ID and secret must come from the same token.
+
+These files are ignored and restricted (files 0600, key directory 0700). They are not included in
+the Git backup. Keep a separate encrypted backup under the account owner's control; this closeout
+does not establish that such a backup exists. Terraform state, saved plans and deployment logs may
+also contain secrets. Never commit or paste them into Linear. Preserve the existing application
+encryption secrets across updates or stored encrypted credentials may become unreadable.
+
+Cloudflare needs an account API token for Workers, KV, R2, D1 and Queues management, plus separate
+R2 S3-compatible Object Read & Write credentials restricted to the state bucket. R2 stores the
+state; S3 is the API Terraform uses to access that storage. Modal needs the workspace slug,
+environment name, actual environment web suffix, and a paired token ID/secret. Terraform deploys its
+app; the Modal welcome wizard does not need a separate example app.
+
+The GitHub App has Contents and Pull requests **Read & Write**, Metadata **Read-only**, and Account
+permissions → Email addresses **Read-only**. Installation uses **Only select repositories**, with
+only the pilot selected. Keep user token expiration enabled. Callback URL:
+
+`https://open-inspect-web-mdumas38-div61-dev.mason-587.workers.dev/api/auth/callback/github`
+
+The downloaded private key must exist on the machine running OpenSSL. A Mac `/Users/...` path is not
+an Orca Core path. Copy it with one unbroken destination path before converting:
+
+```sh
+openssl pkcs8 -topk8 -inform PEM -outform PEM -nocrypt \
+  -in /absolute/path/original.pem -out /absolute/path/pkcs8.pem
+```
+
+An Anthropic API key with API billing is configured; other model providers were not validated.
+
+## Owner recovery
+
+The existing `mdumas38` user is already Owner. For a fresh database, sign in first, then obtain the
+canonical 32-character user ID from the signed-in `/api/auth/get-session` response. Verify its
+GitHub identity before assigning access. From the repository root, with Wrangler authenticated using
+`CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`:
+
+```sh
+npm run rbac:bootstrap-owner -- --database open-inspect-mdumas38-div61-dev --user <canonical-id>
+# Review ready/no-op/refused before executing:
+npm run rbac:bootstrap-owner -- --database open-inspect-mdumas38-div61-dev --user <canonical-id> --execute
+```
+
+The host Node build lacked TypeScript support. The workaround used the unchanged supported script:
+
+```sh
+mkdir -p docs/internal
+./node_modules/.bin/esbuild scripts/bootstrap-workspace-owner.ts \
+  --platform=node --format=esm --outfile=docs/internal/bootstrap-workspace-owner.mjs
+node docs/internal/bootstrap-workspace-owner.mjs \
+  --database open-inspect-mdumas38-div61-dev --user <canonical-id>
+# After ready, repeat with --execute.
+```
+
+Require `status=executed`, `role_id=role_builtin_owner`, `audit_written=1`, or an appropriate
+already-Owner no-op. Do not force past a refusal or blindly retry an uncertain write. The current
+public health response has only status/service; it cannot establish Owner assignment.
+
+## Verification and troubleshooting
+
+- [Control-plane health](https://open-inspect-control-plane-mdumas38-div61-dev.mason-587.workers.dev/health)
+  returns HTTP 200 and `status: healthy`.
+- [Modal health](https://mason-94865-div61-dev--open-inspect-api-health.modal.run) returns HTTP 200
+  and `success: true`, with healthy service data.
+- Web login, GitHub sign-in and Owner bootstrap passed. D1 migration ledger contains 75 entries.
+- Acceptance session `224a58f7a0504475afd1d35ed9c38ecf` used `anthropic/claude-sonnet-4-6` against
+  the pilot. User confirmed viewing the completed result; D1 reports `completed`, one message, and
+  terminal completion time `1789416361529`. Control-plane `prompt.complete` reports
+  `outcome: success`.
+- Recorded model usage was $1.455078, excluding Cloudflare/Modal costs. This is one sample, not a
+  per-session estimate. Review app usage and provider billing while experimenting.
+
+| Symptom                                       | Check / resolution                                                                                                                            |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| GitHub callback HTTP 500, email lookup failed | Add Account → Email addresses → Read-only; save and sign in again, accepting updated permissions. Required even with username-only admission. |
+| Prompt waits during first startup             | This run's repository setup took about 91 seconds. Confirm setup completion, sandbox connection and prompt dispatch in logs before retrying.  |
+| Missing jq                                    | Install jq; D1 migration and Modal secret scripts use it.                                                                                     |
+| npm resolves an unrelated OpenNext package    | Retain the direct `opennextjs-cloudflare build` workspace script fix.                                                                         |
+| Terraform socket or temporary-file failure    | Use the short TMPDIR above.                                                                                                                   |
+| Modal authentication rejected                 | Verify token ID/secret pair and target environment, without printing credentials.                                                             |
+| Migration upload fails                        | Inspect the migration ledger and remote result before retrying; a failed client request is not proof no write occurred.                       |
+
+Inspect Cloudflare Worker logs and Modal sandbox logs for the affected session, with redaction. Stop
+temporary log tails after diagnosis. Use the app's session stop control when abandoning work; verify
+the corresponding Modal sandbox stops. No automated cost cap or teardown was validated. For
+decommissioning, review `terraform plan -destroy` against this exact backend, preserve needed
+state/data first, and separately inspect cron triggers: the provider warned that removing a cron
+trigger requires manual cleanup. Do not run destroy as a troubleshooting step.
+
+## Remaining pilot work
+
+DIV-61 acceptance is complete. DIV-62 repository scoping was configured and clone was observed, but
+its explicit fetch/push verification is still outstanding. DIV-63 (Linear integration) and DIV-64
+(first task through Linear) are separate work. The deployed app currently receives manual web
+sessions; updating tickets through Orca does not enable the Open-Inspect Linear bot.
+
+The deployment fixes and this runbook are retained on the deployment branch. Pushing that branch
+backs up the work without merging into `main`; upstream workflows can deploy on main changes, so
+review their credentials and scope before any future merge. This pilot did not configure CI secrets.

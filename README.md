@@ -137,6 +137,9 @@ ownership, bots, and member suspension.
 
 ## Getting Started
 
+For the deployed development pilot, see the [DIV-61 runbook](docs/deployments/DIV-61.md) for access,
+reproduction, troubleshooting, and first background tasks.
+
 For a practical setup guide (local + contributor + deployment paths), start with
 **[docs/SETUP_GUIDE.md](docs/SETUP_GUIDE.md)**.
 

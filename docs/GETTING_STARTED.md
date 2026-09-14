@@ -59,6 +59,9 @@ brew install terraform
 # Node.js (22+)
 brew install node@22
 
+# JSON processor (required by D1 migrations and Modal secret deployment)
+brew install jq
+
 # Python 3.12+ and uv (Modal CLI is installed via uv sync below)
 brew install python@3.12 uv
 
@@ -322,11 +325,11 @@ GitHub OAuth sign-in, but its client pair is optional when Google is the only si
    - Members: **Read-only**
    - For existing GitHub Apps, republish the permission change and request/approve installation
      updates before testing org membership sign-in.
-7. If GitHub sign-in uses `allowed_emails` or `allowed_email_domains`, set **Account permissions**:
-   - Email addresses: **Read-only** _(without it the app cannot read verified emails and those
-     allowlists deny every GitHub sign-in)_
-   - For existing GitHub Apps, republish the permission change and request/approve installation
-     updates, otherwise the added permission does not apply to current installs.
+7. If using GitHub sign-in, set **Account permissions**:
+   - Email addresses: **Read-only**. Every GitHub sign-in reads verified email addresses, including
+     when admission uses only `allowed_users`. Without this permission, the OAuth callback fails.
+   - For existing GitHub Apps, save the permission change, then sign in again and approve the
+     updated account permissions when GitHub prompts you.
 8. Click **"Create GitHub App"**
 9. Note the **App ID** (top of page). If enabling GitHub sign-in, also note the **Client ID**.
 10. If enabling GitHub sign-in, under **"Client secrets"**, click **"Generate a new client secret"**
@@ -766,14 +769,10 @@ replaces the target's assignment, and returns the exact audit-bound postconditio
 transaction. A no-op writes nothing. A lost batch response can leave the outcome uncertain; the
 command does not automatically retry writes or claim success without the postcondition.
 
-6. Verify the control-plane health response contains `"rbac":{"ownerAssignment":"present"}`:
-
-```bash
-curl "$(terraform -chdir=terraform/environments/production output -raw control_plane_url)/health"
-```
-
-This health value reports current state: `present` means at least one Owner assignment belongs to an
-unsuspended user.
+6. Verify the bootstrap postcondition reports `status: executed`, `role_id: role_builtin_owner`, and
+   `audit_written: 1` (or an already-Owner no-op on a later dry run). Refresh the web app. The
+   public `/health` endpoint currently reports service health only; it does not report Owner
+   assignment. Use the bootstrap result and persisted role/audit records to verify ownership.
 
 ---
 
