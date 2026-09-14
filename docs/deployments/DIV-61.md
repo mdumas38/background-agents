@@ -25,8 +25,9 @@ Background sessions are useful for work that can proceed without frequent decisi
 one bug, adding a focused test, drafting documentation, or implementing a small well-specified fix.
 Keep exploratory product decisions and ambiguous requirements conversational until there is a clear
 task to hand off. Start with one session at a time and review any diff and test results before
-merging. The first acceptance run only summarized the repository; PR creation and push were not
-validated. Broader workflow ideation is intentionally deferred.
+merging. The first acceptance run only summarized the repository; PR creation was not validated by
+that session. A later DIV-62 check verified fetch and push using GitHub App installation
+credentials. Broader workflow ideation is intentionally deferred.
 
 ## Deployment inventory
 
@@ -204,3 +205,27 @@ sessions; updating tickets through Orca does not enable the Open-Inspect Linear 
 The deployment fixes and this runbook are retained on the deployment branch. Pushing that branch
 backs up the work without merging into `main`; upstream workflows can deploy on main changes, so
 review their credentials and scope before any future merge. This pilot did not configure CI secrets.
+
+## Linear integration handoff (DIV-63 / DIV-64)
+
+The current source requires real Linear credentials before enabling the bot, so create the OAuth
+application using these deterministic URLs before Terraform deployment:
+
+- Name: `OpenInspect Dev`; private application in the Divinedesign workspace.
+- Callback:
+  `https://open-inspect-linear-bot-mdumas38-div61-dev.mason-587.workers.dev/oauth/callback`
+- Webhook: `https://open-inspect-linear-bot-mdumas38-div61-dev.mason-587.workers.dev/webhook`
+- Events: Agent session events, Issues, Comments.
+- Enable Client credentials tokens.
+- Store Client ID, Client Secret and Webhook Signing Secret in the private production-directory
+  `terraform.tfvars` as `linear_client_id`, `linear_client_secret`, `linear_webhook_secret`.
+
+Then enable `enable_linear_bot`, review/apply Terraform and install through the deployed bot's
+`/oauth/authorize` route (not `/install`). Workspace admin authorization is required. Set the Linear
+integration's repository scope to the pilot and map the Open-Inspect Pilot project to that
+repository. Use the checked-out [bot setup guide](../../packages/linear-bot/README.md#setup).
+
+For DIV-64, use a tiny documentation or unit-test change, request relevant validation and a PR, and
+explicitly prohibit merge/deploy. Trigger through a real Linear agent mention or assignment;
+ordinary text containing a name is not proof that an agent session was created. Record startup,
+model, tests, PR attribution, and useful Linear progress/completion updates before closing DIV-64.
