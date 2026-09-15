@@ -242,4 +242,46 @@ describe("GitHubProviderIdentityResolver", () => {
       "https://api.github.com/user/emails?per_page=100&page=10"
     );
   });
+
+  it("suggests the missing email permission when GitHub rejects the email lookup with 403", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async (input) => {
+      if (String(input) === "https://api.github.com/user") {
+        return Response.json({ id: 583_231, login: "octocat" });
+      }
+      return new Response(null, { status: 403 });
+    });
+    const resolver = new GitHubProviderIdentityResolver(config, { fetch });
+
+    let thrown: unknown;
+    try {
+      await resolver.resolveIdentity("ghu-secret-token");
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toMatchObject({
+      name: "OAuthProviderError",
+      failure: "provider_rejected",
+    });
+    const message = (thrown as Error).message;
+    expect(message).toContain("Email addresses");
+    expect(message).toContain("Reauthorize");
+    expect(message).not.toContain("ghu-secret-token");
+  });
+
+  it("keeps the generic provider_unavailable failure for non-403 email lookup errors", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async (input) => {
+      if (String(input) === "https://api.github.com/user") {
+        return Response.json({ id: 583_231, login: "octocat" });
+      }
+      return new Response(null, { status: 500 });
+    });
+    const resolver = new GitHubProviderIdentityResolver(config, { fetch });
+
+    await expect(resolver.resolveIdentity("ghu-access")).rejects.toMatchObject({
+      name: "OAuthProviderError",
+      failure: "provider_unavailable",
+      message: "GitHub email lookup was not successful",
+    });
+  });
 });

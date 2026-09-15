@@ -106,6 +106,14 @@ export class GitHubProviderIdentityResolver {
         headers: this.apiHeaders(accessToken),
       });
       if (!response.ok) {
+        if (response.status === 403) {
+          throw new OAuthProviderError(
+            "provider_rejected",
+            "GitHub email lookup was rejected; this may mean the GitHub App is missing the " +
+              "Account permissions -> Email addresses -> Read-only permission. Reauthorize the " +
+              "app with that permission and try again."
+          );
+        }
         throw new OAuthProviderError(
           "provider_unavailable",
           "GitHub email lookup was not successful"
