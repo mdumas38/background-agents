@@ -647,3 +647,50 @@ setup does not send Linear or email notifications.
 To disable: remove only the marked block from `crontab -e` for user `orca`, or pause the automation
 in the Web app. Regenerating the webhook key revokes the saved trigger credential. No new live
 application deployment or repository-access expansion was performed.
+
+### Independent review of the first automation report
+
+Reviewed against exact inspected main commit `087ab510fbe6108862c2bda9ff81cb1dbfa021c4`. Verdict:
+two related valid deployment gaps, one environment observation; severity and certainty need
+qualification. No application change or follow-up task was dispatched during this review.
+
+1. **CI binding configuration: confirmed, conditional deployment reliability defect.** Both
+   Terraform workflow env blocks omit `enable_linear_dispatch_binding`, and the clean checkout has
+   no automatically loaded variable file supplying it. Its default is false and `workers-linear.tf`
+   uses it to omit the Linear binding. A successful deployment with Linear enabled and no override
+   therefore lacks the required binding. A later apply against an existing deployment can propose
+   removing it; that exact provider migration/apply outcome was not reproduced. Classify Medium/P2
+   for this pilot's backlog, High impact for an affected CI-managed Linear deployment. Our
+   repository currently has no Actions repository secrets or Terraform workflow runs; the live
+   pilot's binding was verified present and its private flag is true. This is not an observed live
+   outage. Corrections: the 503 path applies to validated AgentSessionEvent deliveries, not every
+   webhook (other event types are skipped; bad signatures get 401). CI is missing a supported input,
+   not fundamentally unable ever to enable it. Terraform variable files/CLI inputs can override
+   defaults; the workflow itself also generates a SchedulerDO auto.tfvars file, so saying it uses
+   only environment variables is literally inaccurate. Task mode has an implementation default;
+   exposing that knob is separate from fixing the missing binding.
+2. **Getting-started guide: confirmed, Medium/P2 documentation defect when Linear is enabled.**
+   Main's Phase 2 and troubleshooting tell users to change only the generic DO/service flags. They
+   omit the separate Linear switch. This can leave a new Linear deployment unable to handle agent
+   sessions. It does not affect deployments with Linear disabled. The requirement is not documented
+   only in ADR 0004: terraform.tfvars.example lines 405–409 explicitly give the two-phase procedure
+   and say to leave the binding enabled. The task-mode knob is not required for normal
+   implementation mode. This shares a root cause with item 1 and can be tracked as one
+   rollout-completeness issue with CI and documentation acceptance criteria.
+3. **Dirty lockfile: informational environment observation; not a demonstrated source defect.** It
+   was present in the first status capture, and prior task baselines show the same pattern. The
+   setup script uses npm install; this is a plausible explanation, not a reproduced cause. No
+   dependency inconsistency, broken npm ci or committed regression was shown. Exclude this from the
+   actionable defect count; investigate environment reproducibility separately if desired. The root
+   package does not pin npm, so the report's suggested pinned-npm check needs an explicit chosen
+   setup version.
+
+Validation reporting also needs care: observed Vitest summaries support the 262/10 test counts, but
+the TypeScript shell command piped output through head and echoed the pipeline status. It does not
+independently establish the compiler exit code. No second test run was necessary for this
+source/configuration review, and no live Terraform plan/apply was performed.
+
+For future triage, separate defect category, confidence, impact, affected configuration and current
+deployment exposure. Keep environment observations separate from actionable findings; avoid words
+such as every, never and permanent without proving the conditions. The automation prompt and daily
+schedule were left unchanged.
