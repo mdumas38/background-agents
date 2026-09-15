@@ -603,3 +603,47 @@ passed. No live deployment was performed.
 one completed session/message, model cost $0.025084656 excluding classifier/infrastructure. Task
 comment 19:56:41.802 UTC; session created 19:56:55.919; completion 20:01:19.322; full Linear reply
 20:01:20.370 (about 4m39s turnaround). No pending follow-up task.
+
+## Daily repository findings automation — enabled 2026-09-15
+
+Mason created webhook automation `25df15cbcb514946f1573f25495099d4` in the Web app and saved its
+per-automation trigger key locally through a hidden prompt. It targets `mdumas38/background-agents`
+main with OpenCode / OpenRouter DeepSeek V4.1 Flash. Its instructions request at most three
+source-backed findings from the latest five non-merge commits, no edits/PRs/deployments/credential
+reads, under 800 words, ending `AUTOMATION_CHECK_COMPLETE`. These are prompt constraints, not an
+enforced read-only sandbox.
+
+The external timer is installed in the `orca` user's crontab on Orca Core, marked
+`OpenInspect daily repository findings`. Cron invokes the launcher every minute, but its Python
+zoneinfo gate sends only at **09:00 America/New_York**, adjusting for daylight saving. The first
+scheduled call is September 16 at 13:00 UTC. There is no catch-up when the host is unavailable. The
+Web app correctly displays this automation as Inbound Webhook, not Schedule.
+
+Private local files in the preserved deployment workspace: `docs/internal/automation-trial/`.
+`credential.json` is mode 0600; never commit or print it. `trigger.py` restricts the destination,
+refuses redirects, persists an attempt before sending, suppresses repeated local run keys, sends a
+stable server idempotencyKey, and does not automatically retry uncertain delivery. `configure.py`
+handles hidden credential entry; `automation.json` holds the initial definition; `attempts/` and
+`scheduler.log` hold operational results. These ignored local files must be preserved separately
+from Git. Summer/winter schedule checks and local duplicate suppression passed. Cron is active and
+the installed crontab was read back exactly.
+
+Smoke run: HTTP 200, one triggered invocation and zero skipped/steered. Run
+`4bd35ba7865e1b8720c407e8e106f606`,
+[session](https://open-inspect-web-mdumas38-div61-dev.mason-587.workers.dev/session/6f56e189ae6772cb108fd064f7dd5c15).
+D1 confirmed completed with no failure, one message, about 20m01s turnaround and $0.151163286 model
+cost (infrastructure excluded). The final 453-word report contains the completion marker. All 89
+recorded events were available; tools were reads/searches and bash, including existing tests (262
+Linear tests, 10 auth tests and a dispatch test passed). No explicit source edit, dependency
+install, PR or deployment tool was observed; no final filesystem diff was captured, so this is not
+proof of zero test-generated files. The TypeScript command pipes through head, so its printed exit
+status alone is not reliable compiler-status evidence.
+
+The report flags possible missing Linear binding variables in CI and main setup guidance, plus the
+already-present sandbox lockfile change. These findings are not independently reviewed or
+automatically actionable. Reports are available in OpenInspect automation/run/session history; this
+setup does not send Linear or email notifications.
+
+To disable: remove only the marked block from `crontab -e` for user `orca`, or pause the automation
+in the Web app. Regenerating the webhook key revokes the saved trigger credential. No new live
+application deployment or repository-access expansion was performed.
