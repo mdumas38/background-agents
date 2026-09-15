@@ -1,17 +1,12 @@
-# =============================================================================
-# Open-Inspect - Production Terraform Variables
-# =============================================================================
-# Copy this file to terraform.tfvars and fill in the values.
+# ======================================================================# Open-Inspect - Production Terraform Variables
+# ======================================================================# Copy this file to terraform.tfvars and fill in the values.
 # NEVER commit terraform.tfvars to source control!
 #
 # Alternatively, set values via environment variables:
 #   export TF_VAR_cloudflare_api_token="your-token"
-# =============================================================================
-
-# =============================================================================
-# Provider Authentication
-# =============================================================================
-
+# ======================================================================
+# ======================================================================# Provider Authentication
+# ======================================================================
 # Cloudflare API token.
 # Required account permissions:
 #   - Workers Scripts: Edit
@@ -115,10 +110,8 @@ e2b_template_id = ""           # e.g., "open-inspect-sandbox"
 # sandbox on inbound activity. Default true; set false to kill on timeout.
 # e2b_auto_pause = true
 
-# =============================================================================
-# GitHub App Credentials
-# =============================================================================
-# Create GitHub App at: https://github.com/settings/apps
+# ======================================================================# GitHub App Credentials
+# ======================================================================# Create GitHub App at: https://github.com/settings/apps
 #
 # A GitHub App installation is required for repository access in every
 # deployment. Its OAuth client ID and secret are optional together: configure
@@ -174,10 +167,8 @@ github_bot_username = ""
 # "claude-"/"gpt-" id. Commented out means the default below.
 # github_bot_default_model = "anthropic/claude-haiku-4-5"
 
-# =============================================================================
-# Google OAuth Credentials (Optional)
-# =============================================================================
-# Enables "Sign in with Google" for non-developer users (PMs, support agents).
+# ======================================================================# Google OAuth Credentials (Optional)
+# ======================================================================# Enables "Sign in with Google" for non-developer users (PMs, support agents).
 # Create an OAuth 2.0 Client ID at: https://console.cloud.google.com/apis/credentials
 #   - Application type: Web application
 #   - Authorized redirect URI: {your-web-app-url}/api/auth/callback/google
@@ -188,10 +179,8 @@ github_bot_username = ""
 google_client_id = ""
 google_client_secret = ""
 
-# =============================================================================
-# Slack App Credentials (Optional)
-# =============================================================================
-# From Slack App dashboard: https://api.slack.com/apps
+# ======================================================================# Slack App Credentials (Optional)
+# ======================================================================# From Slack App dashboard: https://api.slack.com/apps
 # Set enable_slack_bot = false to skip deployment.
 
 enable_slack_bot = false
@@ -228,10 +217,8 @@ linear_webhook_secret = ""   # Webhook Signing Secret from the application confi
 # bare "claude-"/"gpt-" id.
 # linear_bot_default_model = "claude-sonnet-4-6"
 
-# =============================================================================
-# API Keys
-# =============================================================================
-
+# ======================================================================# API Keys
+# ======================================================================
 # Anthropic API key for Claude. Injected into Modal session sandboxes and
 # OpenComputer sandboxes; Daytona, E2B and Vercel read model keys only from the
 # secret store in the web app, which overrides this value everywhere. Optional:
@@ -254,10 +241,8 @@ classification_openai_api_key = ""
 # classification_openai_api_key.
 # classification_model = "claude-haiku-4-5"
 
-# =============================================================================
-# Security Secrets
-# =============================================================================
-# Generate these with: openssl rand -base64 32
+# ======================================================================# Security Secrets
+# ======================================================================# Generate these with: openssl rand -base64 32
 
 # Token encryption key (for encrypting OAuth tokens)
 token_encryption_key = ""
@@ -278,10 +263,8 @@ modal_api_secret = ""
 # Browser authentication secret (the Terraform input retains its legacy name)
 nextauth_secret = ""
 
-# =============================================================================
-# Configuration
-# =============================================================================
-
+# ======================================================================# Configuration
+# ======================================================================
 # Sandbox backend for session execution
 # - "modal": existing Modal-based sandboxes with filesystem snapshot restore
 # - "daytona": direct Daytona REST API integration with stop/start resume
@@ -353,10 +336,8 @@ project_root = "../../../"
 #   - Workers Scripts: Edit (to attach the MEDIA_BUCKET binding to the Worker)
 # r2_media_bucket_name = ""
 
-# =============================================================================
-# Initial Deployment Flags
-# =============================================================================
-# For first-time deployment, set both to false to avoid chicken-and-egg issues
+# ======================================================================# Initial Deployment Flags
+# ======================================================================# For first-time deployment, set both to false to avoid chicken-and-egg issues
 # with Durable Objects and service bindings.
 # After the first successful deployment, set both to true and run terraform apply again.
 
@@ -370,10 +351,8 @@ enable_service_bindings = false
 # control_plane_new_sqlite_classes = []
 # control_plane_deleted_classes = []
 
-# =============================================================================
-# Access Control
-# =============================================================================
-# Allowlists are OR-based: a user is admitted if they match ANY configured
+# ======================================================================# Access Control
+# ======================================================================# Allowlists are OR-based: a user is admitted if they match ANY configured
 # allowlist (GitHub username, email domain, exact email, or GitHub org
 # membership). Set at least one unless you intentionally opt into open access
 # with unsafe_allow_all_users = true.
@@ -404,3 +383,9 @@ unsafe_allow_all_users = false
 # Optional OpenRouter credential for Modal sandboxes. Never commit real keys.
 # Enable the OpenRouter model in Settings > Models before selecting it.
 openrouter_api_key = ""
+
+# Linear dispatch migration: create class with false, then apply again with true.
+# Keep true thereafter. Webhooks return 503 until the binding is enabled.
+enable_linear_dispatch_binding = false
+# Operator-controlled prompt policy; does not restrict sandbox permissions.
+linear_bot_task_mode = "implementation" # or "read-only" for investigation pilots

@@ -1,6 +1,6 @@
-# =============================================================================
+# ======================================================================}
 # Provider Authentication
-# =============================================================================
+# ======================================================================}
 
 variable "cloudflare_api_token" {
   description = "Cloudflare API token with Workers, KV, R2, and D1 permissions"
@@ -109,9 +109,9 @@ variable "modal_environment_web_suffix" {
   }
 }
 
-# =============================================================================
+# ======================================================================}
 # GitHub OAuth Sign-In Credentials
-# =============================================================================
+# ======================================================================}
 
 variable "github_client_id" {
   description = "GitHub App client ID used for OAuth sign-in. Set together with github_client_secret to enable GitHub sign-in; leave both empty for Google-only sign-in."
@@ -131,9 +131,9 @@ variable "github_client_secret" {
   default     = ""
 }
 
-# =============================================================================
+# ======================================================================}
 # Google OAuth Credentials (Optional — enables "Sign in with Google")
-# =============================================================================
+# ======================================================================}
 # Set both google_client_id and google_client_secret to enable Google login for
 # non-developer users (PMs, support agents). Leave both empty when Google sign-in
 # is not wanted. A Google session authenticates the user but carries no SCM
@@ -158,9 +158,9 @@ variable "google_client_secret" {
   default     = ""
 }
 
-# =============================================================================
+# ======================================================================}
 # GitHub App Credentials (for Modal sandbox)
-# =============================================================================
+# ======================================================================}
 
 variable "github_app_id" {
   description = "GitHub App ID"
@@ -178,9 +178,9 @@ variable "github_app_installation_id" {
   type        = string
 }
 
-# =============================================================================
+# ======================================================================}
 # GitHub Bot Configuration
-# =============================================================================
+# ======================================================================}
 
 variable "enable_github_bot" {
   description = "Enable the GitHub bot worker. Requires github_webhook_secret and github_bot_username."
@@ -228,9 +228,9 @@ variable "github_bot_default_model" {
   }
 }
 
-# =============================================================================
+# ======================================================================}
 # Slack App Credentials
-# =============================================================================
+# ======================================================================}
 
 variable "enable_slack_bot" {
   description = "Enable the Slack bot worker. Set to false to skip deployment."
@@ -275,9 +275,9 @@ variable "slack_bot_default_model" {
   }
 }
 
-# =============================================================================
+# ======================================================================}
 # Linear Agent Credentials
-# =============================================================================
+# ======================================================================}
 
 variable "enable_linear_bot" {
   description = "Enable the Linear bot worker. Requires linear_client_id, linear_client_secret, and linear_webhook_secret."
@@ -339,9 +339,9 @@ variable "linear_bot_default_model" {
   }
 }
 
-# =============================================================================
+# ======================================================================}
 # API Keys
-# =============================================================================
+# ======================================================================}
 
 variable "anthropic_api_key" {
   description = "Anthropic API key for the Slack and Linear bot classifiers, also injected into Modal session sandboxes and OpenComputer sandboxes. Daytona, E2B and Vercel read model keys only from the scoped secret store, as do Modal image builds. Optional: leave blank to supply model credentials as scoped secrets, which override this value on every provider. Required only when a classifier bot is enabled and classification_model is an Anthropic model."
@@ -404,9 +404,9 @@ variable "classification_openai_api_key" {
   }
 }
 
-# =============================================================================
+# ======================================================================}
 # Security Secrets
-# =============================================================================
+# ======================================================================}
 
 variable "token_encryption_key" {
   description = "Key for encrypting tokens (generate with: openssl rand -base64 32)"
@@ -638,9 +638,9 @@ variable "nextauth_secret" {
   }
 }
 
-# =============================================================================
+# ======================================================================}
 # Configuration
-# =============================================================================
+# ======================================================================}
 
 variable "sandbox_provider" {
   description = "Sandbox backend for session execution: 'modal', 'daytona', 'vercel', 'opencomputer', or 'e2b'"
@@ -729,9 +729,9 @@ variable "project_root" {
   default     = "../../../"
 }
 
-# =============================================================================
+# ======================================================================}
 # R2 Storage
-# =============================================================================
+# ======================================================================}
 
 variable "r2_media_location" {
   description = "Cloudflare R2 location hint for the media bucket (e.g. ENAM, WNAM, APAC, WEUR, EEUR)"
@@ -745,9 +745,9 @@ variable "r2_media_bucket_name" {
   default     = ""
 }
 
-# =============================================================================
+# ======================================================================}
 # Access Control
-# =============================================================================
+# ======================================================================}
 # Four allowlists gate sign-in; a user is admitted if they match ANY configured
 # allowlist. Leave them all empty only with unsafe_allow_all_users = true.
 
@@ -787,4 +787,20 @@ variable "openrouter_api_key" {
   sensitive   = true
   default     = ""
   nullable    = false
+}
+
+variable "enable_linear_dispatch_binding" {
+  description = "Enable after the LinearDispatch class is created with this false in phase one."
+  type        = bool
+  default     = false
+}
+
+variable "linear_bot_task_mode" {
+  description = "Trusted Linear launch prompt mode; read-only is advisory, not a sandbox permission boundary."
+  type        = string
+  default     = "implementation"
+  validation {
+    condition     = contains(["implementation", "read-only"], var.linear_bot_task_mode)
+    error_message = "linear_bot_task_mode must be implementation or read-only."
+  }
 }

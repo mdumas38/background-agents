@@ -15,8 +15,8 @@ import {
 import { callbacksRouter } from "./callbacks";
 import { createLogger } from "./logger";
 import { resolveAppName } from "@open-inspect/shared/app-name";
-import { handleAgentSessionEvent, escapeHtml } from "./webhook-handler";
-import { isDuplicateEvent } from "./kv-store";
+import { escapeHtml } from "./webhook-handler";
+export { LinearDispatch } from "./dispatch";
 
 const log = createLogger("handler");
 
@@ -150,23 +150,28 @@ app.post("/webhook", async (c) => {
       return c.json({ error: "Missing Linear-Delivery header" }, 400);
     }
 
-    const isDuplicate = await isDuplicateEvent(c.env, deliveryId);
-    if (isDuplicate) {
-      log.info("webhook.deduplicated", { trace_id: traceId, event_key: deliveryId });
-      return c.json({ ok: true, skipped: true, reason: "duplicate" });
+    if (
+      c.env.LINEAR_TASK_MODE !== undefined &&
+      !["implementation", "read-only"].includes(c.env.LINEAR_TASK_MODE)
+    ) {
+      return c.json({ error: "Invalid task mode configuration" }, 503);
     }
-
-    c.executionCtx.waitUntil(handleAgentSessionEvent(payload, c.env, traceId));
-
-    log.info("http.request", {
-      trace_id: traceId,
-      http_path: "/webhook",
-      http_status: 200,
-      type: eventType,
-      action,
-      duration_ms: Date.now() - startTime,
+    if (!c.env.LINEAR_DISPATCH) {
+      return c.json({ error: "Dispatch coordinator unavailable" }, 503);
+    }
+    if (!["created", "prompted", "stopped", "cancelled"].includes(payload.action)) {
+      return c.json({ ok: true, skipped: true, reason: "unsupported action" });
+    }
+    const id = c.env.LINEAR_DISPATCH.idFromName(
+      JSON.stringify([
+        payload.organizationId,
+        payload.agentSession.issue?.id ?? payload.agentSession.id,
+      ])
+    );
+    return c.env.LINEAR_DISPATCH.get(id).fetch("https://dispatch.internal/event", {
+      method: "POST",
+      body: JSON.stringify({ webhook: payload, deliveryId, traceId }),
     });
-    return c.json({ ok: true });
   }
 
   log.debug("webhook.skipped", { trace_id: traceId, type: eventType, action });

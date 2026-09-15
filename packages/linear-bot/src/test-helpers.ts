@@ -1,5 +1,6 @@
 import { vi } from "vitest";
 import type { Env } from "./types";
+import { LinearDispatch } from "./dispatch";
 
 export const LINEAR_WEBHOOK_TEST_SECRET = "test-linear-webhook-secret";
 
@@ -33,7 +34,7 @@ export function createFakeKV(initial: Record<string, string> = {}) {
 }
 
 export function makeLinearBotEnv(kv: KVNamespace, overrides: Partial<Env> = {}): Env {
-  return {
+  const env: Env = {
     LINEAR_KV: kv,
     LINEAR_WEBHOOK_SECRET: LINEAR_WEBHOOK_TEST_SECRET,
     DEFAULT_MODEL: "anthropic/claude-haiku-4-5",
@@ -48,6 +49,52 @@ export function makeLinearBotEnv(kv: KVNamespace, overrides: Partial<Env> = {}):
     CONTROL_PLANE: { fetch: vi.fn() } as unknown as Fetcher,
     ...overrides,
   };
+  const coordinators = new Map<string, LinearDispatch>();
+  env.LINEAR_DISPATCH ??= {
+    idFromName: (name: string) => name,
+    get: (name: string) => {
+      if (!coordinators.has(name)) {
+        const { storage } = createDispatchStorage();
+        coordinators.set(
+          name,
+          new LinearDispatch(
+            {
+              storage,
+              waitUntil: (p: Promise<unknown>) => void p,
+            } as unknown as DurableObjectState,
+            env
+          )
+        );
+      }
+      return {
+        fetch: (url: string, init: RequestInit) =>
+          coordinators.get(name)!.fetch(new Request(url, init)),
+      };
+    },
+  } as unknown as DurableObjectNamespace;
+  return env;
+}
+
+export function createDispatchStorage() {
+  const data = new Map<string, unknown>();
+  let pending = Promise.resolve();
+  const storage = {
+    get: async (key: string) => data.get(key),
+    put: async (key: string | Record<string, unknown>, value?: unknown) => {
+      if (typeof key === "string") data.set(key, value);
+      else for (const [k, v] of Object.entries(key)) data.set(k, v);
+    },
+    delete: async (key: string) => data.delete(key),
+    transaction: <T>(fn: (tx: unknown) => Promise<T>): Promise<T> => {
+      const next = pending.then(() => fn(storage));
+      pending = next.then(
+        () => undefined,
+        () => undefined
+      );
+      return next;
+    },
+  };
+  return { storage: storage as unknown as DurableObjectStorage, data };
 }
 
 export function makeExecutionContext() {

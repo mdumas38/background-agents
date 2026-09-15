@@ -240,3 +240,15 @@ Built on Linear's [Agents API](https://linear.app/developers/agents):
 - **Hono** for HTTP routing
 - **KV** for the replaceable runtime-token cache, issue-to-session mapping, and configuration
 - **Service binding** to the control plane for session management
+
+## Reliable dispatch and investigation prompts
+
+Webhooks require the `LINEAR_DISPATCH` Durable Object binding. Creation and activity events are
+claimed atomically, with per-issue session mappings held in the same object. Busy distinct events
+receive 503 for retry; uncertain claimed launches are not automatically resent. See
+[dispatch coordination and rollout](../../docs/adr/0004-linear-dispatch-coordination.md).
+
+Set Terraform `linear_bot_task_mode = "read-only"` for investigation prompts, or `"implementation"`
+(the default) for coding tasks. This is an operator-controlled prompt policy, not a permission
+sandbox. Completion replies retain up to 10,000 characters of findings and always link the full
+session.
