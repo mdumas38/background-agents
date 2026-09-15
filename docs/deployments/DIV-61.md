@@ -294,3 +294,34 @@ verification sandboxes were terminated.
 The first apply partially succeeded but stopped on a Worker bundle hash inconsistency. A reviewed
 recovery plan completed: 8 additions, 2 updates, 3 build-resource replacements; no persistent
 storage was removed. The web app, control-plane catalog and Linear default are deployed.
+
+## Final Linear pilot acceptance: DIV-63 and DIV-64
+
+Verified 2026-09-15. This section supersedes the pending DIV-63/DIV-64 notes above.
+
+- Real Linear mention: 14:54:38 UTC on DIV-64. Session created at 14:54:45; the agent moved the
+  issue to In Progress at 14:56:37 (about two minutes after the mention). Completion was recorded at
+  14:59:56 and the PR response reached Linear at 14:59:57. Total observed turnaround: about 5
+  minutes 20 seconds. Exact sandbox restore timing was not independently captured for this run.
+- Session: `9040ade59e7f4cae40b780ceaefbca5c`, D1 status `completed`, OpenCode harness,
+  `openrouter/deepseek/deepseek-v4.1-flash`. App-recorded model cost: $0.022641006; this excludes
+  classifier and infrastructure charges and is not an audited billing total.
+- [PR #1](https://github.com/mdumas38/background-agents/pull/1) exists and remains open, branch
+  `fix/github-email-403-diagnostic`, commit `b456803695dc3dbe0c77908ba18f9ee38eaf8bd0`. PR author is
+  the GitHub App bot; commit author is `OpenInspect <open-inspect@noreply.github.com>`.
+- The diff contains only the 403 diagnostic change and two regression tests in the intended files.
+  The PR reports 10 passing focused tests, clean TypeScript checking, ESLint and Prettier. These are
+  agent-reported results; no GitHub CI checks are attached. Review before merging.
+- The OpenInspect Dev app posted the final PR link back to the triggering Linear thread. The bot's
+  posted text was shortened, but the complete validation report is in the PR description. Issue
+  status and final response delivery were verified; intermediate Agent Activity events were not
+  independently archived.
+
+The task and repository context in Linear were sufficient to produce the scoped PR. This supports
+using the pilot for small, explicit tasks that can be reviewed asynchronously. It does not establish
+reliability for broad autonomous changes or production work; Operator integration remains a later
+decision. No PR merge or deployment of the generated change was performed.
+
+One setup problem was webhook routing: signed Linear POSTs initially hit `/oauth/callback` and
+returned 404. OAuth redirects belong at `/oauth/callback`; event deliveries belong at `/webhook`.
+The successful mention-to-session-to-PR run establishes that the event path now works.
