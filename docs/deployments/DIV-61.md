@@ -567,3 +567,24 @@ Sandbox startup duration was not independently measured. No clarification or imp
 correction was needed; reviewer minutes and useful time saved were not measured. DIV-67 is In
 Review, with the PR attached and review recorded. Nothing from PR #4 has been merged or deployed;
 Mason's approval is the next step.
+
+## Pilot closeout — 2026-09-15
+
+Mason accepted the results and authorized closeout. PR #4 was squash-merged at 19:52:59 UTC as
+`3c53d955a4dc4ce0c586f3876c2f3956f016dfb0` after its head was confirmed unchanged from the reviewed
+`37791206c9ba1359afa3aa2d76cee3d63e21ad97`. DIV-67 is Done. The deployment branch incorporates main;
+its older edit to the same setup paragraph was replaced by the reviewed PR text during conflict
+resolution. Markdown Prettier and `git diff --check` passed after resolution. No live deployment was
+performed.
+
+All three follow-on tasks are complete: DIV-65 produced useful reviewed findings with corrections;
+DIV-66 and DIV-67 produced scoped, independently reviewed and merged PRs. The three runs cost
+$0.109721958 in recorded model usage, including DIV-65's duplicate session but excluding reliability
+smoke tests, classifier and infrastructure. DIV-68/69 resolved and verified the observed
+dispatch/reply issues before the later pilots.
+
+The pilot supports using OpenInspect for bounded investigations, small tested fixes and
+documentation changes with review. Repository access remains limited to the pilot; Home Operator
+integration and unattended production operation were not approved. The existing development stack
+and credential-bearing workspace are retained. No new pilot task, deployment, teardown or access
+expansion is scheduled by this closeout.
