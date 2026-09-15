@@ -36,7 +36,12 @@ import {
   targetRequestFields,
   type SessionTarget,
 } from "./target-resolution";
-import { getUserPreferences, lookupIssueSession, storeIssueSession } from "./kv-store";
+import {
+  clearIssueSession,
+  getUserPreferences,
+  lookupIssueSession,
+  storeIssueSession,
+} from "./kv-store";
 
 const log = createLogger("handler");
 
@@ -275,7 +280,7 @@ async function handleStop(webhook: AgentSessionWebhook, env: Env, traceId: strin
         });
         return;
       }
-      await env.LINEAR_KV.delete(`issue:${issueId}`);
+      await clearIssueSession(env, issueId, existingSession.sessionId);
     }
   }
 

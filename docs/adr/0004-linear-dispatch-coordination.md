@@ -24,6 +24,10 @@ Stops use a separate lane so dispatch does not block the existing stop handler. 
 before a session exists retains the existing handler's behavior; it is not a durable cancellation of
 future work.
 
+After a successful stop, a durable null mapping prevents the legacy KV fallback from reviving the
+stopped session. Clearing is conditional on the stopped session ID, so a concurrent new launch keeps
+its replacement mapping. Failed or unauthored stops retain the mapping.
+
 A handler exception or process interruption retains its claim and lane. There is no lease timeout or
 automatic resend after uncertain external delivery. This is at-most-once dispatch, not exactly-once
 completion or a durable task queue. Handled provider rejections retain the existing error reporting;

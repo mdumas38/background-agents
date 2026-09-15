@@ -103,6 +103,7 @@ function getIssueSessionKey(issueId: string): string {
 export async function lookupIssueSession(env: Env, issueId: string): Promise<IssueSession | null> {
   if (env.SESSION_STORE) {
     const data = await env.SESSION_STORE.get(getIssueSessionKey(issueId));
+    if (data === null) return null; // Durable tombstone suppresses stale legacy KV mappings.
     if (data !== undefined) return issueSessionSchema.parse(data);
   }
   try {
@@ -132,4 +133,25 @@ export async function storeIssueSession(
   await env.LINEAR_KV.put(getIssueSessionKey(issueId), JSON.stringify(session), {
     expirationTtl: 86400 * 7,
   });
+}
+
+/** Clear only the stopped session; a concurrent launch may already have replaced it. */
+export async function clearIssueSession(
+  env: Env,
+  issueId: string,
+  stoppedSessionId: string
+): Promise<void> {
+  const key = getIssueSessionKey(issueId);
+  if (env.SESSION_STORE) {
+    await env.SESSION_STORE.transaction(async (storage) => {
+      const current = await storage.get(key);
+      if (current === null) return;
+      if (current !== undefined && issueSessionSchema.parse(current).sessionId !== stoppedSessionId)
+        return;
+      // Deleting would revive the old mapping through the eventual-consistency fallback.
+      await storage.put(key, null);
+    });
+    return;
+  }
+  await env.LINEAR_KV.delete(key);
 }
