@@ -11,6 +11,10 @@ import { z } from "zod";
 export interface Env {
   // KV namespace for config, runtime-token cache, and issue-to-session mapping
   LINEAR_KV: KVNamespace;
+  LINEAR_DISPATCH?: DurableObjectNamespace;
+  /** Internal coordinator storage; never a public request parameter. */
+  SESSION_STORE?: DurableObjectStorage;
+  LINEAR_TASK_MODE?: "read-only" | "implementation";
 
   // Service binding to control plane
   CONTROL_PLANE: ControlPlaneFetcher;
@@ -238,6 +242,7 @@ export interface AgentSessionWebhook {
     comment?: { body: string; userId?: string };
   };
   agentActivity?: {
+    id?: string;
     userId?: string;
     signal?: string;
     content?: {

@@ -780,3 +780,20 @@ variable "unsafe_allow_all_users" {
   type        = bool
   default     = false
 }
+
+
+variable "enable_linear_dispatch_binding" {
+  description = "Enable after the LinearDispatch class is created with this false in phase one."
+  type        = bool
+  default     = false
+}
+
+variable "linear_bot_task_mode" {
+  description = "Trusted Linear launch prompt mode; read-only is advisory, not a sandbox permission boundary."
+  type        = string
+  default     = "implementation"
+  validation {
+    condition     = contains(["implementation", "read-only"], var.linear_bot_task_mode)
+    error_message = "linear_bot_task_mode must be implementation or read-only."
+  }
+}

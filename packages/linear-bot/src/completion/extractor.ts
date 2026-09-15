@@ -40,8 +40,8 @@ export async function extractAgentResponse(
 /**
  * Format an AgentResponse into a markdown string for Linear AgentActivity.
  */
-export function formatAgentResponse(agentResponse: AgentResponse): string {
-  const parts: string[] = [];
+export function formatAgentResponse(agentResponse: AgentResponse, sessionUrl: string): string {
+  const parts: string[] = [`[View full session and findings](${sessionUrl})`];
 
   // PR / artifacts
   const prArtifact = agentResponse.artifacts.find((a) => a.type === "pr" && a.url);
@@ -59,11 +59,12 @@ export function formatAgentResponse(agentResponse: AgentResponse): string {
     if (fileEdits.length > 10) parts.push(`- ... and ${fileEdits.length - 10} more`);
   }
 
-  // Summary text (truncated)
+  // Keep useful findings in Linear; always retain the full-session link.
   if (agentResponse.textContent) {
     const summary =
-      agentResponse.textContent.length > 500
-        ? agentResponse.textContent.slice(0, 500) + "..."
+      agentResponse.textContent.length > 10000
+        ? agentResponse.textContent.slice(0, 10000) +
+          "\n\n[Report shortened; open the full session above.]"
         : agentResponse.textContent;
     parts.push(`\n${summary}`);
   }

@@ -400,3 +400,10 @@ allowed_github_orgs = ""
 # Explicitly bypass the Terraform access-control safety check and allow any
 # authenticated user to sign in when all allowlists are empty.
 unsafe_allow_all_users = false
+
+
+# Linear dispatch migration: create class with false, then apply again with true.
+# Keep true thereafter. Webhooks return 503 until the binding is enabled.
+enable_linear_dispatch_binding = false
+# Operator-controlled prompt policy; does not restrict sandbox permissions.
+linear_bot_task_mode = "implementation" # or "read-only" for investigation pilots
