@@ -46,7 +46,7 @@ credentials. Broader workflow ideation is intentionally deferred.
 | GitHub App                | `open-inspect-mdumas38-div61-dev`                                              |
 | Pilot repository          | `mdumas38/background-agents` only                                              |
 | Sign-in allowlist         | `allowed_users = "mdumas38"`; other allowlists empty; unrestricted access off  |
-| Bots                      | Slack, Linear, GitHub bots disabled                                            |
+| Bots                      | Linear enabled; Slack and GitHub disabled                                      |
 | Binding flags             | `enable_durable_object_bindings = true`, `enable_service_bindings = true`      |
 
 The directory is named `terraform/environments/production`, but these values identify the isolated
@@ -229,3 +229,24 @@ For DIV-64, use a tiny documentation or unit-test change, request relevant valid
 explicitly prohibit merge/deploy. Trigger through a real Linear agent mention or assignment;
 ordinary text containing a name is not proof that an agent session was created. Record startup,
 model, tests, PR attribution, and useful Linear progress/completion updates before closing DIV-64.
+
+### DIV-63 deployment and installation verified (2026-09-15)
+
+Terraform applied successfully with the real Linear credentials: 10 additions, 1 update and 5
+replacements/removals of build tasks and immutable Worker deployment/version records. Existing D1,
+R2, and Modal resources were retained. The Linear health endpoint returned healthy. The OAuth
+callback persisted a verified runtime credential for Divinedesign (organization
+`0157a70e-81a9-41c9-8af9-9d767564643c`) and app user `8bb954bd-5263-4b0f-82f9-ac5f9e5b8cae`; the
+user confirmed the success page.
+
+Linear KV namespace: `d4d23d22b1c0420a9f2e6b6be5567bf3`. Its `config:project-repos` key maps
+Open-Inspect Pilot project `ad19f530-a517-45a8-8b8f-a2fec4e33d82` to
+`{"owner":"mdumas38","name":"background-agents"}`. This is runtime KV configuration, not
+Terraform-managed data; restore this mapping when rebuilding the integration. The GitHub App still
+limits repository access to the pilot. A separate selected-repository setting in the web integration
+UI has not been verified.
+
+The concrete DIV-64 task is posted in Linear: improve the 403 GitHub email-lookup diagnostic with a
+permission/reauthorization suggestion and a focused regression test, preserving fail-closed
+authentication and existing handling for other failures. The first real agent mention, session,
+validation and PR remain pending; do not infer completion from OAuth success alone.
