@@ -338,11 +338,11 @@ later deployment to avoid dropping the merged fix.
 
 Run these one at a time, with the configured OpenCode/OpenRouter DeepSeek V4.1 Flash default:
 
-| Issue                                                  | Task                                    | Deliverable                                   | Status at handoff                 |
-| ------------------------------------------------------ | --------------------------------------- | --------------------------------------------- | --------------------------------- |
-| [DIV-65](https://linear.app/divinedesign/issue/DIV-65) | Investigate Owner health-check mismatch | Source-backed findings, no file changes or PR | Todo; awaiting real agent mention |
-| [DIV-66](https://linear.app/divinedesign/issue/DIV-66) | Strengthen email-error privacy tests    | Test-only PR and validation                   | Backlog                           |
-| [DIV-67](https://linear.app/divinedesign/issue/DIV-67) | Clarify GitHub email permission setup   | Documentation-only PR or verified no-op       | Backlog                           |
+| Issue                                                  | Task                                    | Deliverable                                   | Status at handoff                                            |
+| ------------------------------------------------------ | --------------------------------------- | --------------------------------------------- | ------------------------------------------------------------ |
+| [DIV-65](https://linear.app/divinedesign/issue/DIV-65) | Investigate Owner health-check mismatch | Source-backed findings, no file changes or PR | Investigation reviewed; integration issues tracked in DIV-68 |
+| [DIV-66](https://linear.app/divinedesign/issue/DIV-66) | Strengthen email-error privacy tests    | Test-only PR and validation                   | Backlog                                                      |
+| [DIV-67](https://linear.app/divinedesign/issue/DIV-67) | Clarify GitHub email permission setup   | Documentation-only PR or verified no-op       | Backlog                                                      |
 
 Use current `main` in `mdumas38/background-agents`. The task descriptions specify scope, acceptance
 criteria and validation. Mention OpenInspect Dev using Linear's actual mention picker. For DIV-65:
@@ -354,15 +354,67 @@ each result before triggering the next task; do not merge the future PRs automat
 Record these in the issue and summarize here when reviewed. Leave unknown values unknown; app model
 costs do not include classifier or infrastructure charges.
 
-| Run             | Elapsed / startup           | Model cost | Correctness and evidence                              | Human intervention                               | Useful time saved | Verdict                 |
-| --------------- | --------------------------- | ---------- | ----------------------------------------------------- | ------------------------------------------------ | ----------------- | ----------------------- |
-| DIV-64 baseline | ~5m20s / ~2m to In Progress | ~$0.02264  | Scoped PR; 10 tests independently passed before merge | Account/webhook setup required; user reviewed PR | Not measured      | Successful initial flow |
-| DIV-65          | Pending                     | Pending    | Pending                                               | Pending                                          | Pending           | Pending                 |
-| DIV-66          | Pending                     | Pending    | Pending                                               | Pending                                          | Pending           | Pending                 |
-| DIV-67          | Pending                     | Pending    | Pending                                               | Pending                                          | Pending           | Pending                 |
+| Run             | Elapsed / startup                       | Model cost         | Correctness and evidence                              | Human intervention                                      | Useful time saved | Verdict                                |
+| --------------- | --------------------------------------- | ------------------ | ----------------------------------------------------- | ------------------------------------------------------- | ----------------- | -------------------------------------- |
+| DIV-64 baseline | ~5m20s / ~2m to In Progress             | ~$0.02264          | Scoped PR; 10 tests independently passed before merge | Account/webhook setup required; user reviewed PR        | Not measured      | Successful initial flow                |
+| DIV-65          | ~5m to primary result; duplicate ~5m25s | $0.038395 combined | Main diagnosis correct; reviewer corrections below    | Duplicate investigation and manual full report recovery | Not measured      | Useful findings; delivery needs repair |
+| DIV-66          | Pending                                 | Pending            | Pending                                               | Pending                                                 | Pending           | Pending                                |
+| DIV-67          | Pending                                 | Pending            | Pending                                               | Pending                                                 | Pending           | Pending                                |
 
 For each run also retain the session URL, model/harness, exact validation commands/results,
 PR/commit attribution, clarification requests, and reviewer correction minutes. Decide whether to
 expand repository access or design Operator handoff only after comparing these results. Small
 successful samples demonstrate usefulness for their task types; they do not establish unattended
 production reliability.
+
+### DIV-65 review — 2026-09-15
+
+The read-only investigation completed on current main. The diagnosis is confirmed: main's
+`docs/GETTING_STARTED.md:769-776` and `scripts/bootstrap-workspace-owner.ts:318` claim `/health`
+reports `ownerAssignment`, but `packages/control-plane/src/routes/health.ts` returns only static
+`status` and `service`. The dependency-free health test in `router.policy.test.ts` explicitly passes
+with D1 unavailable. A successful health response does not establish database or Owner readiness.
+
+The smallest proposed correction is to replace the stale guide step and CLI success hint with the
+bootstrap's atomic audit-bound postcondition (`status=executed`, `audit_written=1`, expected Owner
+assignment). For current state, use authenticated Settings > Workspace access or `/members` and
+`/audit-events`. No health endpoint change is needed. This proposal was not implemented by the
+pilot.
+
+Reviewer corrections to the primary report:
+
+- The member API returns `role.key` and `suspendedAt`; `role_key` and `suspended_at` are SQL fields,
+  mapped by `authorization-store.ts` before serialization.
+- A 100-commit checkout is not evidence of a single imported history/root commit. The sandbox
+  intentionally clones with `--depth 100`
+  (`packages/sandbox-runtime/src/sandbox_runtime/repository_sync.py`). Its historical conclusion was
+  unsupported; current-source findings remain valid.
+- The two integration tests check fields/partial matches, not an exact response shape. The separate
+  dependency-free router policy test does assert exact equality.
+
+Observed scorecard:
+
+- Trigger: 15:35:25.193 UTC. Primary session created 15:36:06.557; prompt recorded 15:37:55.519;
+  completed 15:40:24.510; Linear reply 15:40:25.388 (about five minutes after the mention). First
+  substantive finding timing was not separately measured; prompt arrival is not sandbox startup.
+- Primary
+  [session](https://open-inspect-web-mdumas38-div61-dev.mason-587.workers.dev/session/70cab033efdc2ba192755e58ca2bae55):
+  OpenCode / `openrouter/deepseek/deepseek-v4.1-flash`, completed, model cost $0.016617330.
+- Duplicate
+  [session](https://open-inspect-web-mdumas38-div61-dev.mason-587.workers.dev/session/62f58c4a866b363f01ed58986b630888):
+  created 15:36:01.823, completed 15:40:49.075, same model, cost $0.021777708. Both received the
+  same issue/comment context. Combined app model cost $0.038395038, excluding classifier and
+  infrastructure. A stop request was accepted after the duplicate had already completed; no cost
+  saving is claimed.
+- Observed tools were source reads/searches and read-only Git commands; no new PR exists. No
+  clarification was requested. Validation was independent source review, not a new test execution.
+  Human intervention minutes and time saved were not measured.
+- Both Linear replies were truncated around 500 characters, so the full result was retrieved from
+  session events and this reviewed summary preserved manually. The generated launch prompt also
+  unconditionally requested implementation/a PR despite the read-only task. The model observed the
+  requested boundary this time; that is not an enforced read-only execution mode.
+
+[DIV-68](https://linear.app/divinedesign/issue/DIV-68) tracks duplicate dispatch, complete findings
+delivery, and task-mode prompt consistency. The duplicate cause (replayed delivery versus distinct
+Linear events) is not yet established. Keep DIV-66/67 in backlog until dispatch is understood.
+DIV-65's investigation is useful with corrections; the unattended delivery flow is not yet accepted.
