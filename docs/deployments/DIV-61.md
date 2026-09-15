@@ -588,3 +588,18 @@ documentation changes with review. Repository access remains limited to the pilo
 integration and unattended production operation were not approved. The existing development stack
 and credential-bearing workspace are retained. No new pilot task, deployment, teardown or access
 expansion is scheduled by this closeout.
+
+## DIV-70 follow-up complete — 2026-09-15
+
+Mason merged [PR #5](https://github.com/mdumas38/background-agents/pull/5) at 20:22:40 UTC as
+`087ab510fbe6108862c2bda9ff81cb1dbfa021c4`; GitHub merge status was verified and DIV-70 is Done. It
+corrects the Owner bootstrap guide and CLI hints, including a no-op hint. The agent reported 42
+passing bootstrap tests plus scripts ESLint, Prettier and diff checks; these were not independently
+rerun as a full test review during closeout. The deployment branch incorporates main, resolving its
+older guide paragraph in favor of the merged PR text; post-resolution Prettier and whitespace checks
+passed. No live deployment was performed.
+
+[Session](https://open-inspect-web-mdumas38-div61-dev.mason-587.workers.dev/session/8f22ec35f5ed016e38fc18fffc535e75):
+one completed session/message, model cost $0.025084656 excluding classifier/infrastructure. Task
+comment 19:56:41.802 UTC; session created 19:56:55.919; completion 20:01:19.322; full Linear reply
+20:01:20.370 (about 4m39s turnaround). No pending follow-up task.
