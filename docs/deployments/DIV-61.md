@@ -418,3 +418,82 @@ Observed scorecard:
 delivery, and task-mode prompt consistency. The duplicate cause (replayed delivery versus distinct
 Linear events) is not yet established. Keep DIV-66/67 in backlog until dispatch is understood.
 DIV-65's investigation is useful with corrections; the unattended delivery flow is not yet accepted.
+
+## DIV-68 reviewed deployment and live verification — 2026-09-15
+
+[PR #2](https://github.com/mdumas38/background-agents/pull/2) was independently reviewed. Review
+found that successful stops cleared only KV while leaving the new durable mapping. The fix adds a
+durable null tombstone, suppresses stale KV fallback, and preserves a replacement created during a
+stop. Five new cases passed; final validation was 262 Linear-bot tests (including real
+Miniflare/SQLite concurrency), typecheck, ESLint, Prettier, build and three mocked Terraform
+configuration tests. The reviewed head was `05c6b128637b3f5f9f0dcfad9119e855bca35c6f`; PR #2 merged
+at 16:14:50 UTC as `0dcc705df83cb8441b8c764f81134fccffde58e0`.
+
+The deployment branch now incorporates both merged PRs and preserves the existing OpenRouter
+configuration. Only `module.linear_bot_worker[0]` and its build prerequisite were targeted in the
+saved Terraform plans/applies. Other services were not redeployed; merging a source change does not
+by itself establish that the control-plane binary contains it. Each target apply reported the normal
+incomplete-plan warning, so this verification is scoped to Linear, not a claim of zero whole-stack
+drift.
+
+Staged rollout:
+
+1. Built shared and Linear before planning. Created SQLite-backed `LinearDispatch` with
+   `enable_linear_dispatch_binding=false`, migration `linear-dispatch-v1`; version
+   `d8ae5cb1-012d-48be-b851-226b8520f6a2`. Webhooks temporarily returned retryable 503 during this
+   phase.
+2. Enabled the binding with `linear_bot_task_mode="read-only"`; version
+   `2a70bb8a-bd4f-497b-97de-ab30321a3c31` was serving 100% at 16:17:40 UTC. No pilot sessions were
+   active before rollout.
+3. After the live checks below, restored `linear_bot_task_mode="implementation"`. Current version
+   `b19233fb-7731-4ce4-9065-50a9c7507998` serves 100% (16:24:47 UTC). The live settings API confirms
+   the `LINEAR_DISPATCH` binding, implementation mode and `openrouter/deepseek/deepseek-v4.1-flash`.
+   Keep `enable_linear_dispatch_binding=true` in private tfvars on subsequent applies; do not repeat
+   the class-creation phase.
+
+### Live smoke test: DIV-69
+
+[DIV-69](https://linear.app/divinedesign/issue/DIV-69) was created specifically for verification. An
+operator posted the read-only task comment, then the installed OpenInspect app used Linear's
+supported `agentSessionCreateOnComment` mutation. This generated a real native `created` webhook; no
+fabricated human identity or synthetic initial dispatch was needed. The separate follow-up was a
+real operator reply to that same comment thread and generated the native `prompted` event.
+
+- Linear agent session: `ff67220d-0225-4803-b7a4-966bbb007193`.
+- [Open-Inspect session](https://open-inspect-web-mdumas38-div61-dev.mason-587.workers.dev/session/cf92d03d02eb6a1db83b1b94c6796ca4):
+  `cf92d03d02eb6a1db83b1b94c6796ca4`, OpenCode / OpenRouter DeepSeek V4.1 Flash.
+- Initial webhook received 16:18:22.708; session created 16:18:27.022; first prompt event
+  16:20:16.819; initial completion 16:21:21.849. Model cost $0.007492158.
+- Follow-up prompt event 16:22:06.246; completion 16:22:22.530. Model cost $0.001332036.
+- Final D1 result: exactly **one completed session, two completed messages**, total model cost
+  **$0.008824194**. This excludes classifier and infrastructure charges.
+- Initial Linear reply: 2,976 characters; follow-up: 2,089. Both have `bodyTruncated=false`, contain
+  their final markers (`DIV68_INITIAL_OK`, `DIV68_FOLLOWUP_OK`), and include the full-session link.
+  The initial generated report exceeded the requested 1,200–2,000-character length, but the complete
+  findings were delivered. The live test did not exercise the deliberate 10,000-character cap; that
+  behavior has unit coverage.
+- Reconstructed, operator-signed creation replays used the actual organization/issue/session IDs,
+  first with the observed delivery ID, then a fresh delivery ID. Both returned HTTP 200 with
+  `{ok:true, skipped:true, reason:"duplicate"}`. These were logical-event replays, not claims of
+  byte-identical archived provider payloads. Repeating both after restoring normal mode gave the
+  same result; session/message counts and model cost stayed unchanged across the Worker replacement.
+- Independent inspection of all 22 session events (`hasMore=false`) found exactly two prompts, two
+  successful completions and 15 read/search/read-only shell tool calls. Both prompts contained the
+  trusted read-only directive. No mutating tools, credential reads, live-service calls, new
+  artifacts or new PRs were observed. A modified `package-lock.json` appeared in the final status;
+  no before-task baseline was recorded, so the agent's claim that it predated the task is unproven.
+  The evidence supports no observed task-caused edits, not proof of a pristine sandbox filesystem.
+
+DIV-68 and DIV-69 are complete. DIV-66/67 may now proceed sequentially in normal coding mode with
+human review between tasks. The original DIV-65 delivery sequence remains unknown; the verified
+contract is atomic handling of the same logical creation/activity, not deduplication of different
+Linear sessions merely because their prompt text is similar.
+
+To repeat verification, use a fresh issue/comment, temporarily select read-only mode, create a real
+agent session using the mention picker or the app-owned `agentSessionCreateOnComment` API, and
+inspect D1 plus session events and Linear replies. Replay the logical creation with the same and a
+new `Linear-Delivery` ID, then send a distinct thread follow-up. Verify counts, completion markers,
+links and tool history. Restore implementation mode afterward. Never put signing/OAuth secrets or
+raw credential-bearing request logs in tickets; the operational captures remain in ignored local
+files. See [ADR 0004](../adr/0004-linear-dispatch-coordination.md) for uncertain-dispatch behavior,
+stop limitations, migration and rollback constraints.
