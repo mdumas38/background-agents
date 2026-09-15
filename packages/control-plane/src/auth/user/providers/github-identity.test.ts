@@ -7,6 +7,10 @@ describe("GitHubProviderIdentityResolver", () => {
     userAgent: "Open Inspect Test",
   };
 
+  const sentinelAccessToken = "ghu-sentinel-access-token";
+  const sentinelPrivateEmail = "sentinel-private@example.com";
+  const sentinelResponseBody = "SENTINEL_GITHUB_PROVIDER_RESPONSE_BODY";
+
   it("rejects a non-canonical GitHub issuer", () => {
     expect(
       () =>
@@ -248,13 +252,16 @@ describe("GitHubProviderIdentityResolver", () => {
       if (String(input) === "https://api.github.com/user") {
         return Response.json({ id: 583_231, login: "octocat" });
       }
-      return new Response(null, { status: 403 });
+      return Response.json(
+        { message: `Forbidden ${sentinelPrivateEmail} ${sentinelResponseBody}` },
+        { status: 403 }
+      );
     });
     const resolver = new GitHubProviderIdentityResolver(config, { fetch });
 
     let thrown: unknown;
     try {
-      await resolver.resolveIdentity("ghu-secret-token");
+      await resolver.resolveIdentity(sentinelAccessToken);
     } catch (error) {
       thrown = error;
     }
@@ -265,8 +272,11 @@ describe("GitHubProviderIdentityResolver", () => {
     });
     const message = (thrown as Error).message;
     expect(message).toContain("Email addresses");
+    expect(message).toContain("Read-only");
     expect(message).toContain("Reauthorize");
-    expect(message).not.toContain("ghu-secret-token");
+    expect(message).not.toContain(sentinelAccessToken);
+    expect(message).not.toContain(sentinelPrivateEmail);
+    expect(message).not.toContain(sentinelResponseBody);
   });
 
   it("keeps the generic provider_unavailable failure for non-403 email lookup errors", async () => {
@@ -274,14 +284,28 @@ describe("GitHubProviderIdentityResolver", () => {
       if (String(input) === "https://api.github.com/user") {
         return Response.json({ id: 583_231, login: "octocat" });
       }
-      return new Response(null, { status: 500 });
+      return Response.json(
+        { message: `Server error ${sentinelPrivateEmail} ${sentinelResponseBody}` },
+        { status: 500 }
+      );
     });
     const resolver = new GitHubProviderIdentityResolver(config, { fetch });
 
-    await expect(resolver.resolveIdentity("ghu-access")).rejects.toMatchObject({
+    let thrown: unknown;
+    try {
+      await resolver.resolveIdentity(sentinelAccessToken);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toMatchObject({
       name: "OAuthProviderError",
       failure: "provider_unavailable",
       message: "GitHub email lookup was not successful",
     });
+    const message = (thrown as Error).message;
+    expect(message).not.toContain(sentinelAccessToken);
+    expect(message).not.toContain(sentinelPrivateEmail);
+    expect(message).not.toContain(sentinelResponseBody);
   });
 });
