@@ -325,3 +325,44 @@ decision. No PR merge or deployment of the generated change was performed.
 One setup problem was webhook routing: signed Linear POSTs initially hit `/oauth/callback` and
 returned 404. OAuth redirects belong at `/oauth/callback`; event deliveries belong at `/webhook`.
 The successful mention-to-session-to-PR run establishes that the event path now works.
+
+## Three-task follow-on pilot
+
+PR #1 was squash-merged on 2026-09-15 at 15:34:35 UTC as `acc918818ee0d20675fadf270be65f8c5c8c0e3f`,
+after user review and independent validation of its exact head
+`b456803695dc3dbe0c77908ba18f9ee38eaf8bd0`. An isolated archive passed all 10 focused Vitest tests,
+control-plane TypeScript checking, ESLint and Prettier. No review objections or CI checks were
+attached. Repository deployment secrets were absent and no deployment was invoked for this merge.
+The deployment branch has not yet incorporated this main commit; review/reconcile branches before a
+later deployment to avoid dropping the merged fix.
+
+Run these one at a time, with the configured OpenCode/OpenRouter DeepSeek V4.1 Flash default:
+
+| Issue                                                  | Task                                    | Deliverable                                   | Status at handoff                 |
+| ------------------------------------------------------ | --------------------------------------- | --------------------------------------------- | --------------------------------- |
+| [DIV-65](https://linear.app/divinedesign/issue/DIV-65) | Investigate Owner health-check mismatch | Source-backed findings, no file changes or PR | Todo; awaiting real agent mention |
+| [DIV-66](https://linear.app/divinedesign/issue/DIV-66) | Strengthen email-error privacy tests    | Test-only PR and validation                   | Backlog                           |
+| [DIV-67](https://linear.app/divinedesign/issue/DIV-67) | Clarify GitHub email permission setup   | Documentation-only PR or verified no-op       | Backlog                           |
+
+Use current `main` in `mdumas38/background-agents`. The task descriptions specify scope, acceptance
+criteria and validation. Mention OpenInspect Dev using Linear's actual mention picker. For DIV-65:
+"Investigate this issue as written. Return findings here; do not modify files or open a PR." Review
+each result before triggering the next task; do not merge the future PRs automatically.
+
+### Scorecard to fill after each run
+
+Record these in the issue and summarize here when reviewed. Leave unknown values unknown; app model
+costs do not include classifier or infrastructure charges.
+
+| Run             | Elapsed / startup           | Model cost | Correctness and evidence                              | Human intervention                               | Useful time saved | Verdict                 |
+| --------------- | --------------------------- | ---------- | ----------------------------------------------------- | ------------------------------------------------ | ----------------- | ----------------------- |
+| DIV-64 baseline | ~5m20s / ~2m to In Progress | ~$0.02264  | Scoped PR; 10 tests independently passed before merge | Account/webhook setup required; user reviewed PR | Not measured      | Successful initial flow |
+| DIV-65          | Pending                     | Pending    | Pending                                               | Pending                                          | Pending           | Pending                 |
+| DIV-66          | Pending                     | Pending    | Pending                                               | Pending                                          | Pending           | Pending                 |
+| DIV-67          | Pending                     | Pending    | Pending                                               | Pending                                          | Pending           | Pending                 |
+
+For each run also retain the session URL, model/harness, exact validation commands/results,
+PR/commit attribution, clarification requests, and reviewer correction minutes. Decide whether to
+expand repository access or design Operator handoff only after comparing these results. Small
+successful samples demonstrate usefulness for their task types; they do not establish unattended
+production reliability.
