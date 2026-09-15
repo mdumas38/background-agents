@@ -774,10 +774,22 @@ replaces the target's assignment, and returns the exact audit-bound postconditio
 transaction. A no-op writes nothing. A lost batch response can leave the outcome uncertain; the
 command does not automatically retry writes or claim success without the postcondition.
 
-6. Verify the bootstrap postcondition reports `status: executed`, `role_id: role_builtin_owner`, and
-   `audit_written: 1` (or an already-Owner no-op on a later dry run). Refresh the web app. The
-   public `/health` endpoint currently reports service health only; it does not report Owner
-   assignment. Use the bootstrap result and persisted role/audit records to verify ownership.
+6. Confirm the execution evidence in the command output. A successful `--execute` run prints the
+   final `postcondition` report from the same atomic batch, proving the mutation committed:
+
+   - `"status":"executed"`
+   - `"audit_written":1` for the exact `workspace.owner_bootstrapped` audit event
+   - `"role_id":"role_builtin_owner"` for the target `"user_id"`
+
+   A preflight `"status":"no-op"` means the target was already the current unsuspended Owner; no
+   assignment change or audit event is written, and no `postcondition` report is produced.
+
+   The `/health` endpoint is a dependency-free liveness check that returns only `status` and
+   `service`; it does not report Owner or database state. To confirm current state after the fact,
+   use authenticated workspace access: in the deployed web app, open **Settings → Workspace →
+   Workspace access** (`workspace.members.read`) and confirm the member's role is **Owner** with
+   status active (`role.key` `owner`, `suspendedAt` `null`), then open **Settings → Workspace →
+   Audit log** (`workspace.audit.read`) to review the `workspace.owner_bootstrapped` event.
 
 ---
 

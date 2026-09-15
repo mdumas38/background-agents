@@ -293,7 +293,12 @@ export async function run(
     throw new Error("Wrangler returned no valid Owner bootstrap preflight");
   }
   if (status === "refused") throw new Error("Owner bootstrap preflight was refused");
-  if (status === "no-op") return;
+  if (status === "no-op") {
+    console.error(
+      "Target is already the current unsuspended Owner; no assignment change or audit event was written."
+    );
+    return;
+  }
   if (!options.execute) {
     console.error("Dry run only. Re-run with --execute after reviewing the preflight result.");
     return;
@@ -315,7 +320,7 @@ export async function run(
     throw new Error("Owner bootstrap execution did not prove its exact audit and assignment");
   }
   console.error(
-    "Owner bootstrap command completed; verify /health reports ownerAssignment=present."
+    "Owner bootstrap executed; the postcondition proved status=executed, audit_written=1, and the expected Owner assignment."
   );
 }
 
