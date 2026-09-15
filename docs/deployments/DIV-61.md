@@ -354,12 +354,12 @@ each result before triggering the next task; do not merge the future PRs automat
 Record these in the issue and summarize here when reviewed. Leave unknown values unknown; app model
 costs do not include classifier or infrastructure charges.
 
-| Run             | Elapsed / startup                       | Model cost         | Correctness and evidence                              | Human intervention                                      | Useful time saved | Verdict                                |
-| --------------- | --------------------------------------- | ------------------ | ----------------------------------------------------- | ------------------------------------------------------- | ----------------- | -------------------------------------- |
-| DIV-64 baseline | ~5m20s / ~2m to In Progress             | ~$0.02264          | Scoped PR; 10 tests independently passed before merge | Account/webhook setup required; user reviewed PR        | Not measured      | Successful initial flow                |
-| DIV-65          | ~5m to primary result; duplicate ~5m25s | $0.038395 combined | Main diagnosis correct; reviewer corrections below    | Duplicate investigation and manual full report recovery | Not measured      | Useful findings; delivery needs repair |
-| DIV-66          | Pending                                 | Pending            | Pending                                               | Pending                                                 | Pending           | Pending                                |
-| DIV-67          | Pending                                 | Pending            | Pending                                               | Pending                                                 | Pending           | Pending                                |
+| Run             | Elapsed / startup                       | Model cost         | Correctness and evidence                               | Human intervention                                      | Useful time saved | Verdict                                |
+| --------------- | --------------------------------------- | ------------------ | ------------------------------------------------------ | ------------------------------------------------------- | ----------------- | -------------------------------------- |
+| DIV-64 baseline | ~5m20s / ~2m to In Progress             | ~$0.02264          | Scoped PR; 10 tests independently passed before merge  | Account/webhook setup required; user reviewed PR        | Not measured      | Successful initial flow                |
+| DIV-65          | ~5m to primary result; duplicate ~5m25s | $0.038395 combined | Main diagnosis correct; reviewer corrections below     | Duplicate investigation and manual full report recovery | Not measured      | Useful findings; delivery needs repair |
+| DIV-66          | ~9m54s / ~1m37s to prompt               | $0.04192           | Scoped test-only PR; independent review recorded below | No implementation clarification; review checks run      | Not measured      | PR #3 in review                        |
+| DIV-67          | Pending                                 | Pending            | Pending                                                | Pending                                                 | Pending           | Pending                                |
 
 For each run also retain the session URL, model/harness, exact validation commands/results,
 PR/commit attribution, clarification requests, and reviewer correction minutes. Decide whether to
@@ -497,3 +497,36 @@ links and tool history. Restore implementation mode afterward. Never put signing
 raw credential-bearing request logs in tickets; the operational captures remain in ignored local
 files. See [ADR 0004](../adr/0004-linear-dispatch-coordination.md) for uncertain-dispatch behavior,
 stop limitations, migration and rollback constraints.
+
+## DIV-66 / pilot #2 — completed run, PR awaiting review
+
+The operator launched [DIV-66](https://linear.app/divinedesign/issue/DIV-66) from this workspace
+using a real task comment and the installed app's `agentSessionCreateOnComment` API. The launch
+instruction restricted work to the existing GitHub identity test file and explicitly prohibited
+merging or deploying.
+
+- [PR #3](https://github.com/mdumas38/background-agents/pull/3), head
+  `6d96bf9e4c6e69600a05189e4c1ce69bbc9f12cb`, changes only
+  `packages/control-plane/src/auth/user/providers/github-identity.test.ts`.
+- It puts private-email and provider-body sentinels into fake 403/500 responses and checks that
+  those values and the supplied access token stay out of diagnostics. Error categories, the exact
+  generic error, and the useful 403 permission/reauthorization hint remain asserted. The non-403
+  negative assertions overlap its exact-message assertion but clarify the privacy intent; this is
+  not a blocker.
+- PR author is the GitHub App bot; commit author is OpenInspect `<open-inspect@noreply.github.com>`.
+  The PR is open; nothing was merged or deployed.
+- [Session](https://open-inspect-web-mdumas38-div61-dev.mason-587.workers.dev/session/657b5d4705fd4650f52c68e9184461be):
+  `657b5d4705fd4650f52c68e9184461be`, OpenCode / `openrouter/deepseek/deepseek-v4.1-flash`. Exactly
+  one session and one completed message were verified in D1. Model cost **$0.041921538**, excluding
+  classifier and infrastructure charges.
+- Task comment 16:32:03.229 UTC; session created 16:32:09.834; prompt event 16:33:40.109; completed
+  16:41:56.672; full PR reply delivered to Linear 16:41:57.702 (about 9m54s from instruction). No
+  clarification was requested. Human correction minutes/time saved were not measured.
+- The agent reported 10 focused tests, package lint, formatting and typechecking passed. The
+  reviewer inspected the exact PR head in an isolated archive and reran the focused test file (10
+  passed), ESLint and Prettier on the changed file, plus the full control-plane TypeScript check
+  (all four configurations passed). No GitHub CI checks were attached.
+
+The implementation and asynchronous delivery met the pilot scope. DIV-66 is In Review; review and
+approve PR #3 before merging or starting DIV-67. The generated change is test-only and does not
+itself alter production authentication behavior.
