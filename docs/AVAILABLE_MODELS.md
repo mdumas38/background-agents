@@ -101,3 +101,19 @@ DeepSeek models require `DEEPSEEK_API_KEY` as a global or repository secret.
 | ---------------------------- | ----------------- | ------------ | ----------------- | -------------- |
 | `deepseek/deepseek-v4-flash` | DeepSeek V4 Flash | Fast model   | Not supported     | N/A            |
 | `deepseek/deepseek-v4-pro`   | DeepSeek V4 Pro   | Most capable | Not supported     | N/A            |
+
+## OpenRouter
+
+On the OpenCode harness, `openrouter/deepseek/deepseek-v4.1-flash` selects **DeepSeek V4.1 Flash**
+through OpenRouter. Enable it in **Settings > Models**, then choose it in a session or under
+**Settings > Integrations > Linear**. The nested model ID is intentional: OpenRouter receives
+`deepseek/deepseek-v4.1-flash`.
+
+Provide `OPENROUTER_API_KEY` as a repository/global secret, or set the sensitive Terraform variable
+`openrouter_api_key` for Modal deployment-wide injection. Existing sandboxes need to be replaced to
+pick up changed Modal secrets. An OpenRouter key is not a `DEEPSEEK_API_KEY`.
+
+The catalog does not expose reasoning-effort controls for this model. OpenRouter routing and model
+prices can vary; check provider usage as well as the app's session cost. The Linear classifier still
+uses its separately configured Anthropic/OpenAI credential. Changing the coding default does not
+change the classifier or an already-running session.

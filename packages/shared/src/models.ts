@@ -260,6 +260,17 @@ export const MODEL_CATALOG = [
       { id: "deepseek/deepseek-v4-pro", name: "DeepSeek V4 Pro", description: "Most capable" },
     ],
   },
+  {
+    category: "OpenRouter",
+    enabledByDefault: false,
+    models: [
+      {
+        id: "openrouter/deepseek/deepseek-v4.1-flash",
+        name: "DeepSeek V4.1 Flash (OpenRouter)",
+        description: "Budget coding via OpenRouter",
+      },
+    ],
+  },
 ] as const satisfies readonly ModelCatalogGroup[];
 
 export type ValidModel = (typeof MODEL_CATALOG)[number]["models"][number]["id"];

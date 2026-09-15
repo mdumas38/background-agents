@@ -18,6 +18,7 @@ mock_provider "random" {}
 mock_provider "vercel" {}
 
 variables {
+  openrouter_api_key          = ""
   cloudflare_api_token        = "test-cloudflare-token"
   cloudflare_account_id       = "test-account"
   cloudflare_worker_subdomain = "test-account"
@@ -56,7 +57,7 @@ run "a_deployment_with_no_anthropic_key_plans" {
   # The key stays present with an empty value: --force then reconciles a
   # previously configured credential away instead of leaving it behind.
   assert {
-    condition     = local.modal_llm_secret_values == { ANTHROPIC_API_KEY = "" }
+    condition     = local.modal_llm_secret_values == { ANTHROPIC_API_KEY = "", OPENROUTER_API_KEY = "" }
     error_message = "An unset Anthropic key must be injected as an empty value, not a credential."
   }
 }
@@ -69,7 +70,7 @@ run "a_configured_key_is_injected_into_modal" {
   }
 
   assert {
-    condition     = local.modal_llm_secret_values == { ANTHROPIC_API_KEY = "test-anthropic-key" }
+    condition     = local.modal_llm_secret_values == { ANTHROPIC_API_KEY = "test-anthropic-key", OPENROUTER_API_KEY = "" }
     error_message = "A configured Anthropic key must be injected as a deployment-wide LLM key."
   }
 }
@@ -83,7 +84,7 @@ run "a_blank_key_is_not_treated_as_configured" {
   }
 
   assert {
-    condition     = local.modal_llm_secret_values == { ANTHROPIC_API_KEY = "" }
+    condition     = local.modal_llm_secret_values == { ANTHROPIC_API_KEY = "", OPENROUTER_API_KEY = "" }
     error_message = "A whitespace-only Anthropic key must normalize to empty, not reach a sandbox."
   }
 }
@@ -183,5 +184,16 @@ run "an_openai_classifier_needs_no_anthropic_key" {
       !contains(module.slack_bot_worker[0].secret_binding_names, "ANTHROPIC_API_KEY")
     )
     error_message = "An OpenAI classifier must not demand an Anthropic key."
+  }
+}
+
+run "modal_openrouter_key_is_preserved" {
+  command = plan
+  variables {
+    openrouter_api_key = "test-openrouter-key"
+  }
+  assert {
+    condition     = local.modal_llm_secret_values.OPENROUTER_API_KEY == "test-openrouter-key"
+    error_message = "Modal must receive the OpenRouter key."
   }
 }

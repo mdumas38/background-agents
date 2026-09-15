@@ -57,6 +57,7 @@ const ZEN_MODELS = [
   "opencode/glm-5.2",
 ] as const;
 
+const OPENROUTER_MODELS = ["openrouter/deepseek/deepseek-v4.1-flash"] as const;
 const DEEPSEEK_MODELS = ["deepseek/deepseek-v4-flash", "deepseek/deepseek-v4-pro"] as const;
 const ZAI_CODING_PLAN_MODELS = ["zai-coding-plan/glm-5.2", "zai-coding-plan/glm-5.3"] as const;
 
@@ -97,6 +98,13 @@ describe("model utilities", () => {
     );
   });
 
+  it("preserves the nested OpenRouter model ID for dispatch", () => {
+    expect(extractProviderAndModel(OPENROUTER_MODELS[0])).toEqual({
+      provider: "openrouter",
+      model: "deepseek/deepseek-v4.1-flash",
+    });
+  });
+
   it("keeps DEFAULT_MODEL valid", () => {
     expect(isValidModel(DEFAULT_MODEL)).toBe(true);
   });
@@ -109,6 +117,7 @@ describe("model utilities", () => {
       ...ZEN_MODELS,
       ...ZAI_CODING_PLAN_MODELS,
       ...DEEPSEEK_MODELS,
+      ...OPENROUTER_MODELS,
     ]) {
       expect(isValidModel(model)).toBe(true);
     }
@@ -405,6 +414,7 @@ describe("model utilities", () => {
       ...ZEN_MODELS,
       ...ZAI_CODING_PLAN_MODELS,
       ...DEEPSEEK_MODELS,
+      ...OPENROUTER_MODELS,
     ]) {
       expect(DEFAULT_ENABLED_MODELS).not.toContain(optInModel);
     }

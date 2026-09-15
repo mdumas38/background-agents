@@ -250,3 +250,47 @@ The concrete DIV-64 task is posted in Linear: improve the 403 GitHub email-looku
 permission/reauthorization suggestion and a focused regression test, preserving fail-closed
 authentication and existing handling for other failures. The first real agent mention, session,
 validation and PR remain pending; do not infer completion from OAuth success alone.
+
+### OpenRouter budget-model configuration (2026-09-15)
+
+The pilot now defaults Linear coding tasks to `openrouter/deepseek/deepseek-v4.1-flash`. The model
+is enabled in the global model preferences, while previously enabled models remain available. Linear
+global settings explicitly select it, disable user/label model overrides, and restrict scope to
+`mdumas38/background-agents`. Manual web sessions should select **DeepSeek V4.1 Flash (OpenRouter)**
+before submitting; existing sessions keep their selected model.
+
+The OpenRouter key is stored in the private `terraform.tfvars` as `openrouter_api_key`, and
+Terraform injects it into Modal's `llm-api-keys` secret as `OPENROUTER_API_KEY`. The original local
+input file is `docs/internal/openrouter-api-key` (0600, ignored); include the credential in the
+owner's separate encrypted backup. Never put the actual value in source control. Changing this
+secret affects newly created sandboxes. The Linear classifier remains on its separate Anthropic
+credential; changing the coding model does not eliminate classifier charges.
+
+Reproduction additions:
+
+1. Retain the catalog, Terraform variable and nested Linear model-ID validation changes in this
+   branch. Set the private key and `linear_bot_default_model` to the values described above.
+2. Build shared and affected worker bundles **before** planning
+   (`npm run build -w @open-inspect/shared`, then `npm run build -w @open-inspect/control-plane` and
+   `npm run build -w @open-inspect/linear-bot`). The Cloudflare provider hashes the bundle during
+   planning; rebuilding different content during apply can cause
+   `Provider produced inconsistent final plan`. Inspect partial state and generate a fresh plan
+   against the updated bundles before recovery.
+3. Apply the reviewed plan. Enable the model in Settings → Models. In Settings → Integrations →
+   Linear choose it as the default, disable user/label overrides, and restrict scope to the pilot.
+   These UI settings persist in D1 and are not restored by Terraform alone.
+4. Start a fresh small session and inspect the provider/model and result before larger work.
+
+Validation: shared model tests passed (16), workspace typechecks passed, Terraform tests passed (13
+bot-model cases and 9 optional-key cases), and changed TypeScript lint/format checks passed. A
+direct OpenRouter completion returned OK. A Modal sandbox using the deployed image and injected
+secret ran OpenCode's HTTP server, selected the full nested model ID, and completed a prompt without
+provider errors (one check recorded $0.001827852 in model usage, excluding infrastructure). A second
+check verified a completed bash tool call returning `OPENROUTER_OK` and a final answer; its reported
+model cost was $0.002349. The initial standalone CLI checks timed out at initialization; the
+successful verification used the HTTP-server interface used by the application. Temporary
+verification sandboxes were terminated.
+
+The first apply partially succeeded but stopped on a Worker bundle hash inconsistency. A reviewed
+recovery plan completed: 8 additions, 2 updates, 3 build-resource replacements; no persistent
+storage was removed. The web app, control-plane catalog and Linear default are deployed.

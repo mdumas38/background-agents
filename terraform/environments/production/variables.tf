@@ -332,7 +332,7 @@ variable "linear_bot_default_model" {
   # blank value must fail at plan time rather than deploy.
   validation {
     condition = can(regex(
-      "^(?:[^/[:space:]]+/[^/[:space:]]+|(?:claude-|gpt-)[^/[:space:]]+)$",
+      "^(?:openrouter/[^/[:space:]]+/[^/[:space:]]+|[^/[:space:]]+/[^/[:space:]]+|(?:claude-|gpt-)[^/[:space:]]+)$",
       var.linear_bot_default_model
     ))
     error_message = "linear_bot_default_model must be a canonical \"provider/model\" id such as \"anthropic/claude-haiku-4-5\", or a bare \"claude-\"/\"gpt-\" id, naming a model with no whitespace on each side of any slash."
@@ -779,4 +779,12 @@ variable "unsafe_allow_all_users" {
   description = "Bypass Terraform's access-control safety check and allow any authenticated user to sign in when all allowlists are empty. Set to true only for intentionally open deployments."
   type        = bool
   default     = false
+}
+
+variable "openrouter_api_key" {
+  description = "Optional OpenRouter API key injected into Modal session sandboxes. Repository secrets override it."
+  type        = string
+  sensitive   = true
+  default     = ""
+  nullable    = false
 }

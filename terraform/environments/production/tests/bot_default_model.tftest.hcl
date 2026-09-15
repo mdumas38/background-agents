@@ -226,3 +226,14 @@ run "rejects_more_than_one_slash" {
 
   expect_failures = [var.github_bot_default_model]
 }
+
+run "linear_openrouter_model_reaches_binding" {
+  command = plan
+  variables {
+    linear_bot_default_model = "openrouter/deepseek/deepseek-v4.1-flash"
+  }
+  assert {
+    condition     = module.linear_bot_worker[0].plain_text_bindings["DEFAULT_MODEL"] == "openrouter/deepseek/deepseek-v4.1-flash"
+    error_message = "Nested OpenRouter IDs must reach the Linear worker unchanged."
+  }
+}
