@@ -25,6 +25,10 @@ module "linear_bot_worker" {
   worker_subdomain = var.cloudflare_worker_subdomain
   script_path      = local.linear_bot_script_path
 
+  durable_objects                = [{ binding_name = "LINEAR_DISPATCH", class_name = "LinearDispatch" }]
+  enable_durable_object_bindings = var.enable_linear_dispatch_binding
+  migration_tag                  = "linear-dispatch-v1"
+
   kv_namespaces = [
     {
       binding_name = "LINEAR_KV"
@@ -47,6 +51,7 @@ module "linear_bot_worker" {
     { name = "DEPLOYMENT_NAME", value = var.deployment_name },
     { name = "APP_NAME", value = var.app_name },
     { name = "DEFAULT_MODEL", value = var.linear_bot_default_model },
+    { name = "LINEAR_TASK_MODE", value = var.linear_bot_task_mode },
     { name = "CLASSIFICATION_MODEL", value = var.classification_model },
     { name = "LINEAR_CLIENT_ID", value = var.linear_client_id },
     { name = "WORKER_URL", value = "https://open-inspect-linear-bot-${local.name_suffix}.${var.cloudflare_worker_subdomain}.workers.dev" },

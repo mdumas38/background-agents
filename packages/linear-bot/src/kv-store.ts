@@ -101,11 +101,17 @@ function getIssueSessionKey(issueId: string): string {
 }
 
 export async function lookupIssueSession(env: Env, issueId: string): Promise<IssueSession | null> {
+  if (env.SESSION_STORE) {
+    const data = await env.SESSION_STORE.get(getIssueSessionKey(issueId));
+    if (data !== undefined) return issueSessionSchema.parse(data);
+  }
   try {
     const data = await env.LINEAR_KV.get(getIssueSessionKey(issueId), "json");
     const result = issueSessionSchema.safeParse(data);
     if (result.success) return result.data;
+    if (env.SESSION_STORE && data !== null) throw new Error("Invalid legacy session mapping");
   } catch (e) {
+    if (env.SESSION_STORE) throw e;
     log.debug("kv.lookup_issue_session_failed", {
       issueId,
       error: e instanceof Error ? e.message : String(e),
@@ -119,17 +125,11 @@ export async function storeIssueSession(
   issueId: string,
   session: IssueSession
 ): Promise<void> {
+  if (env.SESSION_STORE) {
+    await env.SESSION_STORE.put(getIssueSessionKey(issueId), session);
+    return;
+  }
   await env.LINEAR_KV.put(getIssueSessionKey(issueId), JSON.stringify(session), {
     expirationTtl: 86400 * 7,
   });
-}
-
-/**
- * Check if an event has already been processed (deduplication).
- */
-export async function isDuplicateEvent(env: Env, eventKey: string): Promise<boolean> {
-  const existing = await env.LINEAR_KV.get(`event:${eventKey}`);
-  if (existing) return true;
-  await env.LINEAR_KV.put(`event:${eventKey}`, "1", { expirationTtl: 3600 });
-  return false;
 }

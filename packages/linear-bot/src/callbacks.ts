@@ -241,7 +241,10 @@ async function handleCompletionCallback(
 
     if (payload.success) {
       activityType = "response";
-      message = formatAgentResponse(agentResponse);
+      message = formatAgentResponse(
+        agentResponse,
+        `${env.WEB_APP_URL}/session/${encodeURIComponent(sessionId)}`
+      );
     } else {
       activityType = "error";
       if (agentResponse.textContent) {
@@ -250,6 +253,9 @@ async function handleCompletionCallback(
         message = `The agent was unable to complete this task.`;
       }
     }
+
+    if (!payload.success)
+      message += `\n\n[View full session and findings](${env.WEB_APP_URL}/session/${encodeURIComponent(sessionId)})`;
 
     // Emit via Agent API if we have session context
     if (context.agentSessionId && context.organizationId && context.appUserId) {

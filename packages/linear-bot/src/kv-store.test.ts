@@ -5,9 +5,8 @@ import {
   getUserPreferences,
   lookupIssueSession,
   storeIssueSession,
-  isDuplicateEvent,
 } from "./kv-store";
-import { createFakeKV, makeLinearBotEnv } from "./test-helpers";
+import { createDispatchStorage, createFakeKV, makeLinearBotEnv } from "./test-helpers";
 
 const errorKv = {
   async get() {
@@ -210,33 +209,30 @@ describe("storeIssueSession", () => {
   });
 });
 
-// ─── isDuplicateEvent ────────────────────────────────────────────────────────
-
-describe("isDuplicateEvent", () => {
-  it("returns false on first call for a key", async () => {
-    const { kv } = createFakeKV();
-    expect(await isDuplicateEvent(makeLinearBotEnv(kv), "evt-1")).toBe(false);
+it("uses the durable mapping even if KV still contains the old session", async () => {
+  const session = {
+    sessionId: "new",
+    issueId: "issue",
+    issueIdentifier: "DIV-68",
+    repoOwner: "org",
+    repoName: "repo",
+    model: "test",
+    createdAt: 1,
+  };
+  const { kv } = createFakeKV({
+    "issue:issue": JSON.stringify({ ...session, sessionId: "stale" }),
   });
+  const { storage } = createDispatchStorage();
+  const env = makeLinearBotEnv(kv, { SESSION_STORE: storage });
+  await storeIssueSession(env, "issue", session);
+  expect(await lookupIssueSession(env, "issue")).toEqual(session);
+  expect(kv.get).not.toHaveBeenCalled();
+  expect(kv.put).not.toHaveBeenCalled();
+});
 
-  it("returns true on second call for the same key", async () => {
-    const { kv } = createFakeKV();
-    const env = makeLinearBotEnv(kv);
-    await isDuplicateEvent(env, "evt-1");
-    expect(await isDuplicateEvent(env, "evt-1")).toBe(true);
-  });
-
-  it("returns false for a different key", async () => {
-    const { kv } = createFakeKV();
-    const env = makeLinearBotEnv(kv);
-    await isDuplicateEvent(env, "evt-1");
-    expect(await isDuplicateEvent(env, "evt-2")).toBe(false);
-  });
-
-  it("stores with 1-hour TTL at event:{key}", async () => {
-    const { kv, putCalls } = createFakeKV();
-    await isDuplicateEvent(makeLinearBotEnv(kv), "evt-1");
-    expect(putCalls).toHaveLength(1);
-    expect(putCalls[0].key).toBe("event:evt-1");
-    expect(putCalls[0].options).toEqual({ expirationTtl: 3600 });
-  });
+it("does not turn a legacy lookup failure into a new launch under coordination", async () => {
+  const { storage } = createDispatchStorage();
+  await expect(
+    lookupIssueSession(makeLinearBotEnv(errorKv, { SESSION_STORE: storage }), "issue")
+  ).rejects.toThrow();
 });
