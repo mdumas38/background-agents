@@ -77,7 +77,8 @@ opt-in adapter publishes explicitly marked Markdown proposals as unassigned Line
 supplies causal source references and retains the original report. Human dispatch remains separate.
 Reuse the existing dispatch coordinator for atomic publication claims; do not add a model loop or
 autonomous scheduler. Ambiguous external writes retain their identities for operator reconciliation.
-See the [publication contract](../deployments/work-graph-publication.md).
+See the [publication contract](../deployments/work-graph-publication.md) and
+[live pilot evidence](../deployments/work-graph-publication-pilot-2026-09-16.md).
 
 See the
 [source-backed integration review and pilot contract](../deployments/work-graph-integration.md).

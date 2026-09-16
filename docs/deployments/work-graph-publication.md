@@ -97,15 +97,14 @@ requires operator replay/reconciliation, not another worker execution.
 
 ## Release and validation
 
-No deployment or live publication is part of this implementation. Build shared types first, then
-deploy the control plane and Linear worker from compatible code before enabling publication: the
-strict shared callback-context schema must recognize the new field. Incorporate current main in the
-separate credential-bearing deployment workspace before any release. No new DO migration is needed,
-and the existing two-phase binding setup remains unchanged.
+The [2026-09-16 live pilot](work-graph-publication-pilot-2026-09-16.md) records the dev deployment,
+automatic issue publication and duplicate-callback check. Build shared types first, then deploy the
+control plane and Linear worker from compatible code before enabling publication: the strict shared
+callback-context schema must recognize the new field. Incorporate current main in the separate
+credential-bearing deployment workspace before any release. No new DO migration is needed, and the
+existing two-phase binding setup remains unchanged.
 
 Local regression coverage exercises parsing, long evidence transfer into a fresh prompt, opt-in
 propagation, authenticated callbacks, concurrent deduplication, restart/interruption, failed
-preparation, ambiguous mutation responses and storage failures. Linear calls are mocked; these
-checks do not establish live provider delivery. A future explicitly scoped live pilot should verify
-saved issue contents, assignment/delegation and independent human dispatch before claiming an
-automatic A-to-task-to-B result.
+preparation, ambiguous mutation responses and storage failures. Linear calls in these tests are
+mocked; live provider evidence and its limits are recorded separately in the pilot scorecard.
