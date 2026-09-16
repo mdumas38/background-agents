@@ -10,11 +10,14 @@ session Durable Object. Reinitialization cannot relax it. Linear `LINEAR_TASK_MO
 requests this profile for new sessions and requires it on subsequent prompts; an older unrestricted
 session rejects those prompts rather than silently changing its label.
 
-The first supported combination is one repository, Modal, OpenCode and an OpenRouter API key.
-Environment sessions, other harnesses/providers, repository images and snapshot restores are not
-supported. They fail closed. Repository secrets, MCP servers, managed skills, repository setup/start
-scripts, custom tools, desktop/editor/terminal services and exposed ports are excluded.
-Child-session admission is denied, independently of the model's native `task` tool being denied.
+The first supported combination is one repository, Modal, OpenCode and an OpenRouter API key. The
+catalog includes the pilot's `openrouter/deepseek/deepseek-v4.1-flash` route as an opt-in model.
+Creation rejects zero or multiple resolved repositories before persisting the session; both scalar
+repository fields and a one-entry repository list are accepted. Environment sessions, other
+harnesses/providers, repository images and snapshot restores are not supported. They fail closed.
+Repository secrets, MCP servers, managed skills, repository setup/start scripts, custom tools,
+desktop/editor/terminal services and exposed ports are excluded. Child-session admission is denied,
+independently of the model's native `task` tool being denied.
 
 The OpenCode process runs inside bubblewrap user/PID/mount/IPC/UTS namespaces with capabilities
 dropped. The checkout and installed binaries are read-only; the remaining root filesystem is

@@ -13,6 +13,8 @@ from sandbox_runtime.investigation import (
 )
 from sandbox_runtime.runtime_config import RuntimeConfig
 
+BOUNDARY_PROBE_TIMEOUT_SECONDS = 20
+
 
 def test_environment_excludes_supervisor_credentials_and_disables_unapproved_tools():
     env = investigation_environment(
@@ -98,7 +100,7 @@ print('repository writes denied; scratch allowed; credentials/extensions hidden'
         [*command, "/usr/bin/python3", "-c", probe, str(repo), str(outside)],
         capture_output=True,
         text=True,
-        timeout=20,
+        timeout=BOUNDARY_PROBE_TIMEOUT_SECONDS,
         env={"PATH": "/usr/bin:/bin"},
     )
     assert result.returncode == 0, result.stderr
