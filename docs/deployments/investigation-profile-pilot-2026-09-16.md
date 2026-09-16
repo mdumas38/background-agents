@@ -174,3 +174,32 @@ Both dispatched tasks completed successfully and transcripts were archived. Orca
 returned `release_unknown` / `tab_not_found`, including exact-request retries, but subsequent
 exact-worker observations confirmed both agent terminals exited and were no longer connected or
 writable. The workspaces and reports remain preserved; release receipt metadata is unresolved.
+
+## Reviewed correction released — 2026-09-16
+
+Mason approved merging PR #10, then continuing the release. Main merge
+`90205f3f9c4f4ad30babe67d5ab5bb550a7f9743` was incorporated into the preserved deployment checkout
+as `63ce1fe338e4609f58d273db9054320a4962e28b`. Shared built successfully. A reviewed, saved
+Modal-only Terraform plan changed only `module.modal_app[0].null_resource.modal_deploy`; apply ran
+with parallelism one through the standard eager image-build/verification and deployment entrypoint.
+No secrets, permissions, binding migrations, routing flags or other components changed.
+
+The freshly verified image is `im-O9SN8sTS5qzxtJiKOogXRH`, build hash
+`5557fd6b3caed679f74acc139d2e1879ea614c5fd282b7e3fb08dbf0e3ef5598`. Runtime generation remains
+`v66-investigation-profile`; the content hash and image ID distinguish the correction from the
+earlier artifact. Modal history confirms **v5**, SDK **1.5.5**, source `63ce1fe`, deployed at
+**18:20:00 UTC**. The source change invalidated the content-based image build automatically.
+
+Both documented service health endpoints returned HTTP 200. An initial request to an incorrect Modal
+URL returned 404; the module's actual `api-health` endpoint passed. Post-release inspection found
+zero active sessions and zero active sandboxes. Linear still serves
+`47281d69-3bce-4ed4-b338-3ce67a31b1b6`, publication false and implementation mode; control-plane
+still serves `0c4dbf1a-6392-4f61-b5fd-d2e714ae8b08`. Sparse host samples during apply observed over
+2 GiB available memory and zero sustained memory-pressure averages; these do not measure the peak
+between samples. Private evidence is retained under
+`/home/orca/.local/state/openinspect/div81-release-20260916/`.
+
+This establishes the corrected dev release, not successful live inference. No replacement smoke, A
+or B was launched. The original no-retry rule and three-execution limit require an explicit revised
+allowance before resuming the complete smoke → A → B sequence, with B still separately selected from
+its actual published task.
