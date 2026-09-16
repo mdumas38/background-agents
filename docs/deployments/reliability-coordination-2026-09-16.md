@@ -183,3 +183,74 @@ review and operator helpers are preserved under
 cancellation, archive or new model execution has occurred. After approval, recheck plan freshness
 and apply only the reviewed scope, then verify deployed identities and perform the authenticated
 exact-message settlement procedure with callback/provider evidence before any smoke.
+
+## Approved dev release and application settlement — 21:57–22:05 UTC
+
+Mason explicitly approved the saved plan including the unchanged Linear dependency redeploy.
+The original apply partially completed, deploying Linear `ae6be1c2-5601-4c23-9128-62052a3e1436`,
+but Cloudflare's provider rejected the control-plane version with `Provider produced inconsistent
+final plan`: the apply-time build changed the module content hash from the pre-build saved plan.
+The old control-plane deployment remained live. The coordinator inspected remote deployments and
+Terraform state before recovery; no blind retry or state surgery was used.
+
+A fresh plan against the finished bundle retained exactly the approved resource scope and configured
+bindings, with no migrations or additional resources. Recovery plan SHA-256:
+`781060db4854b99e273aa55517b7a3fd1809f26d662def4e53e9c2b70ac48bfb`.
+It applied successfully, using deployment source `3732396a4df9ac2bfe774bea79abc78d72ac967c` and
+control-plane bundle SHA-256 `a60cf119645ef4dbc0ca9d73f9fd2cb2fa061a76695e61b4de701b55781803a7`.
+For future releases, build changed bundles **before** saving the plan as well as retaining Terraform's
+normal build provisioner; review the resulting plan and verify deterministic bundle identity.
+
+Verified live deployments:
+
+- Control plane: `945be01e-ca13-4451-878c-80a18c37bbe9`, 21:59:50.519 UTC; health returned healthy.
+- Linear: `bb120340-c641-4ecf-8f3f-abf9a68f592e`, 21:59:42.481 UTC.
+- Publication remains false; routing remains implementation. No Modal release or image change.
+
+At **22:00:31.611 UTC**, the normal authenticated `cancel_prompt` operation settled exact message
+`11ba12219d8393c7a4448a3877c4314c` in session `4d503f4c1ef79561c455554a81da881b`.
+The preflight confirmed the sole unfinished prompt was pending/Linear with null start/completion,
+no processing and a failed sandbox. The response was correlated `prompt_cancelled`. The retained
+message is now failed with null start and a completion timestamp; one unsuccessful
+`execution_complete` event records `Prompt was cancelled`, with no runtime/model/tool events.
+A fresh authenticated snapshot showed session failed, sandbox stale, empty queue, processing false,
+and $0 recorded model cost. A bounded repeat cancellation returned `PROMPT_NOT_CANCELLABLE` and
+left the event count at one; no extra execution was triggered.
+
+Actual external delivery is independently observed: native Linear session
+`7794af2d-3476-470b-9a70-3c3262238155` became `error` at 22:00:32.581 UTC, with one error activity
+`5e17269e-55d2-4700-b5c1-f1798e847b50` created at 22:00:32.410 UTC. Its generic failure message
+links the exact OpenInspect session. It does not repeat the cancellation reason, and its native plan
+field remains null. The temporary supported Cloudflare tails connected and were deleted afterward;
+they captured request evidence but not the named callback completion log lines. Historical telemetry
+remains forbidden to the existing identity. This proves the failure activity was delivered, not an
+end-to-end exactly-once contract or complete callback telemetry.
+
+Three complete, bounded app-scoped Modal list reads after cancellation (22:01:03, 22:01:59 and
+22:02:48 UTC) returned no active sandboxes. The existing create function call remains TERMINATED
+with no children in the best-effort call graph. The SDK's public Sandbox.list excludes finished
+objects. Neither an empty active list nor a terminated function proves the original SandboxCreate
+allocation outcome. No sandbox ID has been identified; no provider termination was attempted.
+The generation remains fenced. **No archive or replacement smoke was launched.** The approved
+single-smoke scope is retained but its provider-reconciliation prerequisite is not satisfied.
+DIV-83 remains the concrete blocker; callback durability limitations keep DIV-84 acceptance open.
+
+### Provider reconciliation handoff, ready for owner review
+
+No external support message has been sent. An authorized provider owner can use these non-secret
+identifiers to request the missing historical outcome:
+
+- Workspace/environment: `mason-94865` / `div61-dev`; app `open-inspect`, `ap-qbOmsZyI5zLYCaqhL8d5zP`.
+- Create function call: `fc-01M2NQPK6AX6ZA4AGD5WX51MXM`; input
+  `in-01M2NQPK6E951SDPE6VYFDFCM8`; container `ta-01M2NQQT3B05YP9CDV8G5VZ8BR`.
+- Incident window: 2026-09-16 18:29–18:43 UTC. Handler cancellation/HTTP 499 at
+  18:33:40.573 UTC after 196126 ms. Separate lookup error reference: `QC2HBPC8`.
+- Needed answer: whether this input submitted an accepted SandboxCreate; its provider object ID
+  and confirmed terminal outcome if allocated, or evidence that no allocation remains possible.
+  Explain the cancellation source and identify any in-flight/finished allocation records. Do not
+  create a diagnostic sandbox or resend the original operation to answer this question.
+
+If an exact attributable orphan is identified, present its ID and supported termination/confirmation
+procedure for the authorized cleanup decision. If the provider establishes no outstanding allocation,
+finish the documented archive check, then proceed with the already scoped one-smoke preflight.
+A/B and broader provider protocol changes remain outside that one-smoke scope.
