@@ -73,6 +73,7 @@ function createService(row = session()) {
   };
   const broadcast = vi.fn();
   const preparation: ExecutionStopPreparation = {
+    pending: false,
     stopConfirmationDeadline: 16_000,
     failure: {
       event: {

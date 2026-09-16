@@ -160,6 +160,7 @@ function buildQueue() {
     getAutofixMessageId: vi.fn(() => null as string | null),
     getMessageStatus: vi.fn((_messageId: string): MessageStatus | null => "pending"),
     cancelPendingMessage: vi.fn(() => false),
+    getMessageCallbackContext: vi.fn<MessageRepository["getMessageCallbackContext"]>(() => null),
     getUnfinishedMessagePosition: vi.fn((): number | null => 1),
     listUnfinishedMessages: vi.fn((): MessageRow[] => []),
     listPromptQueue: vi.fn(() => []),
@@ -179,13 +180,15 @@ function buildQueue() {
     getParticipantById: vi.fn(() => createParticipant()),
     getSession: vi.fn(() => createSession()),
     updateParticipantCoalesce: vi.fn(),
-    recordMessageCompletion: vi.fn((event: { messageId: string }, completedAt: number) => ({
-      messageId: event.messageId,
-      messageCreatedAt: 1000,
-      messageStartedAt: 1100,
-      completedAt,
-      status: "failed" as const,
-    })),
+    recordMessageCompletion: vi.fn<MessageRepository["recordMessageCompletion"]>(
+      (event, completedAt) => ({
+        messageId: event.messageId,
+        messageCreatedAt: 1000,
+        messageStartedAt: 1100,
+        completedAt,
+        status: "failed" as const,
+      })
+    ),
     markMessageAwaitingStopConfirmation: vi.fn((id: string, deadline: number) => {
       awaitingStop = { id, deadline };
     }),
@@ -2119,5 +2122,117 @@ describe("SessionMessageQueue", () => {
 
       expect(h.repository.updateParticipantCoalesce).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("pending integration cancellation (DIV-84)", () => {
+  function integrationQueue() {
+    const h = buildQueue();
+    const message = createMessage({ source: "linear", callback_context: '{"issueId":"issue-1"}' });
+    h.repository.getMessageCallbackContext.mockReturnValue(message);
+    h.repository.getNextPendingMessage.mockImplementation(() =>
+      message.status === "pending" ? message : null
+    );
+    h.repository.getMessageStatus.mockImplementation(() => message.status);
+    h.repository.getPendingOrProcessingCount.mockImplementation(() =>
+      message.status === "pending" || message.status === "processing" ? 1 : 0
+    );
+    h.repository.recordMessageCompletion.mockImplementation((event, completedAt) => {
+      if (message.status !== "pending") return null;
+      message.status = "failed";
+      message.completed_at = completedAt;
+      return {
+        messageId: event.messageId,
+        messageCreatedAt: message.created_at,
+        messageStartedAt: null,
+        completedAt,
+        status: "failed",
+      };
+    });
+    return { ...h, message };
+  }
+
+  it("settles a pending Linear stop once, without starting queued work on retry", async () => {
+    const h = integrationQueue();
+    await h.executionStop.stop();
+    await h.executionStop.stop();
+    await h.backgroundTasks.settle();
+    expect(h.message.status).toBe("failed");
+    expect(h.message.callback_context).toBe('{"issueId":"issue-1"}');
+    expect(h.callbackService.notifyComplete).toHaveBeenCalledExactlyOnceWith(
+      "msg-1",
+      false,
+      "Execution was stopped"
+    );
+    expect(h.sandboxLifecycle.terminateUnresponsiveSandbox).toHaveBeenCalledWith(
+      "pending_prompt_cancelled"
+    );
+    expect(h.sandboxLifecycle.spawnSandbox).not.toHaveBeenCalled();
+    expect(h.repository.startMessageProcessing).not.toHaveBeenCalled();
+  });
+
+  it("preserves integration evidence and emits one failure callback for repeated targeted cancellation", async () => {
+    const h = integrationQueue();
+    const request = { messageId: "msg-1", clientRequestId: "cancel-1" };
+    await h.queue.cancelQueuedPrompt({} as WebSocket, request);
+    await h.queue.cancelQueuedPrompt({} as WebSocket, request);
+    await h.backgroundTasks.settle();
+    expect(h.repository.cancelPendingMessage).not.toHaveBeenCalled();
+    expect(h.callbackService.notifyComplete).toHaveBeenCalledExactlyOnceWith(
+      "msg-1",
+      false,
+      "Prompt was cancelled"
+    );
+    expect(h.wsManager.send).toHaveBeenCalledWith(expect.anything(), {
+      type: "prompt_cancelled",
+      ...request,
+    });
+    expect(h.sandboxLifecycle.terminateUnresponsiveSandbox).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not stop the running sandbox when cancelling a different queued integration prompt", async () => {
+    const h = integrationQueue();
+    h.repository.getPendingOrProcessingCount.mockReturnValue(1);
+    await h.queue.cancelQueuedPrompt({} as WebSocket, {
+      messageId: "msg-1",
+      clientRequestId: "cancel-1",
+    });
+    expect(h.message.status).toBe("failed");
+    expect(h.sandboxLifecycle.terminateUnresponsiveSandbox).not.toHaveBeenCalled();
+    expect(h.wsManager.send.mock.calls.flatMap(([, message]) => message.type)).not.toContain(
+      "stop"
+    );
+  });
+
+  it("rejects targeted cancellation if dispatch already claimed the message", async () => {
+    const h = integrationQueue();
+    h.message.status = "processing";
+    await h.queue.cancelQueuedPrompt({} as WebSocket, {
+      messageId: "msg-1",
+      clientRequestId: "cancel-1",
+    });
+    expect(h.message.status).toBe("processing");
+    expect(h.callbackService.notifyComplete).not.toHaveBeenCalled();
+    expect(h.sandboxLifecycle.terminateUnresponsiveSandbox).not.toHaveBeenCalled();
+    expect(h.wsManager.send).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ code: "PROMPT_NOT_CANCELLABLE" })
+    );
+  });
+
+  it("cancellation wins over provider auth lookup and prevents spawn or dispatch", async () => {
+    const h = integrationQueue();
+    h.getProviderAuthenticationError.mockImplementation(async () => {
+      await h.queue.cancelQueuedPrompt({} as WebSocket, {
+        messageId: "msg-1",
+        clientRequestId: "cancel-1",
+      });
+      return null;
+    });
+    await h.queue.processMessageQueue();
+    await h.backgroundTasks.settle();
+    expect(h.sandboxLifecycle.spawnSandbox).not.toHaveBeenCalled();
+    expect(h.repository.startMessageProcessing).not.toHaveBeenCalled();
+    expect(h.callbackService.notifyComplete).toHaveBeenCalledTimes(1);
   });
 });
