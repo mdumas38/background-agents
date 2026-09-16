@@ -539,11 +539,11 @@ describe("SandboxSettingsPage — tunnel ports editor", () => {
     const { fetchMock } = renderWithSWR(globalSettings([]));
 
     await user.clear(screen.getByLabelText("Max concurrent child sessions"));
-    await user.type(screen.getByLabelText("Max concurrent child sessions"), "0");
+    await user.type(screen.getByLabelText("Max concurrent child sessions"), "-1");
     await user.click(screen.getByText("Save Settings"));
 
     expect(
-      screen.getByText("Child session limits must be positive whole numbers.")
+      screen.getByText("Child session limits must be non-negative whole numbers.")
     ).toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalledWith(
       SETTINGS_KEY,

@@ -1,5 +1,7 @@
 import type { AgentSessionWebhook, Env } from "./types";
 import { handleAgentSessionEvent } from "./webhook-handler";
+import { linearCompletionCallbackSchema } from "@open-inspect/shared/types/session-api";
+import { publishFollowUps } from "./follow-ups/publication";
 
 /** Logical identity survives a new delivery ID for the same creation/activity. */
 export function dispatchKey(webhook: AgentSessionWebhook, deliveryId: string): string {
@@ -16,6 +18,16 @@ export class LinearDispatch {
   ) {}
 
   async fetch(request: Request): Promise<Response> {
+    if (new URL(request.url).pathname === "/publish-follow-ups") {
+      // This DO has no public route. The callback router verifies the CP signature first.
+      const body = (await request.json()) as { payload: unknown; report: unknown; traceId: string };
+      const parsed = linearCompletionCallbackSchema.safeParse(body.payload);
+      if (!parsed.success || typeof body.report !== "string")
+        return Response.json({ error: "Invalid publication request" }, { status: 400 });
+      return Response.json(
+        await publishFollowUps(parsed.data, body.report, this.env, this.state.storage, body.traceId)
+      );
+    }
     const { webhook, deliveryId, traceId } = (await request.json()) as {
       webhook: AgentSessionWebhook;
       deliveryId: string;

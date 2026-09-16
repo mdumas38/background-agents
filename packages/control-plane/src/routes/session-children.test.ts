@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SessionIndexStore } from "../db/session-index";
 import { resolveSandboxSettings } from "../session/integration-settings-resolution";
 import type { SessionRuntimeClient } from "../session/runtime-client";
@@ -50,6 +50,34 @@ function routeContext(
 }
 
 describe("handlePromptChild", () => {
+  beforeEach(() => {
+    vi.mocked(resolveSandboxSettings).mockResolvedValue({});
+  });
+
+  it.each(["active", "completed", "failed"])(
+    "refuses prompts to a %s child when child sessions are disabled",
+    async (status) => {
+      vi.spyOn(SessionIndexStore.prototype, "get")
+        .mockResolvedValueOnce({ id: "child", parentSessionId: "parent", status } as never)
+        .mockResolvedValueOnce({ id: "parent", environmentId: "fixture-env" } as never);
+      vi.mocked(resolveSandboxSettings).mockResolvedValue({ maxTotalChildSessions: 0 });
+      const reserve = vi.spyOn(SessionIndexStore.prototype, "acquireChildAdmissionLease");
+      const fetch = vi.fn<SessionRuntimeClient["fetch"]>();
+      const response = await handlePromptChild(
+        new Request("https://test.local/sessions/parent/children/child/prompt", {
+          method: "POST",
+          body: JSON.stringify({ content: "Continue" }),
+        }),
+        {} as Env,
+        { id: "parent", childId: "child" },
+        routeContext(fetch)
+      );
+      expect(response.status).toBe(403);
+      expect(fetch).not.toHaveBeenCalled();
+      expect(reserve).not.toHaveBeenCalled();
+    }
+  );
+
   afterEach(() => {
     vi.restoreAllMocks();
     vi.mocked(resolveSandboxSettings).mockReset();
@@ -124,7 +152,7 @@ describe("handlePromptChild", () => {
     );
 
     expect(response).toBe(childResponse);
-    expect(resolveSandboxSettings).not.toHaveBeenCalled();
+    expect(resolveSandboxSettings).toHaveBeenCalledOnce();
     expect(reserve).not.toHaveBeenCalled();
   });
 

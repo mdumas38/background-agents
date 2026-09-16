@@ -89,6 +89,10 @@ export async function handleSpawnChild(
   const maxTotalChildren =
     resolvedChildSandboxSettings.maxTotalChildSessions ?? DEFAULT_MAX_TOTAL_CHILD_SESSIONS;
 
+  if (maxTotalChildren === 0 || maxConcurrentChildren === 0) {
+    return error("Child sessions are disabled for this environment", 403);
+  }
+
   const parentDepth = await sessionStore.getSpawnDepth(parentId);
   if (parentDepth >= MAX_SPAWN_DEPTH) {
     return error(`Maximum spawn depth (${MAX_SPAWN_DEPTH}) exceeded`, 403);

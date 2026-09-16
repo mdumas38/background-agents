@@ -39,6 +39,8 @@ type Field<K extends keyof SandboxSettings> = {
   clearValue?: SandboxSettings[K];
 };
 
+const nonNegativeInteger = (value: string) =>
+  /^\d+$/.test(value) && Number.isSafeInteger(Number(value));
 const positiveInteger = (value: string) => /^\d+$/.test(value) && Number(value) >= 1;
 const validPort = (value: string) => positiveInteger(value) && Number(value) <= 65535;
 
@@ -102,16 +104,16 @@ const fields: FieldRegistry = {
   maxConcurrentChildSessions: {
     draftKey: "maxConcurrentChildSessions",
     ...numberField(
-      positiveInteger,
-      "Child session limits must be positive whole numbers.",
+      nonNegativeInteger,
+      "Child session limits must be non-negative whole numbers.",
       DEFAULT_MAX_CONCURRENT_CHILD_SESSIONS
     ),
   },
   maxTotalChildSessions: {
     draftKey: "maxTotalChildSessions",
     ...numberField(
-      positiveInteger,
-      "Child session limits must be positive whole numbers.",
+      nonNegativeInteger,
+      "Child session limits must be non-negative whole numbers.",
       DEFAULT_MAX_TOTAL_CHILD_SESSIONS
     ),
   },

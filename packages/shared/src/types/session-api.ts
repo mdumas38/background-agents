@@ -65,6 +65,8 @@ const linearCallbackContextBaseSchema = z.strictObject({
   model: nonEmptyStringSchema,
   agentSessionId: nonEmptyStringSchema.optional(),
   emitToolProgressActivities: z.boolean().optional(),
+  /** Trusted launch-time opt-in; publication never authorizes another execution. */
+  publishFollowUps: z.boolean().optional(),
 });
 
 export const linearCallbackContextSchema = z.union([

@@ -22,6 +22,7 @@ import { makePlan } from "./plan";
 import { createLogger } from "./logger";
 import { createStartCallbackRouter } from "./callbacks/start-callback";
 import { rejectInvalidCallback } from "./callbacks/reject-invalid-callback";
+import { formatPublicationResult, requestFollowUpPublication } from "./follow-ups/publication";
 
 const log = createLogger("callback");
 
@@ -256,6 +257,23 @@ async function handleCompletionCallback(
 
     if (!payload.success)
       message += `\n\n[View full session and findings](${env.WEB_APP_URL}/session/${encodeURIComponent(sessionId)})`;
+
+    const publication = await requestFollowUpPublication(
+      payload,
+      agentResponse.textContent,
+      env,
+      traceId ?? crypto.randomUUID()
+    );
+    message += formatPublicationResult(publication);
+    if (publication.status !== "skipped")
+      log.info("callback.follow_up_publication", {
+        trace_id: traceId,
+        session_id: sessionId,
+        message_id: payload.messageId,
+        issue_id: context.issueId,
+        outcome: publication.status,
+        issue_count: publication.issues.length,
+      });
 
     // Emit via Agent API if we have session context
     if (context.agentSessionId && context.organizationId && context.appUserId) {

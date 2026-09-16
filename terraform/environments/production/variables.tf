@@ -804,3 +804,9 @@ variable "linear_bot_task_mode" {
     error_message = "linear_bot_task_mode must be implementation or read-only."
   }
 }
+
+variable "linear_follow_up_publication" {
+  description = "Publish marked worker follow-ups as unassigned Linear backlog issues; does not dispatch workers. Requires the Linear dispatch binding."
+  type        = bool
+  default     = false
+}

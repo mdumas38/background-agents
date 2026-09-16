@@ -126,6 +126,25 @@ describe("handleSpawnChild prompt enqueue handling", () => {
     integrationSettingsMocks.resolveSandboxSettings.mockResolvedValue({});
   });
 
+  it.each(["maxTotalChildSessions", "maxConcurrentChildSessions"])(
+    "rejects direct spawn when %s is zero before any child admission or creation",
+    async (setting) => {
+      const store = makeStore();
+      vi.mocked(SessionIndexStore).mockImplementation(function () {
+        return store as never;
+      });
+      integrationSettingsMocks.resolveSandboxSettings.mockResolvedValue({ [setting]: 0 });
+      const { env } = makeSuccessfulEnv(spawnContext);
+      const response = await makeRequest(env);
+      expect(response.status).toBe(403);
+      expect(await response.json()).toEqual({
+        error: "Child sessions are disabled for this environment",
+      });
+      expect(store.acquireChildAdmissionLease).not.toHaveBeenCalled();
+      expect(store.create).not.toHaveBeenCalled();
+    }
+  );
+
   it("copies the exact parent provider auth snapshot with immediate inheritance", async () => {
     const store = makeStore();
     vi.mocked(SessionIndexStore).mockImplementation(function () {
