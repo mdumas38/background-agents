@@ -254,3 +254,41 @@ If an exact attributable orphan is identified, present its ID and supported term
 procedure for the authorized cleanup decision. If the provider establishes no outstanding allocation,
 finish the documented archive check, then proceed with the already scoped one-smoke preflight.
 A/B and broader provider protocol changes remain outside that one-smoke scope.
+
+## Operator resumption and replacement smoke — 22:53–23:01 UTC
+
+Mason explicitly confirmed no Modal work remained and directed continuation. The coordinator
+accepted that operational decision without asserting a historical sandbox correlation. Normal
+authenticated archive succeeded for the already-canceled old DIV-82 session; history was retained.
+A bounded non-creating request to api_create_sandbox returned the expected 400 missing-session-id
+validation before allocation. After a reviewed flag-only Linear plan, exactly one fresh native
+Linear dispatch was created on DIV-82.
+
+The new session `3bcf47771f89e40f050bf5ee75703ae8` started the approved model and delivered a report,
+but failed all eight source-tool operations. This is not a successful smoke. Recorded model spend
+was $0.006588198; processing lasted 23.210 seconds. Exact provider sandbox
+`sb-mwuMuWK4dGXUavW8uzqt4L` was terminated through the SDK and confirmed exit 137. Publication
+remains false and routing was restored to implementation, Linear version
+`db2bbb66-60a6-4128-b3e4-4d3e8d744287`; no Modal release occurred. No A/B or automatic retry ran.
+
+The updated [closeout scorecard](reliability-testing-closeout-2026-09-16.md) distinguishes actual
+namespace isolation passes, failed allowed tools, incomplete pre/post integrity, and the operator
+excluded-tool probe's invalid-working-directory error. Private evidence is under
+`/home/orca/.local/state/openinspect/div77-smoke3-20260916/`.
+
+DIV-85 is the new linked source-tool repair. Run `run_b1bec0e36d51`, task `task_735ece24373c`,
+dispatch `ctx_c23079f06384` created a fresh child workspace from explicit `origin/main` c1f24939,
+not the coordinator branch. Full setup/install was skipped to protect host memory. Only offline
+source fixes, focused diagnostics/tests and a draft PR are authorized to this worker.
+
+The host had roughly 1.43–1.49 GiB available, below the provisional 1.5 GiB heavy-job threshold.
+Heavy installs/builds/suites remained gated. A serial lightweight pinned-tool diagnostic was
+approved with measured process-tree RSS monitoring and a 1 GiB available-memory stop. The first
+256 MiB envelope stopped its own probe safely at 262772 KiB with 1337104 KiB still available;
+a 384 MiB diagnostic envelope was then approved. No service limits or unrelated processes changed.
+An exact release retry for the settled DIV-83 dispatch returned retained/identity_unproven with
+transcript captured; its separately restored terminal was not force-closed.
+
+DIV-81 live inference now passes. Its blocking edge and DIV-83's operator-waived blocking edge were
+replaced with related edges, preserving both review tracks. DIV-85 remains the immediate blocker;
+DIV-84's stronger callback-durability acceptance remains open.
