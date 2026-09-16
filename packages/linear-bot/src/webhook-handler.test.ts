@@ -222,6 +222,63 @@ describe("handleAgentSessionEvent environment targets", () => {
     });
   }
 
+  it.each([true, false])(
+    "threads publication opt-in through initial instructions and callback context (%s)",
+    async (enabled) => {
+      const { kv } = createFakeKV({
+        "oauth:client-credentials:org-1": validToken(),
+        "config:project-repos": JSON.stringify({ "project-1": { environmentId: "env_abc" } }),
+      });
+      const env = makeLinearBotEnv(kv, { LINEAR_FOLLOW_UP_PUBLICATION: String(enabled) });
+      const fetchMock = stubControlPlane(env);
+      await handleAgentSessionEvent(makeWebhook(), env, "publication-opt-in");
+      const body = promptBody(fetchMock)!;
+      expect(String(body.content).includes("## Durable follow-up proposals")).toBe(enabled);
+      expect((body.callbackContext as Record<string, unknown>).publishFollowUps).toBe(
+        enabled ? true : undefined
+      );
+    }
+  );
+
+  it.each([true, false])(
+    "hydrates complete published evidence despite shortened webhook context (%s)",
+    async (hasPromptContext) => {
+      const { kv } = createFakeKV({
+        "oauth:client-credentials:org-1": validToken(),
+        "config:project-repos": JSON.stringify({ "project-1": { environmentId: "env_abc" } }),
+      });
+      const env = makeLinearBotEnv(kv);
+      const fetchMock = stubControlPlane(env);
+      const webhook = makeWebhook();
+      const fullDescription =
+        "## Proposed work — awaiting human dispatch\n" +
+        "source evidence ".repeat(100) +
+        "FINAL_EVIDENCE";
+      if (hasPromptContext) webhook.promptContext = "Shortened context";
+      vi.stubGlobal(
+        "fetch",
+        createLinearFetchMock({
+          graphql: ({ operationName }) =>
+            Response.json({
+              data:
+                operationName === "IssueDetails"
+                  ? {
+                      issue: {
+                        ...webhook.agentSession.issue,
+                        description: fullDescription,
+                        labels: { nodes: [] },
+                        comments: { nodes: [] },
+                      },
+                    }
+                  : {},
+            }),
+        })
+      );
+      await handleAgentSessionEvent(webhook, env, "full-handoff");
+      expect(promptBody(fetchMock)?.content).toContain(fullDescription);
+    }
+  );
+
   function makeWebhook(labels: Array<{ id: string; name: string }> = []): AgentSessionWebhook {
     return {
       type: "AgentSessionEvent",

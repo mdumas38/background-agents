@@ -70,5 +70,14 @@ Automate proposal publication after a useful A-to-B handoff. Add structured find
 storage only when actual review/replay needs exceed existing issue/session/artifact references. Add
 a reconciler after the manual experiment works.
 
+## Automatic publication increment — 2026-09-16
+
+Following the useful manual A-to-B handoff, the user selected automatic durable task publication. An
+opt-in adapter publishes explicitly marked Markdown proposals as unassigned Linear backlog issues,
+supplies causal source references and retains the original report. Human dispatch remains separate.
+Reuse the existing dispatch coordinator for atomic publication claims; do not add a model loop or
+autonomous scheduler. Ambiguous external writes retain their identities for operator reconciliation.
+See the [publication contract](../deployments/work-graph-publication.md).
+
 See the
 [source-backed integration review and pilot contract](../deployments/work-graph-integration.md).

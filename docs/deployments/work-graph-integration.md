@@ -8,8 +8,10 @@ scorecards and private evidence directories.
 
 The [two-worker harmless coordination pilot](work-graph-coordination-pilot-2026-09-15.md) succeeded
 using existing sessions and Linear reports. A's durable report reached independently dispatched B
-verbatim; B confirmed and extended its investigation. Both environments are terminated. Automatic
-publication and adversarial isolation remain deferred.
+verbatim; B confirmed and extended its investigation. Both environments are terminated. The pilot
+used manual publication; adversarial isolation remains deferred. The subsequent opt-in
+[automatic publication increment](work-graph-publication.md) is implemented locally and has not been
+deployed or verified with a live publication pilot.
 
 ## Reuse map
 

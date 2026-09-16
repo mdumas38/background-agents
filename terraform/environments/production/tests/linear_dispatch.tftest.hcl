@@ -78,3 +78,23 @@ run "invalid_task_mode" {
   variables { linear_bot_task_mode = "anything" }
   expect_failures = [var.linear_bot_task_mode]
 }
+
+run "publication_defaults_off" {
+  command = plan
+  assert {
+    condition     = module.linear_bot_worker[0].plain_text_bindings["LINEAR_FOLLOW_UP_PUBLICATION"] == "false"
+    error_message = "Follow-up publication must be opt-in."
+  }
+}
+
+run "publication_enabled" {
+  command = plan
+  variables {
+    linear_follow_up_publication   = true
+    enable_linear_dispatch_binding = true
+  }
+  assert {
+    condition     = module.linear_bot_worker[0].plain_text_bindings["LINEAR_FOLLOW_UP_PUBLICATION"] == "true"
+    error_message = "Publication opt-in must reach the Linear worker."
+  }
+}

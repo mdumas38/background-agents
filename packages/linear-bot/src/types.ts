@@ -15,6 +15,7 @@ export interface Env {
   /** Internal coordinator storage; never a public request parameter. */
   SESSION_STORE?: DurableObjectStorage;
   LINEAR_TASK_MODE?: "read-only" | "implementation";
+  LINEAR_FOLLOW_UP_PUBLICATION?: string;
 
   // Service binding to control plane
   CONTROL_PLANE: ControlPlaneFetcher;

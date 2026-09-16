@@ -52,6 +52,7 @@ module "linear_bot_worker" {
     { name = "APP_NAME", value = var.app_name },
     { name = "DEFAULT_MODEL", value = var.linear_bot_default_model },
     { name = "LINEAR_TASK_MODE", value = var.linear_bot_task_mode },
+    { name = "LINEAR_FOLLOW_UP_PUBLICATION", value = tostring(var.linear_follow_up_publication) },
     { name = "CLASSIFICATION_MODEL", value = var.classification_model },
     { name = "LINEAR_CLIENT_ID", value = var.linear_client_id },
     { name = "WORKER_URL", value = "https://open-inspect-linear-bot-${local.name_suffix}.${var.cloudflare_worker_subdomain}.workers.dev" },
