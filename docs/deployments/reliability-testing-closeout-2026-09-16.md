@@ -53,10 +53,12 @@ Wrong-profile rejection evidence from the earlier attempt is retained; it was no
 
 ## Prioritized remaining path
 
-1. **DIV-85: repair allowed source access.** One supervised Orca worker uses a fresh explicit
-   `origin/main` base, with full install skipped to avoid host load. Reproduce with pinned OpenCode
-   offline, fix minimally, cover allowed read/glob/grep and denied operations/paths, and prepare a
-   draft PR. Review source changes and tests before any merge or release.
+1. **DIV-85: review the source-tool repair.** The supervised repair corrects relative read
+   permissions, bakes ripgrep into the image and rejects unsafe source symlinks before launch.
+   Forty focused investigation cases, 17 image-verifier checks and 27 image-bundle tests passed
+   in completed serial runs. The
+   unchanged model-catalog regression was not rerun successfully due the diagnostic memory cap;
+   broader builds and live release remain unrun. Review [draft PR #13](https://github.com/mdumas38/background-agents/pull/13) before merge or release.
 2. **Release the reviewed fix to dev.** Preserve private deployment configuration. Rebuild and verify
    the Modal image through standard entrypoints, inspect the exact release scope, then deploy only
    after the concrete human release decision. Keep publication off. No verifier bypass or unrestricted

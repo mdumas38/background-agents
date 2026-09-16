@@ -292,3 +292,47 @@ transcript captured; its separately restored terminal was not force-closed.
 DIV-81 live inference now passes. Its blocking edge and DIV-83's operator-waived blocking edge were
 replaced with related edges, preserving both review tracks. DIV-85 remains the immediate blocker;
 DIV-84's stronger callback-durability acceptance remains open.
+
+The worker reproduced both original failures offline with the exact pinned harness. Enabling
+relative reads alone also reproduced an outside-checkout symlink read, so the proposed repair must
+reject unsafe source symlinks before launch. A search subprocess briefly double-counted shared fork
+pages in aggregate RSS (515756 KiB while 1350428 KiB remained available); the diagnostic monitor was
+corrected to summed PSS <=384 MiB, retaining RSS telemetry and the 1 GiB available-memory stop.
+This applies only to serial focused offline checks, not heavy builds/installs or service limits.
+
+Focused pytest adds parent-process overhead; its diagnostic envelope was increased to 512 MiB
+summed PSS with the same 1 GiB available-memory stop. The unchanged model-catalog regression was
+excluded after resource stops; today's live inference separately validates model resolution.
+The source-only batch completed 23 cases before another transient search-spawn cap stop (620231 KiB
+sampled PSS, 1236940 KiB minimum available). Remaining cases are isolated in short serial invocations;
+partial/stopped batches are not counted as a passing suite. No host or service limit was changed.
+
+## DIV-85 repair reviewed — 23:30 UTC
+
+Draft [PR #13](https://github.com/mdumas38/background-agents/pull/13) contains source fix
+`7536ab0e1d85d204abae4e8eaa75fadc66832035`, final documentation head
+`5ae421c3b1be71b8d543fc80a11987acef4ea7c3`. Coordinator reviewed the complete diff, source diagnosis,
+case matrix and successful logs without finding another required source change. This is technical
+review for the handoff, not human merge/release approval.
+
+The fix matches pinned OpenCode's relative read paths, bakes and verifies ripgrep, and fails closed
+on unsafe source symlinks before launch. Directory/dangling/escaping/cyclic symlinks are refused;
+internal regular-file links remain supported. No model/network/credential policy was broadened.
+
+All **84 unique focused cases** have completed successful runs: 40 runtime/tool/boundary cases,
+17 image-verifier unit tests and 27 bundle/invalidation tests. Lint/format, shell syntax and diff
+checks passed. Final runs peaked at 370045 KiB PSS with at least 1215064 KiB MemAvailable.
+Interrupted batches are excluded. The unchanged older model-catalog regression remained resource-
+limited; optional unchanged Modal policy tests lacked existing dependencies. No full image build,
+full image verification, deployment, new provider sandbox or model retry occurred.
+
+The worker reported succeeded (`msg_56816a93b57a`) and its worktree is clean/pushed. Exact terminal
+release and the same-request retry returned `release_unknown/tab_not_found`, but worker-show proved
+that exact worker exited, disconnected and unwritable; its transcript was captured. Worktree and
+report `/tmp/div85-completion.md` remain preserved. No replacement worker or broad close was used.
+
+PR metadata was repaired using structured GitHub API PATCH after the known gh projectCards error,
+then verified. DIV-85 has the PR attached and is In Review; it still blocks deployed smoke
+acceptance. The [closeout checklist](reliability-testing-closeout-2026-09-16.md) gives the full order:
+human fix review, verified dev image release, explicit resumed smoke/remaining-budget decision,
+A publication, actual proposal selection and independent B, then final scorecard/board closeout.
