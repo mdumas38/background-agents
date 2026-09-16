@@ -131,3 +131,18 @@ provider or callback outcome remains uncertain. Archive only after those checks;
 index. PR #11 supplies concrete provider input/call/container evidence and a bounded proposal;
 external support contact or additional provider compute requires its own authorization. No rollout,
 settlement write or pilot retry was performed during this repair work.
+
+## Approved merge and regression rerun — 19:21 UTC
+
+Mason approved merging PR #12 and rerunning tests. The unchanged reviewed head
+`663ff7e2ccef354c114b8f0a125f4dd04401274c` was squash-merged at 19:21:07 UTC as
+`c1f249398e6c0f4c01087ceff67f74cfb00354cc`. The preserved repair checkout's full tree
+matches fetched `origin/main` exactly. No GitHub CI run was attached to that merge when checked.
+
+The same nine focused suites passed again: **422 tests**, 12.22 seconds. Production TypeScript
+and the focused changed-test TypeScript program both passed. Checks ran serially with bounded
+Node heaps; no dependency install was needed. Workerd/D1 integration and the broad suite were
+not run. This merge and regression rerun did not deploy, settle the live session, or launch a
+pilot. A narrow clarification is pending on whether the requested tests include a dev repair
+release, settlement, and one replacement smoke; the earlier stop-on-failure rule remains in
+force until that resumption scope is explicit. DIV-84 live acceptance and DIV-77 remain open.
