@@ -74,7 +74,7 @@ reused read-only; version is asserted by the tests. SHA-256:
 `ca6c0e1f42be3120595bf6848937e7586ec862c87fa7aa111e89c7cc6e9a4650`.
 
 Validation on 2026-09-16: **40 focused investigation cases passed**, plus **17 image-verifier
-unit tests**. On this host, the investigation file was split into the following `-k` selections
+unit tests** and **27 image-bundle tests**. On this host, the investigation file was split into the following `-k` selections
 using the command above with `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1` and `-p pytest_asyncio.plugin`:
 
 - `not pinned` (19 admission/environment/filesystem cases)
@@ -85,7 +85,11 @@ using the command above with `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1` and `-p pytest_a
   (each tool in its own invocation with the `forbidden and` prefix)
 - `source_tool_registry` (one case)
 
-The image command was `python -m pytest packages/sandbox-images/tests/test_verification.py -q`.
+The verifier command was `python -m pytest packages/sandbox-images/tests/test_verification.py -q`.
+Bundle tests used `PYTHONPATH=packages/sandbox-images/src python -m pytest
+packages/sandbox-images/tests/test_bundle.py -q --basetemp .cache/div85-image-tests` after creating
+`.cache` (disk-backed storage rather than this host's tmpfs). `bash -n` on the Debian installer,
+touched-file Ruff lint/format checks and `git diff --check` also passed.
 Normal repository conftest fixtures remained active in the final runs. The coordinator approved a
 monitored exception for serial focused diagnostics using existing dependencies: at most 512 MiB
 summed process-tree PSS, with a hard stop below 1 GiB MemAvailable. Completed final runs peaked at
