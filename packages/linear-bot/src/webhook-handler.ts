@@ -8,6 +8,11 @@ import {
   type LinearCallbackContext,
 } from "@open-inspect/shared/types/session-api";
 import { z } from "zod";
+import {
+  FOLLOW_UP_INSTRUCTIONS,
+  PUBLISHED_TASK_HEADING,
+  publicationEnabled,
+} from "./follow-ups/proposals";
 import type {
   Env,
   LinearIssueDetails,
@@ -368,6 +373,7 @@ function buildLinearCallbackContext(params: {
   repoFullName?: string;
   emitToolProgressActivities?: boolean;
   transitionIssueOnStart?: boolean;
+  publishFollowUps?: boolean;
 }): LinearCallbackContext {
   const {
     webhook,
@@ -376,6 +382,7 @@ function buildLinearCallbackContext(params: {
     repoFullName,
     emitToolProgressActivities,
     transitionIssueOnStart,
+    publishFollowUps,
   } = params;
   const context = {
     source: "linear" as const,
@@ -388,6 +395,7 @@ function buildLinearCallbackContext(params: {
     organizationId: webhook.organizationId,
     appUserId: webhook.appUserId,
     emitToolProgressActivities,
+    ...(publishFollowUps ? { publishFollowUps: true } : {}),
   };
   if (transitionIssueOnStart === true) {
     return { ...context, transitionIssueOnStart: true };
@@ -452,6 +460,7 @@ async function handleFollowUp(
     model: existingSession.model,
     repoFullName: currentIntegration?.callbackRepoFullName,
     emitToolProgressActivities: currentIntegration?.config.emitToolProgressActivities,
+    publishFollowUps: publicationEnabled(env),
   });
 
   await emitAgentActivity(
@@ -490,6 +499,7 @@ async function handleFollowUp(
   const promptBody = JSON.stringify({
     content:
       taskDirective(env.LINEAR_TASK_MODE) +
+      (publicationEnabled(env) ? `\n\n${FOLLOW_UP_INSTRUCTIONS}` : "") +
       "\n\n" +
       buildFollowUpPrompt({
         issueIdentifier: issue.identifier,
@@ -690,6 +700,7 @@ async function handleNewSession(
     repoFullName: integration.callbackRepoFullName,
     emitToolProgressActivities: integrationConfig.emitToolProgressActivities,
     transitionIssueOnStart: shouldTransitionIssueOnStart(webhook),
+    publishFollowUps: publicationEnabled(env),
   });
 
   await storeIssueSession(env, issue.id, {
@@ -726,6 +737,14 @@ async function handleNewSession(
   if (integrationConfig.issueSessionInstructions) {
     prompt += `\n\n## Additional Instructions\n\n${integrationConfig.issueSessionInstructions}`;
   }
+
+  // Linear's promptContext is useful but may omit or shorten a published handoff.
+  // Hydrate the full fetched description for these tasks even when promptContext is present.
+  const durableDescription = issueDetails?.description ?? issue.description;
+  if (webhook.promptContext && durableDescription?.startsWith(PUBLISHED_TASK_HEADING)) {
+    prompt += `\n\n## Complete durable task description\n\n${buildUntrustedUserContentBlock({ source: "linear_issue_description", author: "unknown", content: durableDescription })}`;
+  }
+  if (publicationEnabled(env)) prompt += `\n\n${FOLLOW_UP_INSTRUCTIONS}`;
 
   const promptUrl = `https://internal/sessions/${session.sessionId}/prompt`;
   const promptBody = JSON.stringify({
@@ -847,12 +866,13 @@ export function buildPrompt(
     "## Description",
   ];
 
-  if (issue.description) {
+  const description = issueDetails?.description ?? issue.description;
+  if (description) {
     parts.push(
       buildUntrustedUserContentBlock({
         source: "linear_issue_description",
         author: "unknown",
-        content: issue.description,
+        content: description,
       })
     );
   } else {

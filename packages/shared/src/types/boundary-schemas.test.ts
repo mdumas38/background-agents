@@ -473,6 +473,18 @@ describe("boundary schemas", () => {
       expect(
         linearCompletionCallbackSchema.safeParse({
           ...callback,
+          context: { ...context, publishFollowUps: true },
+        }).success
+      ).toBe(true);
+      expect(
+        linearCompletionCallbackSchema.safeParse({
+          ...callback,
+          context: { ...context, publishFollowUps: "true" },
+        }).success
+      ).toBe(false);
+      expect(
+        linearCompletionCallbackSchema.safeParse({
+          ...callback,
           context: { source: "linear", issueId: "issue-1" },
         }).success
       ).toBe(false);
