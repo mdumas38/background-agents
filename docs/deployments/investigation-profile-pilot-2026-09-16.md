@@ -113,12 +113,10 @@ using a normal User-Agent returned HTTP 200 over the same Modal network. Model-r
 remains unproven.
 
 The operator explicitly terminated the sandbox at 17:44:11 UTC and confirmed exit **137** and zero
-active sandboxes at 17:44:40. D1 confirmed one failed message, no active sessions and
-**$0 recorded
+active sandboxes at 17:44:40. D1 confirmed one failed message, no active sessions and **$0 recorded
 session model cost**. The failed smoke consumes one of the campaign's three execution slots even
 though it failed before model output. Image/verification/sandbox infrastructure and any classifier
-cost are not available in this evidence; the $2
-overall target is not established.
+cost are not available in this evidence; the $2 overall target is not established.
 
 The reviewed cleanup apply restored implementation routing at 17:44:56 UTC; publication stayed false
 throughout. A/B, callback replay and any further model worker remain stopped under the failure rule.
@@ -137,3 +135,42 @@ Private evidence is under `/home/orca/.local/state/openinspect/div77-20260916/` 
 state, credentials and raw logs stay private. The deployment checkout and continuation notes are
 preserved. DIV-76 and deferred DIV-71/DIV-72 remain unchanged. No additional Greptile review was
 requested.
+
+## Supervised follow-up work
+
+Mason approved separate DIV-81 and DIV-79 workspaces reporting back to this coordinator. Orca run
+`run_32955944c0a5` tracks both; neither assignment is an OpenInspect model-worker execution.
+
+DIV-81 produced draft [PR #10](https://github.com/mdumas38/background-agents/pull/10), commit
+`a0fc1441aade7861aa41f09936025e2868b4415c`. The pinned OpenCode 1.18.29 snapshot lacks the approved
+route; scratch-cache isolation and disabled catalog fetching prevent refresh. The focused fix
+supplies one trusted definition for that exact route without changing the investigation boundary.
+The worker reported 13 focused tests passing, including the original missing-model failure and
+corrected provider registry under real bubblewrap with no external network, plus Ruff checks.
+Coordinator source review found the change consistent with that scope. No CI checks were reported on
+the draft at review time. Positive evidence stops at registry/config/tool resolution; a local
+HTTP/noReply probe timed out, and live inference remains unproven. The correction is not merged or
+deployed.
+
+DIV-79's read-only diagnosis found historical memory pressure before the reboot: available memory
+fell to 804,716 KiB at 17:30 UTC, with direct reclaim and nonzero memory PSI. Ten-minute sysstat
+samples do not establish an OOM, culprit, peak or leak. The host has 3.73 GiB RAM and no swap; Orca
+and its agents share one uncapped service cgroup, so an arbitrary hard limit could terminate the
+coordinator along with workers. Previous-boot kernel evidence remains inaccessible to the ordinary
+account. No relationship to the remote VNC verifier failure is established.
+
+The preserved DIV-79 workspace contains `docs/proposals/div-79-vps-memory.md` and sanitized sysstat
+evidence. Its unapplied proposal covers cooperative serialization of heavy work, a provisional 1.5
+GiB available-memory launch threshold, one-minute sysstat collection, and focused telemetry.
+Swap/resize and service limits remain separate decisions pending attribution and host ownership
+(DIV-53). No host configuration or permissions changed.
+
+A corrected smoke followed by A and B would require three further executions. Because the failed
+smoke already consumed one of the original three slots, completing that sequence requires an
+explicit revised execution allowance as well as review of the correction. B still requires selection
+of its actual published task. No replacement live worker was launched during these follow-ups.
+
+Both dispatched tasks completed successfully and transcripts were archived. Orca's release calls
+returned `release_unknown` / `tab_not_found`, including exact-request retries, but subsequent
+exact-worker observations confirmed both agent terminals exited and were no longer connected or
+writable. The workspaces and reports remain preserved; release receipt metadata is unresolved.
