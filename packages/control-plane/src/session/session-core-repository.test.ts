@@ -115,6 +115,7 @@ describe("SessionCoreRepository", () => {
       expect(mock.calls.length).toBe(1);
       expect(mock.calls[0].query).toContain("INSERT INTO session");
       expect(mock.calls[0].query).toContain("ON CONFLICT (id) DO UPDATE SET");
+      expect(mock.calls[0].query.split("DO UPDATE SET")[1]).not.toContain("execution_profile");
       expect(mock.calls[0].params).toEqual([
         "sess-1",
         "test-session",
@@ -124,6 +125,7 @@ describe("SessionCoreRepository", () => {
         null,
         "main",
         "opencode",
+        "implementation",
         "claude-sonnet-4",
         null,
         "created",

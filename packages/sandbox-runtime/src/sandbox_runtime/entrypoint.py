@@ -86,6 +86,16 @@ def managed_skills_destination(harness: HarnessId, claude_config_dir: Path | Non
     raise ValueError(f"Unsupported harness: {harness}")
 
 
+class InvestigationHooks(RepositoryHooks):
+    """Repository scripts never execute in an investigation boot."""
+
+    async def run_setup(self, *args: Any, **kwargs: Any) -> bool:
+        return True
+
+    async def run_start(self, *args: Any, **kwargs: Any) -> bool:
+        return True
+
+
 def build_supervisor(shutdown_event: asyncio.Event) -> SandboxSupervisor:
     """Consume process secrets and compose the production runtime."""
     apply_image_environment()
@@ -105,13 +115,17 @@ def build_supervisor(shutdown_event: asyncio.Event) -> SandboxSupervisor:
         log,
         warnings,
         TunnelEnvironment(config.sandbox_id, log),
-        RepositoryHooks(log),
+        InvestigationHooks(log) if config.investigation else RepositoryHooks(log),
         RepositorySynchronizer(config.vcs_host, log),
     )
     claude_config_dir = claude_config_dir_for(config, repository_boot.repositories, log)
     managed_skills_config = config.managed_skills_config()
     managed_skills = None
-    if managed_skills_config.control_plane_url and managed_skills_config.session_id:
+    if (
+        not config.investigation
+        and managed_skills_config.control_plane_url
+        and managed_skills_config.session_id
+    ):
         managed_skills = ManagedSkillsMaterializer(
             ManagedSkillsClient(
                 managed_skills_config.control_plane_url,

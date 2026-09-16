@@ -1942,6 +1942,20 @@ describe("SessionMessageQueue", () => {
   });
 
   describe("enqueuePromptFromApi", () => {
+    it("rejects an investigation prompt on an unrestricted existing session before mutation", async () => {
+      const h = buildQueue();
+      await expect(
+        h.queue.enqueuePromptFromApi({
+          content: "Inspect",
+          authorId: "new-user",
+          source: "linear",
+          requiredExecutionProfile: "investigation",
+        })
+      ).rejects.toThrow("requires a new session");
+      expect(h.participantService.getByUserId).not.toHaveBeenCalled();
+      expect(h.repository.getPendingOrProcessingCount).not.toHaveBeenCalled();
+    });
+
     it("rejects exhaustion before capacity checks or participant mutations", async () => {
       const h = buildQueue();
       h.repository.getSession.mockReturnValue(createSession({ budget_exhausted: 1 }));

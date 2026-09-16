@@ -1,7 +1,7 @@
 """Type definitions for sandbox operations."""
 
 from enum import StrEnum
-from typing import TypedDict
+from typing import Literal, TypedDict
 
 from pydantic import BaseModel
 
@@ -74,6 +74,7 @@ class SessionConfig(BaseModel):
     agent_session_id: str | None = None
     opencode_session_id: str | None = None
     # Which agent runs the session; absent means the built-in OpenCode harness.
+    execution_profile: Literal["implementation", "investigation"] = "implementation"
     harness: str = "opencode"
     provider: str = "anthropic"
     model: str = "claude-sonnet-4-6"

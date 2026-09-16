@@ -38,6 +38,7 @@ from sandbox_runtime.types import SandboxStatus, SessionConfig
 
 from ..app import app, llm_secrets
 from ..images.base import base_image
+from .investigation import investigation_network
 from .vcs_env import inject_vcs_env_vars
 
 log = get_logger("manager")
@@ -356,6 +357,9 @@ class SandboxManager:
     async def _launch_sandbox(self, spec: _SandboxLaunchSpec) -> SandboxHandle:
         """Launch a Modal sandbox from a normalized create or restore specification."""
         config = spec.config
+        network_policy = investigation_network(
+            config, fresh_base=isinstance(spec.source, _BaseImageSource)
+        )
         has_repository = bool(config.repo_owner)
         sandbox_id = config.sandbox_id
         if not sandbox_id:
@@ -454,6 +458,7 @@ class SandboxManager:
             "workdir": "/workspace",
             "env": env_vars,
             **_resource_kwargs(config.settings),
+            **network_policy,
         }
         if exposed_ports:
             create_kwargs["encrypted_ports"] = exposed_ports

@@ -419,6 +419,18 @@ describe("handleAgentSessionEvent environment targets", () => {
     return JSON.parse(String(promptCall?.[1]?.body)) as Record<string, unknown>;
   }
 
+  it("requests and requires the investigation profile for read-only tasks", async () => {
+    const { kv } = createFakeKV({
+      "oauth:client-credentials:org-1": validToken(),
+      "config:project-repos": JSON.stringify({ "project-1": { owner: "acme", name: "backend" } }),
+    });
+    const env = makeLinearBotEnv(kv, { LINEAR_TASK_MODE: "read-only" });
+    const fetchMock = stubControlPlane(env);
+    await handleAgentSessionEvent(makeWebhook(), env, "trace-investigation");
+    expect(createSessionBody(fetchMock)?.executionProfile).toBe("investigation");
+    expect(promptBody(fetchMock)?.requiredExecutionProfile).toBe("investigation");
+  });
+
   it("transitions an existing installation and creates an environment session", async () => {
     const { kv, store } = createFakeKV({
       "oauth:token:org-1": JSON.stringify({
@@ -1284,7 +1296,7 @@ it("keeps the trusted read-only directive in both initial prompt paths", () => {
       "read-only"
     ),
   ]) {
-    expect(prompt).toContain("Do not modify files, create commits or open a PR");
+    expect(prompt).toContain("Do not create commits or open a PR");
     expect(prompt).not.toContain("Please implement the changes");
     expect(prompt).toContain("untrusted text");
   }

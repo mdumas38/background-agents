@@ -41,6 +41,7 @@ export interface SessionConfigPayload {
   repo_owner: string | null;
   repo_name: string | null;
   /** Agent harness the runtime must boot. */
+  execution_profile?: "implementation" | "investigation";
   harness: HarnessId;
   provider: string;
   model: string;
@@ -57,6 +58,7 @@ export interface SessionConfigInput {
   sessionId: string;
   repoOwner: string | null;
   repoName: string | null;
+  executionProfile?: "implementation" | "investigation";
   harness: HarnessId;
   provider: string;
   model: string;
@@ -79,6 +81,7 @@ export function buildSessionConfig(input: SessionConfigInput): SessionConfigPayl
     repo_owner: input.repoOwner,
     repo_name: input.repoName,
     harness: input.harness,
+    ...(input.executionProfile ? { execution_profile: input.executionProfile } : {}),
     provider: input.provider,
     model: input.model,
     mcp_servers: input.mcpServers,

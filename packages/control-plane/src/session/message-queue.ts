@@ -69,6 +69,8 @@ type UserMessageEventWithOrigin = Extract<SandboxEvent, { type: "user_message" }
   origin?: GitHubAutofixOrigin;
 };
 
+export class ExecutionProfileMismatchError extends Error {}
+
 export class SessionNotPromptableError extends Error {
   constructor(readonly sessionStatus: SessionRow["status"]) {
     super(`Cannot prompt a ${sessionStatus} session`);
@@ -642,6 +644,15 @@ export class SessionMessageQueue {
     data: EnqueuePromptRequest
   ): Promise<{ messageId: string; status: "queued" }> {
     this.assertPromptableSession();
+    if (
+      data.requiredExecutionProfile &&
+      data.requiredExecutionProfile !==
+        (this.repository.getSession()?.execution_profile ?? "implementation")
+    ) {
+      throw new ExecutionProfileMismatchError(
+        "This task requires a new session with the requested execution profile"
+      );
+    }
     this.assertBudgetAvailable();
     this.assertQueueCapacity();
     let participant = this.participantService.getByUserId(data.authorId);
