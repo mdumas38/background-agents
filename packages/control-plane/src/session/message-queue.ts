@@ -340,7 +340,19 @@ export class SessionMessageQueue {
     ws: SessionWebSocket,
     data: { messageId: string; clientRequestId: string }
   ): Promise<void> {
-    if (!this.messageRepository.cancelPendingMessage(data.messageId)) {
+    // Keep integration provenance and route its terminal event through the same
+    // completion callback path as dispatched work. The pending CAS prevents a
+    // cancellation racing dispatch from stopping a different/running prompt.
+    const context = this.messageRepository.getMessageCallbackContext(data.messageId);
+    const integrationOrigin =
+      context && (context.source !== "web" || context.callback_context !== null);
+    const failure = integrationOrigin
+      ? this.messageFailures.record(data.messageId, "Prompt was cancelled", Date.now(), "pending")
+      : null;
+    const cancelled =
+      failure !== null ||
+      (!integrationOrigin && this.messageRepository.cancelPendingMessage(data.messageId));
+    if (!cancelled) {
       this.wsManager.send(ws, {
         type: "error",
         code: "PROMPT_NOT_CANCELLABLE",
@@ -349,6 +361,14 @@ export class SessionMessageQueue {
       });
       return;
     }
+
+    if (failure) this.messageFailures.deliver(failure);
+    // Fence an outstanding startup before the first await. A queued cancellation
+    // behind another prompt must leave that prompt's sandbox alone.
+    const termination =
+      this.messageRepository.getPendingOrProcessingCount() === 0
+        ? this.sandboxLifecycle.terminateUnresponsiveSandbox("pending_prompt_cancelled")
+        : Promise.resolve();
 
     this.wsManager.send(ws, {
       type: "prompt_cancelled",
@@ -361,6 +381,7 @@ export class SessionMessageQueue {
       message_id: data.messageId,
     });
 
+    await termination;
     await this.sessionStatus.reconcileAfterQueueRemoval();
   }
 
@@ -448,8 +469,9 @@ export class SessionMessageQueue {
       // callers' request timeouts. The message is already persisted as
       // pending and dispatches when the sandbox WebSocket connects.
       this.backgroundTasks.submit(
-        () =>
-          this.sandboxLifecycle.spawnSandbox().catch((error) => {
+        () => {
+          if (!this.isPromptStillDispatchable(message.id)) return Promise.resolve();
+          return this.sandboxLifecycle.spawnSandbox().catch((error) => {
             // Expected provider failures report themselves inside the lifecycle
             // manager; this catch only sees throws from before those handlers.
             // Route it through the same call so the reason is persisted as well
@@ -458,7 +480,8 @@ export class SessionMessageQueue {
               error instanceof Error ? error.message : "Failed to spawn sandbox"
             );
             throw error;
-          }),
+          });
+        },
         {
           name: "sandbox.spawn",
           context: { message_id: message.id },

@@ -567,6 +567,7 @@ describe("SandboxLifecycleManager", () => {
         vi.mocked(storage.updateSandboxForSpawn).mockImplementation((data) => {
           calls.push("fence");
           sandbox.status = data.status;
+          sandbox.created_at = data.createdAt;
           sandbox.auth_token_hash = "";
           sandbox.modal_sandbox_id = data.modalSandboxId;
         });
@@ -741,7 +742,12 @@ describe("SandboxLifecycleManager", () => {
       expect(provider.createSandbox).toHaveBeenCalledWith(
         expect.objectContaining({ vncEnabled: true })
       );
-      expect(storage.updateSandboxAccess).toHaveBeenCalledWith("vnc", "https://vnc.test", "secret");
+      expect(storage.updateSandboxAccess).toHaveBeenCalledWith(
+        "vnc",
+        "https://vnc.test",
+        "secret",
+        expect.any(Function)
+      );
       expect(broadcaster.messages).not.toContainEqual({ type: "sandbox_access_changed" });
       expect(JSON.stringify(broadcaster.messages)).not.toContain("secret");
     });
@@ -4334,5 +4340,209 @@ describe("spawn admission race (#1589)", () => {
       expect.stringContaining("superseded"),
       expect.anything()
     );
+  });
+});
+
+describe("cancelled pending startup (DIV-84)", () => {
+  function harness(sandbox = createMockSandbox({ status: "failed" })) {
+    const storage = createMockStorage(createMockSession(), sandbox);
+    const stopSandbox = vi.fn(async () => ({ success: true }));
+    const provider = createMockProvider({
+      stopSandbox,
+      capabilities: { supportsExplicitStop: true },
+    });
+    const broadcaster = createMockBroadcaster();
+    const sockets = createMockWebSocketManager(false);
+    const manager = new SandboxLifecycleManager(
+      provider,
+      storage,
+      storage,
+      broadcaster,
+      sockets,
+      createMockAlarmScheduler(),
+      createMockIdGenerator(),
+      createTestConfig()
+    );
+    return { sandbox, storage, provider, stopSandbox, broadcaster, sockets, manager };
+  }
+
+  it("retires failed startup so a delayed bridge cannot self-heal after cancellation", async () => {
+    const h = harness();
+    await h.manager.terminateUnresponsiveSandbox("pending_prompt_cancelled");
+    expect(h.sandbox.status).toBe("stale");
+    expect(h.sockets.detachSandboxWebSocket).toHaveBeenCalled();
+    expect(h.stopSandbox).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerObjectId: "modal-obj-123",
+        reason: "pending_prompt_cancelled",
+      })
+    );
+  });
+
+  it("never invokes create after cancellation during environment resolution", async () => {
+    const h = harness();
+    vi.mocked(h.storage.getUserEnvVars).mockImplementation(async () => {
+      await h.manager.terminateUnresponsiveSandbox("pending_prompt_cancelled");
+      return undefined;
+    });
+    await h.manager.spawnSandbox();
+    expect(h.provider.createSandbox).not.toHaveBeenCalled();
+    expect(h.sandbox.status).toBe("stale");
+    expect(h.storage.incrementCircuitBreakerFailure).not.toHaveBeenCalled();
+  });
+
+  it("stops the exact late create handle without publishing it or reviving the row", async () => {
+    const h = harness();
+    vi.mocked(h.provider.createSandbox).mockImplementation(async (config) => {
+      await h.manager.terminateUnresponsiveSandbox("pending_prompt_cancelled");
+      return {
+        sandboxId: config.sandboxId,
+        providerObjectId: "late-object",
+        status: "connecting",
+        createdAt: Date.now(),
+      };
+    });
+    await h.manager.spawnSandbox();
+    expect(h.sandbox.status).toBe("stale");
+    expect(h.sandbox.modal_object_id).not.toBe("late-object");
+    expect(h.stopSandbox).toHaveBeenCalledWith(
+      expect.objectContaining({ providerObjectId: "late-object", reason: "startup_cancelled" })
+    );
+    expect(h.broadcaster.messages).not.toContainEqual({
+      type: "sandbox_status",
+      status: "connecting",
+    });
+  });
+
+  it("leaves the fence intact when create fails after cancellation", async () => {
+    const h = harness();
+    vi.mocked(h.provider.createSandbox).mockImplementation(async () => {
+      await h.manager.terminateUnresponsiveSandbox("pending_prompt_cancelled");
+      throw new SandboxProviderError("provider timeout", "transient");
+    });
+    await h.manager.spawnSandbox();
+    expect(h.sandbox.status).toBe("stale");
+    expect(h.provider.createSandbox).toHaveBeenCalledTimes(1);
+    expect(h.storage.setLastSpawnError).not.toHaveBeenCalledWith(
+      "provider timeout",
+      expect.anything()
+    );
+  });
+
+  it("does not overwrite a newer reservation with a late successful create", async () => {
+    const h = harness();
+    vi.mocked(h.provider.createSandbox).mockImplementation(async (config) => {
+      h.sandbox.modal_sandbox_id = "new-generation";
+      h.sandbox.created_at += 1;
+      h.sandbox.modal_object_id = "new-object";
+      return {
+        sandboxId: config.sandboxId,
+        providerObjectId: "late-object",
+        status: "connecting",
+        createdAt: Date.now(),
+      };
+    });
+    await h.manager.spawnSandbox();
+    expect(h.sandbox.modal_object_id).toBe("new-object");
+    expect(h.stopSandbox).toHaveBeenCalledWith(
+      expect.objectContaining({ providerObjectId: "late-object" })
+    );
+    expect(h.stopSandbox).not.toHaveBeenCalledWith(
+      expect.objectContaining({ providerObjectId: "new-object" })
+    );
+  });
+  it.each(["cancelled", "archived"] as const)(
+    "does not publish access after the session becomes %s during encryption",
+    async (status) => {
+      const h = harness();
+      vi.mocked(h.provider.createSandbox).mockImplementation(async (config) => ({
+        sandboxId: config.sandboxId,
+        providerObjectId: "late-object",
+        status: "connecting",
+        createdAt: Date.now(),
+        codeServerUrl: "https://old.test",
+        codeServerPassword: "password",
+        tunnelUrls: { "3000": "https://tunnel.test" },
+      }));
+      vi.mocked(h.storage.updateSandboxAccess).mockImplementation(
+        async (_kind, _url, _secret, assertCurrent) => {
+          vi.mocked(h.storage.getSession).mockReturnValue(createMockSession({ status }));
+          assertCurrent?.();
+          throw new Error("stale writer passed guard");
+        }
+      );
+      await h.manager.spawnSandbox();
+      expect(h.storage.updateSandboxTunnelUrls).not.toHaveBeenCalled();
+      expect(h.sandbox.code_server_url).toBeNull();
+      expect(h.stopSandbox).toHaveBeenCalledWith(
+        expect.objectContaining({ providerObjectId: "late-object", reason: "startup_cancelled" })
+      );
+      expect(h.storage.incrementCircuitBreakerFailure).not.toHaveBeenCalled();
+    }
+  );
+
+  it("does not stop a provider object adopted by a newer generation", async () => {
+    const h = harness();
+    vi.mocked(h.provider.createSandbox).mockImplementation(async (config) => {
+      h.sandbox.created_at += 1;
+      h.sandbox.modal_object_id = "same-object";
+      return {
+        sandboxId: config.sandboxId,
+        providerObjectId: "same-object",
+        status: "connecting",
+        createdAt: Date.now(),
+      };
+    });
+    await h.manager.spawnSandbox();
+    expect(h.stopSandbox).not.toHaveBeenCalledWith(
+      expect.objectContaining({ providerObjectId: "same-object" })
+    );
+    expect(h.sandbox.modal_object_id).toBe("same-object");
+  });
+
+  it("does not invoke snapshot restore after pending cancellation", async () => {
+    const h = harness(
+      createMockSandbox({
+        status: "stopped",
+        snapshot_image_id: "snapshot-1",
+        snapshot_runtime_version: COMPATIBLE_RUNTIME_VERSION,
+      })
+    );
+    vi.mocked(h.storage.getUserEnvVars).mockImplementation(async () => {
+      await h.manager.terminateUnresponsiveSandbox("pending_prompt_cancelled");
+      return undefined;
+    });
+    await h.manager.spawnSandbox();
+    expect(h.provider.restoreFromSnapshot).not.toHaveBeenCalled();
+    expect(h.provider.createSandbox).not.toHaveBeenCalled();
+  });
+  it("fences a late Modal-style startup and logs its handle for operator reconciliation", async () => {
+    const h = harness();
+    h.provider.capabilities.supportsExplicitStop = false;
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      vi.mocked(h.provider.createSandbox).mockImplementation(async (config) => {
+        await h.manager.terminateUnresponsiveSandbox("pending_prompt_cancelled");
+        return {
+          sandboxId: config.sandboxId,
+          providerObjectId: "late-modal-object",
+          status: "connecting",
+          createdAt: Date.now(),
+        };
+      });
+      await h.manager.spawnSandbox();
+      expect(h.sandbox.status).toBe("stale");
+      expect(h.sockets.sendToSandbox).toHaveBeenCalledWith({ type: "shutdown" });
+      expect(h.stopSandbox).not.toHaveBeenCalled();
+      expect(h.sandbox.modal_object_id).not.toBe("late-modal-object");
+      expect(parseStructuredLogs(warning)).toContainEqual(
+        expect.objectContaining({
+          msg: "Late sandbox requires provider reconciliation",
+          provider_object_id: "late-modal-object",
+        })
+      );
+    } finally {
+      warning.mockRestore();
+    }
   });
 });

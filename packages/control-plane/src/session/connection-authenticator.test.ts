@@ -227,6 +227,15 @@ describe("SessionConnectionAuthenticator.authorize", () => {
     expect(await rejection(decision)).toEqual({ status: 410, body: "Sandbox is stopped" });
   });
 
+  it("rejects a failed bridge retired by pending cancellation during authentication", async () => {
+    const row = await sandboxRow({ status: "failed" });
+    const h = createHarness({ sandbox: row, duringTokenHash: () => ({ ...row, status: "stale" }) });
+    const decision = await h.authenticator.authorize(
+      upgradeRequest({ sandbox: true, token: TOKEN, sandboxId: SANDBOX_ID })
+    );
+    expect(await rejection(decision)).toEqual({ status: 410, body: "Sandbox is stopped" });
+  });
+
   it("rejects credentials rotated during the token hash with 403", async () => {
     const row = await sandboxRow();
     const h = createHarness({
