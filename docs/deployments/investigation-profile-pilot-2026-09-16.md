@@ -4,7 +4,12 @@
 authorized a post-reboot release retry, generation 66 deployed successfully. The single smoke
 reached the restricted OpenCode runtime, then failed to resolve the approved OpenRouter model. **No
 source investigation report was produced; A and B were not dispatched.**
-[DIV-81](https://linear.app/divinedesign/issue/DIV-81) is the current blocker.
+[DIV-81](https://linear.app/divinedesign/issue/DIV-81) tracked that model-resolution failure.
+
+**Latest:** DIV-81 was merged and released as Modal v5. The authorized replacement smoke failed
+during sandbox creation, before model execution. DIV-83 and DIV-84 now block resumption. Modal lists
+no sandbox and routing is restored, but the Linear-origin prompt remains pending: cleanup is not
+fully settled. See the [replacement-smoke scorecard](investigation-profile-retry-2026-09-16.md).
 
 ## Scorecard
 
