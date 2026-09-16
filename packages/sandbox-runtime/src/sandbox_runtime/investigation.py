@@ -120,6 +120,27 @@ def investigation_environment(model: str, environment: Mapping[str, str]) -> dic
         "autoupdate": False,
         "enabled_providers": ["openrouter"],
     }
+    if model == "deepseek/deepseek-v4.1-flash":
+        # The pinned OpenCode snapshot predates this route. Investigation has no
+        # persistent catalog cache or catalog egress; define it in trusted config.
+        # Metadata: models.opencode.ai/api.json and openrouter.ai/api/v1/models,
+        # checked 2026-09-16. Costs are catalog estimates per million tokens.
+        config["provider"] = {
+            "openrouter": {
+                "models": {
+                    model: {
+                        "name": "DeepSeek V4.1 Flash",
+                        "reasoning": True,
+                        "tool_call": True,
+                        "temperature": True,
+                        "attachment": True,
+                        "modalities": {"input": ["text", "image"], "output": ["text"]},
+                        "limit": {"context": 1_048_576, "output": 384_000},
+                        "cost": {"input": 0.15, "output": 0.6, "cache_read": 0.003},
+                    }
+                }
+            }
+        }
     return {
         "PATH": "/opt/openinspect/tools/node_modules/.bin:/usr/local/bin:/usr/bin:/bin",
         "HOME": "/scratch/home",

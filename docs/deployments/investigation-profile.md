@@ -12,6 +12,9 @@ session rejects those prompts rather than silently changing its label.
 
 The first supported combination is one repository, Modal, OpenCode and an OpenRouter API key. The
 catalog includes the pilot's `openrouter/deepseek/deepseek-v4.1-flash` route as an opt-in model.
+The investigation config explicitly defines this route for pinned OpenCode because its bundled
+catalog predates the model and catalog fetching stays disabled. See the
+[DIV-81 diagnosis and offline regression](investigation-model-resolution-2026-09-16.md).
 Creation rejects zero or multiple resolved repositories before persisting the session; both scalar
 repository fields and a one-entry repository list are accepted. Environment sessions, other
 harnesses/providers, repository images and snapshot restores are not supported. They fail closed.
