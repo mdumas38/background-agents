@@ -146,3 +146,40 @@ not run. This merge and regression rerun did not deploy, settle the live session
 pilot. A narrow clarification is pending on whether the requested tests include a dev repair
 release, settlement, and one replacement smoke; the earlier stop-on-failure rule remains in
 force until that resumption scope is explicit. DIV-84 live acceptance and DIV-77 remain open.
+
+## Authorized release preparation — 21:49–21:54 UTC
+
+Mason said to proceed after the remaining-test/board update. The coordinator announced a targeted
+dev control-plane release, settlement, then at most one replacement smoke after settlement gates;
+A/B remain gated. The preserved deployment checkout was clean and integrated merged main without
+conflicts at `3732396a4df9ac2bfe774bea79abc78d72ac967c`, retaining private configuration.
+
+Shared build passed with a 512 MiB Node heap after a 384 MiB attempt exited unsuccessfully without
+a diagnostic. Three focused workerd/D1 suites passed **40 tests** in 66.21 seconds: session
+components, prompt enqueue and sandbox WebSocket behavior. Existing dependencies were reused;
+no install or concurrent heavy job was needed. These are selected runtime integration tests, not
+a claim of complete cancellation acceptance or a full monorepo test run.
+
+Fresh authenticated observation at 21:49:01 UTC still showed the original active session, failed
+sandbox, sole pending prompt, no processing/events and $0 recorded model cost. Publication remained
+false and routing implementation. The native Linear session later read `stale`, which does not
+settle the OpenInspect queue. An app-scoped Modal list was empty at 21:50:36 UTC; provider outcome
+remains unknown. Historical Cloudflare telemetry access returned 403, and the general session GET
+also denied this service identity; no authentication bypass or access expansion was attempted.
+
+The saved Terraform plan was rejected by the intended control-plane-only allowlist: the existing
+module-level dependency also forces the unchanged Linear bot to build/redeploy. There are eight
+planned resource changes: two build null resources, metadata normalization on two Worker resources,
+two Worker version replacements, and two deployment replacements. Configured binding values and
+secrets match after normalizing provider-computed/default fields; publication remains false and
+routing implementation. No Modal, database migration, access or cron changes are planned. Linear
+and shared source have no diff from the previous deployed source. Plan SHA-256:
+`4f50086aa20e0260476cf05b5dc67142c3aa0fd6ef3b3bb9996c8bbf03ab3cc4`.
+
+The coordinator requested a narrow human decision for this expanded dev release, rather than
+silently applying the unexpected Linear redeploy or removing Terraform dependencies. Private plan,
+review and operator helpers are preserved under
+`/home/orca/.local/state/openinspect/div84-release-20260916/`. At this checkpoint no apply,
+cancellation, archive or new model execution has occurred. After approval, recheck plan freshness
+and apply only the reviewed scope, then verify deployed identities and perform the authenticated
+exact-message settlement procedure with callback/provider evidence before any smoke.
