@@ -172,6 +172,7 @@ export interface CreateSandboxRequest {
   controlPlaneUrl: string;
   sandboxAuthToken: string;
   agentSessionId?: string;
+  executionProfile?: "implementation" | "investigation";
   harness: HarnessId;
   provider?: string;
   model?: string;
@@ -209,6 +210,7 @@ export interface RestoreSandboxRequest {
   controlPlaneUrl: string;
   repoOwner: string | null;
   repoName: string | null;
+  executionProfile?: "implementation" | "investigation";
   harness: HarnessId;
   provider: string;
   model: string;
@@ -410,6 +412,7 @@ export class ModalClient {
           sandbox_auth_token: request.sandboxAuthToken,
           agent_session_id: request.agentSessionId || null,
           harness: request.harness,
+          execution_profile: request.executionProfile,
           provider: request.provider || "anthropic",
           model: request.model || "claude-sonnet-4-6",
           user_env_vars: request.userEnvVars || null,

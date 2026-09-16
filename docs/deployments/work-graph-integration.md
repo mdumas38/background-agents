@@ -10,8 +10,9 @@ The [two-worker harmless coordination pilot](work-graph-coordination-pilot-2026-
 using existing sessions and Linear reports. A's durable report reached independently dispatched B
 verbatim; B confirmed and extended its investigation. Both environments are terminated. The pilot
 used manual publication; adversarial isolation remains deferred. The subsequent opt-in
-[automatic publication increment](work-graph-publication.md) is implemented locally and has not been
-deployed or verified with a live publication pilot.
+[automatic publication increment](work-graph-publication.md) was deployed to dev for a bounded
+[live publication pilot](work-graph-publication-pilot-2026-09-16.md); that scorecard records
+provider evidence and the distinction between publication and operator dispatch.
 
 ## Reuse map
 

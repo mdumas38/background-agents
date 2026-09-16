@@ -1,3 +1,4 @@
+import { ExecutionProfileMismatchError } from "../../message-queue";
 import type { Logger } from "../../../logger";
 import { eventTypeSchema } from "@open-inspect/shared/types/sandbox-events";
 import {
@@ -39,6 +40,9 @@ export class MessagesHandler {
       const body: EnqueuePromptRequest = result.data;
       return Response.json(await this.messageService.enqueuePrompt(body));
     } catch (error) {
+      if (error instanceof ExecutionProfileMismatchError) {
+        return Response.json({ error: error.message }, { status: 409 });
+      }
       if (error instanceof SessionAttachmentError) {
         return Response.json({ error: error.message }, { status: 400 });
       }

@@ -70,6 +70,7 @@ CREATE TABLE IF NOT EXISTS session (
   base_sha TEXT,                                    -- SHA of base branch at session start
   current_sha TEXT,                                 -- Current HEAD SHA
   agent_session_id TEXT,                            -- The agent's own conversation id (1:1 mapping)
+  execution_profile TEXT NOT NULL DEFAULT 'implementation',
   harness TEXT NOT NULL DEFAULT 'opencode',         -- Agent harness: 'opencode' | 'claude'; fixed at create
   model TEXT DEFAULT 'anthropic/claude-haiku-4-5',   -- LLM model to use
   reasoning_effort TEXT,                            -- Session-level reasoning effort default
@@ -687,6 +688,15 @@ export const MIGRATIONS: readonly SchemaMigration[] = [
         if (!msg.includes("no such column") && !msg.includes("duplicate column")) throw e;
       }
     },
+  },
+  {
+    id: 51,
+    description: "Immutable investigation execution profile",
+    run: (sql) =>
+      runMigration(
+        sql,
+        "ALTER TABLE session ADD COLUMN execution_profile TEXT NOT NULL DEFAULT 'implementation'"
+      ),
   },
 ];
 

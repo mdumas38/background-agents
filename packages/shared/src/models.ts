@@ -253,22 +253,22 @@ export const MODEL_CATALOG = [
     ],
   },
   {
-    category: "DeepSeek",
-    enabledByDefault: false,
-    models: [
-      { id: "deepseek/deepseek-v4-flash", name: "DeepSeek V4 Flash", description: "Fast model" },
-      { id: "deepseek/deepseek-v4-pro", name: "DeepSeek V4 Pro", description: "Most capable" },
-    ],
-  },
-  {
     category: "OpenRouter",
     enabledByDefault: false,
     models: [
       {
         id: "openrouter/deepseek/deepseek-v4.1-flash",
         name: "DeepSeek V4.1 Flash (OpenRouter)",
-        description: "Budget coding via OpenRouter",
+        description: "OpenRouter model used by the investigation profile",
       },
+    ],
+  },
+  {
+    category: "DeepSeek",
+    enabledByDefault: false,
+    models: [
+      { id: "deepseek/deepseek-v4-flash", name: "DeepSeek V4 Flash", description: "Fast model" },
+      { id: "deepseek/deepseek-v4-pro", name: "DeepSeek V4 Pro", description: "Most capable" },
     ],
   },
 ] as const satisfies readonly ModelCatalogGroup[];

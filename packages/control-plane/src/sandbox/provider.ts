@@ -96,6 +96,7 @@ export interface CreateSandboxConfig {
   /** Authentication token for sandbox */
   sandboxAuthToken: string;
   /** Agent harness the session runs on */
+  executionProfile?: "implementation" | "investigation";
   harness: HarnessId;
   /** LLM provider (e.g., "anthropic") */
   provider: string;
@@ -199,6 +200,7 @@ export interface RestoreConfig {
   /** Repository name */
   repoName: string | null;
   /** Agent harness the session runs on */
+  executionProfile?: "implementation" | "investigation";
   harness: HarnessId;
   /** LLM provider (e.g., "anthropic") */
   provider: string;

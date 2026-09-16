@@ -47,6 +47,7 @@ export interface SessionInitInput {
   // Session config
   title?: string;
   /** Agent harness; validated against model and provider auth by the caller. */
+  executionProfile?: "implementation" | "investigation";
   harness: HarnessId;
   model: string;
   reasoningEffort: string | null;
@@ -191,6 +192,7 @@ export async function initializeSession(
           environmentId: input.environmentId ?? null,
           title: input.title,
           harness: input.harness,
+          executionProfile: input.executionProfile,
           model: input.model,
           reasoningEffort: input.reasoningEffort,
           userId: input.participantUserId,

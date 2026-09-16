@@ -46,6 +46,7 @@ export interface SessionRow {
   base_sha: string | null;
   current_sha: string | null;
   agent_session_id: string | null; // The agent's own conversation id
+  execution_profile?: "implementation" | "investigation";
   harness: HarnessId; // Agent harness the session runs on; fixed at create
   model: string; // LLM model to use (e.g., "anthropic/claude-haiku-4-5")
   reasoning_effort: string | null; // Reasoning effort level (e.g., "high", "max")

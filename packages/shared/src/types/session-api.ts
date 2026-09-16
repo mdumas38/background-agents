@@ -147,6 +147,7 @@ export type CallbackContext = z.infer<typeof callbackContextSchema>;
 export const sendPromptRequestSchema = z
   .object({
     content: promptContentSchema,
+    requiredExecutionProfile: z.enum(["implementation", "investigation"]).optional(),
     source: messageSourceSchema.optional(),
     model: z.string().optional(),
     reasoningEffort: z.string().optional(),
@@ -228,7 +229,11 @@ function hasExclusiveSessionTarget(
   return activeModes <= 1;
 }
 
+export const executionProfileSchema = z.enum(["implementation", "investigation"]);
+export type ExecutionProfile = z.infer<typeof executionProfileSchema>;
+
 const createSessionRequestBaseSchema = z.object({
+  executionProfile: executionProfileSchema.optional(),
   repoOwner: z.string().trim().min(1).nullish(),
   repoName: z.string().trim().min(1).nullish(),
   title: z.string().optional(),

@@ -322,6 +322,49 @@ describe("handleCreateSession D1 ordering", () => {
     expect(initFetch).not.toHaveBeenCalled();
   });
 
+  it.each([
+    { label: "no repository", target: {}, status: 400 },
+    {
+      label: "multiple repositories",
+      target: {
+        repositories: [
+          { repoOwner: "acme", repoName: "web" },
+          { repoOwner: "acme", repoName: "api" },
+        ],
+      },
+      status: 400,
+    },
+    { label: "one scalar repository", target: { repoOwner: "acme", repoName: "web" }, status: 201 },
+    {
+      label: "one list repository",
+      target: { repositories: [{ repoOwner: "acme", repoName: "web" }] },
+      status: 201,
+    },
+  ])("admits investigation with $label as $status", async ({ target, status }) => {
+    const create = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(SessionIndexStore).mockImplementation(function () {
+      return { create } as never;
+    });
+    const initFetch = vi.fn(async () => Response.json({ status: "created" }));
+    const response = await createSessionRequestWithBody(createEnv(initFetch), {
+      ...target,
+      executionProfile: "investigation",
+      harness: "opencode",
+      model: "openrouter/deepseek/deepseek-v4.1-flash",
+    });
+    expect(response.status).toBe(status);
+    if (status === 400) {
+      await expect(response.json()).resolves.toEqual({
+        error: "Investigation requires Modal, OpenCode, OpenRouter and exactly one repository",
+      });
+      expect(create).not.toHaveBeenCalled();
+      expect(initFetch).not.toHaveBeenCalled();
+    } else {
+      expect(create).toHaveBeenCalledOnce();
+      expect(initFetch).toHaveBeenCalledOnce();
+    }
+  });
+
   it("creates a repo-less public session without resolving the repo", async () => {
     const create = vi.fn().mockResolvedValue(undefined);
     vi.mocked(SessionIndexStore).mockImplementation(function () {

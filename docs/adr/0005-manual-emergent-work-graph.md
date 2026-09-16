@@ -77,7 +77,22 @@ opt-in adapter publishes explicitly marked Markdown proposals as unassigned Line
 supplies causal source references and retains the original report. Human dispatch remains separate.
 Reuse the existing dispatch coordinator for atomic publication claims; do not add a model loop or
 autonomous scheduler. Ambiguous external writes retain their identities for operator reconciliation.
-See the [publication contract](../deployments/work-graph-publication.md).
+See the [publication contract](../deployments/work-graph-publication.md) and
+[live pilot evidence](../deployments/work-graph-publication-pilot-2026-09-16.md).
 
 See the
 [source-backed integration review and pilot contract](../deployments/work-graph-integration.md).
+
+## Enforced investigation profile — 2026-09-16
+
+The publication pilot's worker wrote a temporary file despite a no-edits prompt. The user selected
+HomeLab Operator's existing runtime-enforcement pattern for the next increment. Persist a session
+execution profile, separate supervisor credentials from the model process, mount source read-only,
+allow explicit disposable scratch space, and deny unsupported execution paths rather than downgrade.
+The initial profile supports one repository on Modal with OpenCode/OpenRouter; it excludes shell
+tools, delegation, repository hooks/extensions, managed skills, snapshots and other providers.
+
+This preserves the existing harness and publication/dispatch separation. It does not recreate
+HomeLab's tool-less investigator, grant HomeLab infrastructure access or establish adversarial
+fixture isolation. See the
+[profile contract and verification](../deployments/investigation-profile.md).

@@ -14,6 +14,7 @@ import httpx
 
 from .constants import OPENCODE_PORT
 from .git_excludes import install_runtime_git_excludes
+from .investigation import execution_profile, investigation_command, investigation_environment
 from .mcp_packages import McpPackageInstaller
 from .process_output import iter_process_lines
 from .sandbox_bin import install_bin_scripts
@@ -54,6 +55,7 @@ class OpenCodeServer:
         self.record_boot_warning = record_boot_warning
         self.has_repository = config.has_repository
         self.workspace_path = config.workspace_path
+        self.investigation = execution_profile(config.execution_profile) == "investigation"
         self.provider = config.provider
         self.model = config.model
         self.mcp_servers = config.mcp_servers
@@ -388,6 +390,9 @@ class OpenCodeServer:
 
     async def start(self, repositories: Sequence[RepoEntry], workdir: Path) -> None:
         """Start OpenCode server with configuration."""
+        if self.investigation:
+            await self._start_investigation(workdir, repositories)
+            return
         self._setup_managed_oauth()
         self.log.info("opencode.start")
 
@@ -487,6 +492,28 @@ class OpenCodeServer:
         # Wait for health check
         await self._wait_for_health()
         self.log.info("opencode.ready")
+
+    async def _start_investigation(self, workdir: Path, repositories: Sequence[RepoEntry]) -> None:
+        if self.provider != "openrouter" or self.mcp_servers or len(repositories) != 1:
+            raise RuntimeError(
+                "Investigation requires one repository, OpenRouter and no MCP servers"
+            )
+        executable = shutil.which("opencode")
+        if not executable:
+            raise RuntimeError("OpenCode executable unavailable")
+        command = investigation_command(workdir, executable=executable, port=OPENCODE_PORT)
+        env = investigation_environment(self.model, os.environ)
+        self._opencode_process = await asyncio.create_subprocess_exec(
+            *command,
+            cwd="/",
+            env=env,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+            limit=_LOG_FORWARD_STREAM_LIMIT_BYTES,
+        )
+        asyncio.create_task(self._forward_opencode_logs())
+        await self._wait_for_health()
+        self.log.info("opencode.investigation_ready")
 
     async def _forward_opencode_logs(self) -> None:
         """Forward OpenCode stdout to supervisor stdout."""
