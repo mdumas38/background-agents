@@ -12,6 +12,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from .harness.base import HarnessId, parse_harness_id
+from .investigation import execution_profile
 
 
 class BootMode(StrEnum):
@@ -75,6 +76,7 @@ class OpenCodeConfig:
     mcp_servers: tuple[Mapping[str, Any], ...]
     has_repository: bool
     workspace_path: Path
+    execution_profile: str = "implementation"
 
 
 @dataclass(frozen=True)
@@ -123,6 +125,17 @@ class RuntimeConfig:
         parsed_session_config = json.loads(environment.get("SESSION_CONFIG", "{}"))
         if not isinstance(parsed_session_config, dict):
             raise ValueError("SESSION_CONFIG must contain a JSON object")
+        profile = execution_profile(
+            parsed_session_config.get("execution_profile", "implementation")
+        )
+        if profile == "investigation" and (
+            parsed_session_config.get("harness", "opencode") != "opencode"
+            or parsed_session_config.get("provider") != "openrouter"
+            or parsed_session_config.get("mcp_servers")
+            or environment.get("RESTORED_FROM_SNAPSHOT") == "true"
+            or environment.get("FROM_REPO_IMAGE") == "true"
+        ):
+            raise ValueError("Unsupported investigation runtime configuration")
         session_config = _freeze_json(parsed_session_config)
         repo_path = workspace_path / repo_name if repo_owner and repo_name else workspace_path
         control_plane_url = environment.get("CONTROL_PLANE_URL", "")
@@ -176,6 +189,10 @@ class RuntimeConfig:
             repo_path=self.repo_path,
         )
 
+    @property
+    def investigation(self) -> bool:
+        return self.session_config.get("execution_profile") == "investigation"
+
     def opencode_config(self) -> OpenCodeConfig:
         raw_mcp_servers = self.session_config.get("mcp_servers")
         mcp_servers = (
@@ -184,6 +201,9 @@ class RuntimeConfig:
             else ()
         )
         return OpenCodeConfig(
+            execution_profile=execution_profile(
+                self.session_config.get("execution_profile", "implementation")
+            ),
             provider=str(self.session_config.get("provider") or "anthropic"),
             model=str(self.session_config.get("model") or "claude-sonnet-4-6"),
             mcp_servers=mcp_servers,

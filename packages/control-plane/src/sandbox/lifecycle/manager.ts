@@ -596,6 +596,16 @@ export class SandboxLifecycleManager implements SandboxLifecycle {
         );
       }
 
+      const investigation = session.execution_profile === "investigation";
+      if (
+        investigation &&
+        (this.provider.name !== "modal" ||
+          session.harness !== "opencode" ||
+          provider !== "openrouter")
+      ) {
+        throw new Error("Unsupported investigation runtime");
+      }
+      if (investigation) selectedImage = null;
       const prebuiltImageId: string | null = selectedImage?.providerImageId ?? null;
       const prebuiltImageSha: string | null = selectedImage?.primaryBaseSha ?? null;
 
@@ -614,18 +624,21 @@ export class SandboxLifecycleManager implements SandboxLifecycle {
         controlPlaneUrl: this.config.controlPlaneUrl,
         sandboxAuthToken,
         harness: getValidHarnessOrDefault(session.harness),
+        executionProfile: session.execution_profile,
         provider,
         model: modelId,
-        userEnvVars,
+        userEnvVars: investigation ? undefined : userEnvVars,
         prebuiltImageId,
         prebuiltImageSha,
         timeoutSeconds,
         branch: session.base_branch,
-        codeServerEnabled,
-        vncEnabled,
-        agentSlackNotifyEnabled,
-        mcpServers,
-        sandboxSettings,
+        codeServerEnabled: investigation ? false : codeServerEnabled,
+        vncEnabled: investigation ? false : vncEnabled,
+        agentSlackNotifyEnabled: investigation ? false : agentSlackNotifyEnabled,
+        mcpServers: investigation ? [] : mcpServers,
+        sandboxSettings: investigation
+          ? { ...sandboxSettings, terminalEnabled: false, tunnelPorts: [] }
+          : sandboxSettings,
         ...multiRepoFields,
       };
 
@@ -933,6 +946,8 @@ export class SandboxLifecycleManager implements SandboxLifecycle {
         return;
       }
 
+      if (session.execution_profile === "investigation")
+        throw new Error("Investigation snapshot restore is disabled");
       this.storage.setLastSpawnError(null, null);
 
       const now = Date.now();
@@ -970,6 +985,7 @@ export class SandboxLifecycleManager implements SandboxLifecycle {
         repoOwner: session.repo_owner,
         repoName: session.repo_name,
         harness: getValidHarnessOrDefault(session.harness),
+        executionProfile: session.execution_profile,
         provider,
         model: modelId,
         userEnvVars,

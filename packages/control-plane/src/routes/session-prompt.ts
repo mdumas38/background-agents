@@ -127,6 +127,7 @@ export async function handleSessionPrompt(
 
   const promptRequest = {
     content: body.content,
+    requiredExecutionProfile: body.requiredExecutionProfile,
     authorId,
     canonicalUserId,
     source: body.source || "web",

@@ -206,6 +206,19 @@ export async function handleCreateSession(
   // Validate harness, model and reasoning effort once for both DO init and D1 index
   const harness = getValidHarnessOrDefault(body.harness);
   const model = getValidModelOrDefault(body.model);
+  if (
+    body.executionProfile === "investigation" &&
+    (harness !== "opencode" ||
+      !model.startsWith("openrouter/") ||
+      (env.SANDBOX_PROVIDER ?? "modal") !== "modal" ||
+      body.environmentId ||
+      (repositories?.length ?? (repoOwner && repoName ? 1 : 0)) !== 1)
+  ) {
+    return error(
+      "Investigation requires Modal, OpenCode, OpenRouter and exactly one repository",
+      400
+    );
+  }
   const harnessModelIncompatibility = checkHarnessCompatibility(harness, model);
   if (harnessModelIncompatibility) return error(harnessModelIncompatibility.message, 400);
   const reasoningEffort =
@@ -268,6 +281,7 @@ export async function handleCreateSession(
     branch: body.branch,
     repositories,
     environmentId,
+    executionProfile: body.executionProfile,
     title: body.title,
     harness,
     model,

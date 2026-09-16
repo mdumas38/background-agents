@@ -238,6 +238,13 @@ describe("ChildSessionsHandler", () => {
     });
   });
 
+  it("denies child admission for investigation sessions", async () => {
+    const { handler, getSession, repository } = createHandler();
+    getSession.mockReturnValue(createSession({ execution_profile: "investigation" }));
+    expect(handler.getSpawnContext().status).toBe(403);
+    expect(repository.getProcessingMessageAuthor).not.toHaveBeenCalled();
+  });
+
   it("returns 404 when session is missing for spawn context", async () => {
     const { handler, getSession } = createHandler();
     getSession.mockReturnValue(null);

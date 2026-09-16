@@ -10,6 +10,7 @@ import { z } from "zod";
 export const enqueuePromptRequestSchema = z
   .object({
     content: promptContentSchema,
+    requiredExecutionProfile: z.enum(["implementation", "investigation"]).optional(),
     authorId: z.string(),
     canonicalUserId: z.string().nullable().optional(),
     source: messageSourceSchema,

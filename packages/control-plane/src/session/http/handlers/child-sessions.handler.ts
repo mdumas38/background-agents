@@ -73,6 +73,10 @@ export class ChildSessionsHandler {
       return Response.json({ error: "Session not found" }, { status: 404 });
     }
 
+    if (session.execution_profile === "investigation") {
+      return Response.json({ error: "Investigation sessions cannot delegate" }, { status: 403 });
+    }
+
     const promptAuthor = resolvePromptAuthorParticipant(
       this.messageRepository,
       this.participantRepository

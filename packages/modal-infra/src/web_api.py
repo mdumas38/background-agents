@@ -17,7 +17,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Annotated, Any, Self
+from typing import Annotated, Any, Literal, Self
 
 from fastapi import Header, HTTPException
 from modal import fastapi_endpoint
@@ -119,6 +119,7 @@ class CreateSandboxRequest(_RepositoryContextModel):
     sandbox_auth_token: NonEmptyString
     agent_session_id: str | None = None
     opencode_session_id: str | None = None
+    execution_profile: Literal["implementation", "investigation"] = "implementation"
     harness: str | None = None
     provider: str | None = None
     model: str | None = None
@@ -147,6 +148,7 @@ class RestoreSessionConfigRequest(_RepositoryContextModel):
     base_sha: str | None = None
     agent_session_id: str | None = None
     opencode_session_id: str | None = None
+    execution_profile: Literal["implementation", "investigation"] = "implementation"
     harness: str | None = None
     provider: str | None = None
     model: str | None = None
