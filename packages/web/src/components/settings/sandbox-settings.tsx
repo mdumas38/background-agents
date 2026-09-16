@@ -381,7 +381,8 @@ export function SandboxSettingsEditor({
       <fieldset className="min-w-0">
         <legend className="block text-sm font-medium text-foreground mb-1.5">Child Sessions</legend>
         <p className="text-xs text-muted-foreground mb-2">
-          Limit agent-spawned child sessions to prevent runaway sandbox usage.
+          Limit agent-spawned child sessions. Set both limits to zero to disable child creation and
+          follow-up prompts.
         </p>
         <div className="grid gap-3 max-w-sm sm:grid-cols-2">
           <div>
@@ -394,7 +395,7 @@ export function SandboxSettingsEditor({
             <Input
               id="max-concurrent-child-sessions"
               type="number"
-              min="1"
+              min="0"
               inputMode="numeric"
               value={values.maxConcurrentChildSessions}
               onChange={(e) => updateField("maxConcurrentChildSessions", e.target.value)}
@@ -410,7 +411,7 @@ export function SandboxSettingsEditor({
             <Input
               id="max-total-child-sessions"
               type="number"
-              min="1"
+              min="0"
               inputMode="numeric"
               value={values.maxTotalChildSessions}
               onChange={(e) => updateField("maxTotalChildSessions", e.target.value)}

@@ -209,6 +209,16 @@ describe("resolveSandboxSettingsDraft", () => {
     expect(resolved.result).toEqual({ error: "Invalid port numbers: bad" });
   });
 
+  it("serializes zero child limits instead of replacing them with defaults", () => {
+    const resolved = resolveSandboxSettingsDraft({
+      isGlobal: true,
+      draft: { maxConcurrentChildSessions: "0", maxTotalChildSessions: "0" },
+    });
+    expect(resolved.result).toMatchObject({
+      settings: { maxConcurrentChildSessions: 0, maxTotalChildSessions: 0 },
+    });
+  });
+
   it("marks an invalid-only tunnel edit dirty", () => {
     const resolved = resolveSandboxSettingsDraft({
       isGlobal: true,
@@ -253,9 +263,12 @@ describe("resolveSandboxSettingsDraft", () => {
 
   it.each<[SandboxSettingsDraft, string]>([
     [{ tunnelPorts: ["0", "65536", " 1.5 "] }, "Invalid port numbers: 0, 65536,  1.5 "],
-    [{ maxConcurrentChildSessions: "" }, "Child session limits must be positive whole numbers."],
-    [{ maxTotalChildSessions: " 2 " }, "Child session limits must be positive whole numbers."],
-    [{ maxTotalChildSessions: "1.5" }, "Child session limits must be positive whole numbers."],
+    [
+      { maxConcurrentChildSessions: "" },
+      "Child session limits must be non-negative whole numbers.",
+    ],
+    [{ maxTotalChildSessions: " 2 " }, "Child session limits must be non-negative whole numbers."],
+    [{ maxTotalChildSessions: "1.5" }, "Child session limits must be non-negative whole numbers."],
     [{ cpuCores: "0" }, "CPU cores must be a positive number."],
     [{ cpuCores: "1e2" }, "CPU cores must be a positive number."],
     [{ memoryMib: "1.5" }, "Memory must be a positive whole number of MiB."],

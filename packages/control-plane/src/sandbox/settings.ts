@@ -78,15 +78,17 @@ export function normalizeSandboxSettings(
   const terminalPort = normalizePort(settings.terminalPort, "terminalPort", reject);
   if (terminalPort !== undefined) result.terminalPort = terminalPort;
 
-  let maxConcurrentChildSessions = normalizePositiveIntegerSetting(
+  let maxConcurrentChildSessions = normalizeIntegerSetting(
     settings.maxConcurrentChildSessions,
     "maxConcurrentChildSessions",
-    reject
+    reject,
+    0
   );
-  const maxTotalChildSessions = normalizePositiveIntegerSetting(
+  const maxTotalChildSessions = normalizeIntegerSetting(
     settings.maxTotalChildSessions,
     "maxTotalChildSessions",
-    reject
+    reject,
+    0
   );
 
   const childSessionLimitsError = validateSandboxChildSessionLimits({
@@ -141,7 +143,7 @@ export function normalizeSandboxSettings(
     }
   }
 
-  const buildTimeoutSeconds = normalizePositiveIntegerSetting(
+  const buildTimeoutSeconds = normalizeIntegerSetting(
     settings.buildTimeoutSeconds,
     "buildTimeoutSeconds",
     reject
@@ -269,14 +271,15 @@ function normalizeTunnelPorts(
   }
 }
 
-function normalizePositiveIntegerSetting(
+function normalizeIntegerSetting(
   value: unknown,
   name: string,
-  reject: (message: string) => false
+  reject: (message: string) => false,
+  minimum = 1
 ): number | undefined {
   if (value === undefined) return undefined;
-  if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
-    reject(`${name} must be a positive integer`);
+  if (typeof value !== "number" || !Number.isInteger(value) || value < minimum) {
+    reject(`${name} must be a ${minimum === 0 ? "non-negative" : "positive"} integer`);
     return undefined;
   }
   return value;

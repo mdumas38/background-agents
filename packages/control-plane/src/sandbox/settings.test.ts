@@ -30,6 +30,23 @@ describe("parsePersistedSandboxSettings", () => {
 });
 
 describe("normalizeSandboxSettings", () => {
+  it("preserves explicit zero child limits across persisted settings", () => {
+    const settings = { maxConcurrentChildSessions: 0, maxTotalChildSessions: 0 };
+    expect(normalizeSandboxSettings(settings)).toEqual(settings);
+    expect(parsePersistedSandboxSettings(JSON.stringify(settings))).toEqual(settings);
+  });
+
+  it.each([-1, 0.5, Number.NaN, Number.POSITIVE_INFINITY, "0"])(
+    "rejects invalid child limit %s",
+    (limit) => {
+      for (const name of ["maxConcurrentChildSessions", "maxTotalChildSessions"]) {
+        expect(() => normalizeSandboxSettings({ [name]: limit })).toThrow(
+          SandboxSettingsValidationError
+        );
+      }
+    }
+  );
+
   it("throws for invalid settings by default", () => {
     expect(() => normalizeSandboxSettings({ cpuCores: 0 })).toThrow(SandboxSettingsValidationError);
     expect(() => normalizeSandboxSettings({ memoryMib: 256.5 })).toThrow(
