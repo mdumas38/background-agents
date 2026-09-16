@@ -318,12 +318,21 @@ export class SandboxRepository {
   }
 
   /** Set one access artifact's URL and encrypted secret. */
-  async updateSandboxAccess(kind: SandboxAccessKind, url: string, secret: string): Promise<void> {
+  async updateSandboxAccess(
+    kind: SandboxAccessKind,
+    url: string,
+    secret: string,
+    assertCurrent?: () => void
+  ): Promise<void> {
+    const encrypted = await this.encrypt(secret);
+    // Encryption yields: startup cancellation or a newer generation may have
+    // retired this writer while it was suspended.
+    assertCurrent?.();
     const { urlColumn, secretColumn } = ACCESS_ARTIFACT_COLUMNS[kind];
     this.sql.exec(
       `UPDATE sandbox SET ${urlColumn} = ?, ${secretColumn} = ? WHERE id = (SELECT id FROM sandbox LIMIT 1)`,
       url,
-      await this.encrypt(secret)
+      encrypted
     );
   }
 

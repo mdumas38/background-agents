@@ -13,6 +13,7 @@ import type { SessionWebSocketManager } from "./websocket-manager";
 export interface ExecutionStopPreparation {
   stopConfirmationDeadline: number;
   failure: RecordedMessageFailure;
+  pending: boolean;
 }
 
 export class ExecutionStopCoordinator {
@@ -32,7 +33,7 @@ export class ExecutionStopCoordinator {
   ) {}
 
   async stop(reason = "Execution was stopped"): Promise<void> {
-    const preparation = this.repository.transaction(() => this.prepare(reason, Date.now()));
+    const preparation = this.repository.transaction(() => this.prepare(reason, Date.now(), true));
     if (!preparation) {
       this.messenger.broadcast({ type: "processing_status", isProcessing: false });
       return;
@@ -40,11 +41,20 @@ export class ExecutionStopCoordinator {
     await this.deliver(preparation);
   }
 
-  prepare(reason: string, now: number): ExecutionStopPreparation | null {
+  prepare(reason: string, now: number, includePending = false): ExecutionStopPreparation | null {
+    if (this.messageRepository.getMessageAwaitingStopConfirmation()) return null;
     const processingMessage = this.messageRepository.getProcessingMessageWithCreatedAt();
+    const pendingMessage =
+      processingMessage || !includePending ? null : this.messageRepository.getNextPendingMessage();
+    const message = processingMessage ?? pendingMessage;
     const stopConfirmationDeadline = now + STOP_CONFIRMATION_TIMEOUT_MS;
-    const failure = processingMessage
-      ? this.messageFailures.record(processingMessage.id, reason, now, "processing")
+    const failure = message
+      ? this.messageFailures.record(
+          message.id,
+          reason,
+          now,
+          processingMessage ? "processing" : "pending"
+        )
       : null;
     if (!failure) return null;
     this.messageRepository.markMessageAwaitingStopConfirmation(
@@ -52,10 +62,13 @@ export class ExecutionStopCoordinator {
       stopConfirmationDeadline
     );
     this.alarmDeadlines.setPendingEarliest(stopConfirmationDeadline);
-    return { stopConfirmationDeadline, failure };
+    return { stopConfirmationDeadline, failure, pending: !processingMessage };
   }
 
   async deliver(preparation: ExecutionStopPreparation): Promise<void> {
+    const pendingTermination = preparation.pending
+      ? this.sandboxLifecycle.terminateUnresponsiveSandbox("pending_prompt_cancelled")
+      : null;
     this.messageFailures.deliver(preparation.failure);
     this.broadcastPromptQueue();
     this.log.info("prompt.stopped", {
@@ -65,7 +78,10 @@ export class ExecutionStopCoordinator {
     this.messenger.broadcast({ type: "processing_status", isProcessing: false });
 
     const sandboxWs = this.wsManager.getSandboxSocket();
-    const stopSent = sandboxWs !== null && this.wsManager.send(sandboxWs, { type: "stop" });
+    const stopSent =
+      !preparation.pending &&
+      sandboxWs !== null &&
+      this.wsManager.send(sandboxWs, { type: "stop" });
     const [alarm, status] = await Promise.allSettled([
       this.alarmScheduler.schedule(preparation.stopConfirmationDeadline),
       this.sessionStatus.reconcileAfterExecution(false),
@@ -87,7 +103,7 @@ export class ExecutionStopCoordinator {
       ) {
         return;
       }
-      await this.sandboxLifecycle.terminateUnresponsiveSandbox(reason);
+      await (pendingTermination ?? this.sandboxLifecycle.terminateUnresponsiveSandbox(reason));
       await this.resumeAfterSandboxTermination();
     }
   }
