@@ -264,6 +264,10 @@ def inspect_image(plan: dict[str, Any], tools: dict[str, Any], *, services: bool
         ]
     )
     probe.run(["gh", "--version"])
+    if plan["target"]["os"] == "debian":
+        # Investigation has fresh caches and cannot download search binaries.
+        # Require the baked executable at the path visible inside its boundary.
+        probe.run(["/usr/bin/rg", "--version"])
     if probe.run(["git", "config", "--system", "credential.useHttpPath"]) != "true":
         raise RuntimeError("SCM credential helper is not repository-path scoped")
     probe.run(

@@ -7,6 +7,7 @@ only installed tools, a read-only checkout, and disposable scratch filesystems.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -28,7 +29,10 @@ def investigation_permissions() -> dict[str, str | dict[str, str]]:
     # No shell, edits, custom tools, network tools, skills, or native subagents.
     return {
         "*": "deny",
-        "read": {"*": "deny", "/workspace/**": "allow"},
+        # Pinned OpenCode checks paths relative to its worktree, which is /
+        # when Git metadata is masked. external_directory still limits the
+        # request to the checkout; this is not an absolute-path matcher.
+        "read": {"*": "deny", "workspace/**": "allow"},
         "glob": "allow",
         "grep": "allow",
         "external_directory": "deny",
@@ -39,6 +43,8 @@ def investigation_command(workdir: Path, *, executable: str, port: int) -> list[
     bwrap = shutil.which("bwrap")
     if not bwrap:
         raise RuntimeError("Investigation requires bubblewrap; refusing unrestricted startup")
+    if not os.access("/usr/bin/rg", os.X_OK):
+        raise RuntimeError("Investigation requires image-installed ripgrep; refusing startup")
     workdir = workdir.resolve(strict=True)
     if not workdir.is_relative_to("/workspace") or workdir == Path("/workspace"):
         raise RuntimeError("Investigation requires a checkout beneath /workspace")
@@ -63,6 +69,7 @@ def investigation_command(workdir: Path, *, executable: str, port: int) -> list[
 
 def investigation_mounts(workdir: Path, *, bwrap: str) -> list[str]:
     """Construct the filesystem boundary; also exercised with a real denial probe."""
+    _validate_source_symlinks(workdir)
     command = [
         bwrap,
         "--unshare-user",
@@ -107,6 +114,37 @@ def investigation_mounts(workdir: Path, *, bwrap: str) -> list[str]:
             command += ["--ro-bind", "/dev/null", str(workdir / name)]
     command += ["--remount-ro", "/"]
     return command
+
+
+def _validate_source_symlinks(workdir: Path) -> None:
+    """Reject links that can defeat OpenCode's lexical directory checks.
+
+    Internal regular-file links (e.g. CLAUDE.md -> AGENTS.md) are safe to read.
+    Directory links are not: even an internal alias followed by /.. can leave
+    the checkout while its lexically normalized path still looks internal.
+    The source mount is read-only after this admission check.
+    """
+    root = workdir.resolve(strict=True)
+
+    def fail_walk(error: OSError) -> None:
+        raise RuntimeError("Cannot inspect investigation source symlinks") from error
+
+    for directory, dirs, files in os.walk(root, followlinks=False, onerror=fail_walk):
+        for name in dirs + files:
+            path = Path(directory) / name
+            if not path.is_symlink():
+                continue
+            try:
+                target = path.resolve(strict=True)
+                safe = target.is_relative_to(root) and target.is_file()
+            except (OSError, RuntimeError):
+                safe = False
+            if not safe:
+                raise RuntimeError(f"Unsafe investigation source symlink: {path.relative_to(root)}")
+        if Path(directory) == root:
+            dirs[:] = [
+                name for name in dirs if name not in (".git", ".opencode", ".claude", ".agents")
+            ]
 
 
 def investigation_environment(model: str, environment: Mapping[str, str]) -> dict[str, str]:
