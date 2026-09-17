@@ -576,3 +576,31 @@ repeated tests, smoke, replacement A or B occurred. The [A3 closeout](div77-a3-c
 records all evidence, including the duplicate response IDs. DIV-77 and DIV-84 remain In Review;
 DIV-88 remains Backlog for [explicit B selection/resumption](div77-div88-b-decision-2026-09-17.md).
 One slot remains. DIV-87 is Done; DIV-79 remains separate.
+
+
+## Independent B completed — 13:35–13:41 UTC
+
+Mason selected actual DIV-88 and authorized continuation with gap repair afterward. The sole B
+ran at approved source, preserved A's complete durable description/report in an 18,069-unit prompt,
+and explicitly used A's provenance. Native `d315ddd4-5219-4d10-969a-21fc4e371172`, OpenInspect
+`bb173157ade348b13907de693f406030`, message `8bdaa64381386e21284893a235916fa6`; 107.657 seconds,
+$0.034362096 model spend and 4,464-character report. One native response; no replay or child task.
+Sandbox `sb-N2O39XTUdkHKAsd9OsT9RI` terminated exit137 and source digest matched unchanged main.
+
+B's investigation required correction: A/B ready events and snapshots already persist the exact
+baseSha, and a read through the existing actorless Linear service events route confirmed access.
+Automatic validated revision metadata in publication is the remaining gap; no broader snapshot
+permission is needed to obtain this evidence. B made 46 calls (44 completed/two errors) despite
+approximately30 claimed, including a failed hidden Git read followed by an empty Git-refs glob.
+The boundary held; accounting and behavior limitations remain visible.
+
+Reviewed Linear-only plans restored publication false/implementation as healthy version
+`04f09f9a-4850-4e32-a33d-528403c258d9`, with control plane and other settings unchanged. Final
+audit found no active sessions/runs/app sandboxes. All pilot slots are consumed; no new tests,
+smoke, replay, repair worker or implementation ran. See [B closeout](div77-b-closeout-2026-09-17.md)
+for evidence and the next repair scopes. DIV-88 research is complete with corrections; DIV-77 and
+DIV-84 remain open. DIV-79 remains separate.
+
+Tracking read/write receipts record DIV-88 Done and the DIV-77 checkpoint. The coordinator created
+scoped DIV-89 (`a996d1ef-47b1-4543-836d-4026a765218f`) under DIV-88 for validated revision metadata
+in publication. This is operator tracking after B, not a model-published child or new execution.

@@ -1,7 +1,32 @@
 # OpenInspect coordinator handoff — DIV-87 release verified
 
 
-## Current checkpoint — A3 complete, B not selected
+## Current checkpoint — B completed; no pilot slots remain
+
+Mason explicitly selected B and deferred gap repair until afterward. B completed against actual
+DIV-88 with full durable context, one native report, no child publication/extra compute, and exact
+source integrity. Read [B closeout](div77-b-closeout-2026-09-17.md) before further work.
+Native `d315ddd4-5219-4d10-969a-21fc4e371172`; OpenInspect
+`bb173157ade348b13907de693f406030`; message `8bdaa64381386e21284893a235916fa6`;
+107.657 seconds, $0.034362096 model cost, 4,464-character report. Sandbox
+`sb-N2O39XTUdkHKAsd9OsT9RI` terminated exit 137. Final audit: zero active sessions/runs/sandboxes.
+Safe Linear `04f09f9a-4850-4e32-a33d-528403c258d9`, publication false/implementation;
+control plane remains `2ed9a9a5-353d-4e39-a97b-6e8f5192ad8f` and other settings unchanged.
+Private evidence: `/home/orca/.local/state/openinspect/div77-b-20260917/`.
+
+A/B context handoff is demonstrated; overall DIV-77 acceptance remains open. DIV-84 owns duplicate
+native delivery. Revision metadata already exists in persisted ready events and is readable by the
+existing Linear service; B's broader-access suggestion was corrected. Publication still needs
+validated machine-supplied revision provenance. B's count was 46 (44 completed/two errors), not
+approximately30; record the failed hidden Git read then empty refs glob without claiming escape.
+No more pilot execution, retry or smoke is authorized. No gap patch or deployment occurred in B. DIV-88 research is Done; operator-created DIV-89
+`a996d1ef-47b1-4543-836d-4026a765218f` tracks the scoped revision-publication repair in Backlog.
+DIV-77 and DIV-84 remain In Review. Completion comments: DIV-88
+`2fa55e23-d274-4291-abbf-bb973eda9bca`, DIV-77 `59c3a123-4686-480e-9581-50e2b6aeb117`.
+
+All checkpoints below are historical and superseded where they describe B as unselected.
+
+## Historical checkpoint — A3 complete, B not selected
 
 Mason approved the post-DIV-87 resumption plus one added slot. A3 published actual
 [DIV-88](https://linear.app/divinedesign/issue/DIV-88/trace-whether-a-sessions-executed-source-revision-is-durable-and).

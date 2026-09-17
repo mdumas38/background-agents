@@ -1,14 +1,15 @@
 # Select actual DIV-88 for independent B
 
-**Not selected or dispatched.** A published
+Mason selected and authorized B: “let's continue with B then and we can patch the gaps afterwards.”
+The existing delivery gap remains open; this decision does not waive its acceptance. A published
 [DIV-88](https://linear.app/divinedesign/issue/DIV-88/trace-whether-a-sessions-executed-source-revision-is-durable-and),
 “Trace whether a session's executed source revision is durable and callback-reachable.” This is the
 actual unassigned Backlog child with full durable report/provenance, not the operator-created
-DIV-87 or an unpublished idea. One execution slot remains from the approved A+B resumption.
+DIV-87 or an unpublished idea. The final execution slot was consumed by B; no pilot executions remain.
 
-Select DIV-88 and explicitly resume one independent read-only B despite the observed duplicate
+DIV-88 is selected for one independent read-only B despite the observed duplicate
 native report on A's replay. That decision does not waive DIV-84's stronger durability acceptance
-or authorize its implementation. Without this selection, keep downstream execution stopped.
+or authorize its implementation. No extra execution or automatic retry is authorized.
 
 B will trace whether the executed commit is persisted per session, whether a completion callback
 can retrieve it, and where it could be included in publication if absent. Use the same approved
@@ -17,7 +18,11 @@ one active worker, five-minute aim, stop at ten minutes from creation or $0.50 o
 and the existing $2 campaign target including infrastructure reserve (not a hard cap). No new
 smoke, repair worker, automatic retry, child publication, code edit or scheduler is authorized.
 
-## Proposed current instruction on DIV-88
+B completed with verified context transfer and cleanup. See the
+[B closeout and coordinator corrections](div77-b-closeout-2026-09-17.md). The instruction below is
+retained evidence and must not be redispatched.
+
+## Approved current instruction on DIV-88 — executed once
 
 > This is independently dispatched stage B of DIV-77, validating the actual published DIV-88 task.
 > Repository mdumas38/background-agents, branch main, expected revision

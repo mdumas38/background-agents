@@ -1,6 +1,26 @@
 # OpenInspect end-to-end testing closeout
 
-## Current result — A3 published DIV-88; B selection remains gated
+## Current result — A → DIV-88 → B demonstrated; gap repairs remain
+
+Mason selected actual DIV-88 and authorized independent B despite A3's known delivery gap. B
+received the complete durable description/A report through normal prompt assembly and explicitly
+used A's provenance. It completed in 107.657 seconds for $0.034362096 recorded model cost, delivered
+one 4,464-character report, preserved source, created no child/extra compute, and terminated exit137.
+Final audit: zero active sessions/runs/app sandboxes, publication false/implementation, healthy
+Linear `04f09f9a-4850-4e32-a33d-528403c258d9`; other settings/control plane unchanged.
+
+Coordinator review corrected B's revision analysis: both A/B already have the exact base revision
+in persisted ready events/snapshots, and the existing linear-bot events API exposes it. Automatic
+validated revision metadata in publication remains the gap; broadening snapshot access is not the
+starting fix. B made 46 calls (44 completed/two errors), above its eight-call aim and approximate-30
+self-report; a failed hidden Git read followed by an empty Git-refs glob is retained as an
+instruction-following concern, with no boundary escape observed.
+
+[B closeout](div77-b-closeout-2026-09-17.md) records evidence and corrected findings. DIV-88 research
+is complete; DIV-77 remains In Review for DIV-84 durability and gap repairs. All pilot slots are
+consumed. No repeated tests/smoke, additional replay or new repair worker ran. DIV-79 stays separate.
+
+## Previous result — A3 published DIV-88; B was gated
 
 Mason approved the post-DIV-87 resumption and one added slot. A3 completed 19 source calls in
 75.160 seconds for $0.018958128 model cost, producing a 4,921-character report and actual
@@ -146,17 +166,20 @@ Wrong-profile rejection evidence from the earlier attempt is retained; it was no
 2. **DIV-87 and A3 publication passed.** Exact source/prompt/report/provenance are preserved;
    actual DIV-88 exists unassigned in Backlog. One replay retained one issue/no new compute but
    duplicated native delivery. A is terminated and safe flags restored; no retry is authorized.
-3. **Select actual DIV-88 and explicitly resume B.** The concrete B decision names the published
-   issue and preserves one-slot/one-active-worker, five-minute aim, ten-minute/$0.50 observed stop
-   and $2 campaign target. No repeat smoke or A is needed. B uses normal durable context assembly.
-4. **Verify B and clean up.** Validate complete context transfer, useful completion, source integrity,
-   no child publication and provider termination; restore safe flags and record cost/limitations.
-5. **Close only fulfilled acceptance.** DIV-84's outbox/exactly-once native delivery requirement
-   needs implementation or explicit revision. Publication deduplication does not satisfy it.
+3. **Independent B completed.** Full context transfer, source integrity, one native report,
+   no child publication/extra compute and provider cleanup passed. Preserve coordinator report
+   corrections and instruction/accounting limitations; no slots remain for another execution.
+4. **Repair the documented gaps.** Existing DIV-84 owns delivery durability. Revision publication
+   should consume validated recorded evidence, with missing/conflicting/multi-repo handling.
+5. **Close only fulfilled acceptance.** Do not claim exactly-once delivery from publication
+   deduplication or treat model prose as authoritative enforcement/accounting evidence.
 
 ## Board scope that remains visible
 
-- **DIV-77:** A publication verified; independent B selection/execution and DIV-84 acceptance remain.
+- **DIV-88:** Done; independent B research reviewed with corrections.
+- **DIV-89:** Backlog; operator-created revision-provenance implementation follow-up, no compute.
+
+- **DIV-77:** A/publication/B handoff demonstrated; DIV-84 durability and documented gap repairs remain.
 - **DIV-78, DIV-81, DIV-82, DIV-85:** Done, based on successful release and live smoke evidence.
 - **DIV-86:** released; focused/non-allocating checks and actual A2 fallback preservation passed.
 - **DIV-87:** Done; PR #16 merged, dev release verified; not a model-published task.
