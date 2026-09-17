@@ -508,3 +508,23 @@ review/merge, concrete approved Linear-only release, new A/B resumption plus one
 publication/replay/termination, Mason's selection before B, transfer/completion/cleanup, safe flags
 and DIV-84 durability disposition. DIV-79 remains separate. Private evidence is under
 `/home/orca/.local/state/openinspect/div77-a2-20260917/`.
+
+
+## PR #16 merge and prepared Linear-only release — 03:46 UTC
+
+Mason approved PR #16 merge. Exact reviewed head `4b2d728524d987a9be8aae07ff5f1e20639e4fc5`
+merged as `1f7cbe3a0ac004f38f6313977c704ad286ace55c` at 03:46:14 UTC. No GitHub checks were
+reported. The private deployment checkout integrates it at `f32cfb47f05ae3fc262329baa505025c26fb556b`;
+only the three reviewed files changed. Linear bundle build passed (91,336 KiB process-tree RSS),
+without rerunning completed tests or rebuilding unchanged shared/control-plane components.
+
+Saved plan SHA-256 `32005670f391f6fbcc451c6a9b387e5ffb955a2ef25ab7e0924e967c5aaf870a` changes
+four Linear build/metadata/version/deployment resources only. All configured bindings/secrets,
+publication false and implementation routing match refreshed state. No migrations, control-plane,
+Modal/image, access or unrelated automation changes are included. The exact plan, private evidence,
+verification procedure and remaining pilot gates are recorded in the
+[release decision](div87-release-decision-2026-09-17.md).
+
+No apply, native dispatch, callback replay or model execution occurred during this merge/preparation.
+DIV-87 stays In Review until release verification; DIV-77 remains incomplete, with one numerical slot
+and stop-on-failure in effect. A/B resumption and DIV-84 durability acceptance remain separate gates.

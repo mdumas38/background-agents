@@ -43,7 +43,7 @@ not the hard report/proposal size limits. The original evidence was not changed;
 control was never published or dispatched. An unpublished idea in the report is not an actual
 model-published task, and the operator-created DIV-87 repair is not a substitute B proposal.
 
-The parser correctly failed closed. Draft [PR #16](https://github.com/mdumas38/background-agents/pull/16),
+The parser correctly failed closed. [PR #16](https://github.com/mdumas38/background-agents/pull/16),
 commit `4b2d728524d987a9be8aae07ff5f1e20639e4fc5`, addresses DIV-87 with explicit fence/first-line
 instructions, a reminder to honor stricter task report limits, and distinct safe framing/title/size
 diagnostics. It does not relax grammar, normalize malformed model output, truncate evidence or
@@ -53,7 +53,9 @@ This improves guidance/diagnostics; future model compliance remains unproven.
 
 The coordinator staged the three-file patch using a temporary Git index based on exact main,
 keeping the existing coordinator and child checkouts unchanged. No new worker/worktree or install
-was required. The draft is not merged or released.
+was required. Mason subsequently approved merge: PR #16 merged as
+`1f7cbe3a0ac004f38f6313977c704ad286ace55c`; dev release remains pending. See the
+[concrete release decision](div87-release-decision-2026-09-17.md).
 
 ## Release and operator evidence
 
@@ -73,8 +75,8 @@ actor attribution for message reads; those read failures did not trigger another
 
 ## Complete remaining path
 
-1. Review/authorize merge of PR #16. Prepare and review a concrete Linear-only dev release after
-   integration; obtain release approval, verify bundle/version and safe flags. No Modal image or
+1. PR #16 is merged. Approve the prepared concrete Linear-only dev release after
+   integration, then verify bundle/version and safe flags. No Modal image or
    repeat source-tool smoke is needed for these instruction/diagnostic changes.
 2. Explicitly resume after failure and add one slot if another A plus B is desired: one numerical
    slot remains, but it is not permission to retry. Preserve one-active-worker, five-minute aim,
