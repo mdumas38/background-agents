@@ -17,6 +17,10 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+VNC_READINESS_TIMEOUT_SECONDS = 20
+VNC_POLL_SECONDS = 1
+VNC_RETRY_SECONDS = 0.1
+
 PNPM_GLOBAL_PROBE = r"""
 import json, os, pathlib, shutil, subprocess, tempfile, uuid
 name = "oi-image-probe-" + uuid.uuid4().hex
@@ -112,19 +116,7 @@ class Probe:
                             **self.options,
                         )
                     )
-                deadline = time.monotonic() + 20
-                while True:
-                    if any(process.poll() is not None for process in processes):
-                        raise RuntimeError("Desktop process exited during verification")
-                    try:
-                        with socket.create_connection(("127.0.0.1", port), timeout=1) as connection:
-                            if not connection.recv(12).startswith(b"RFB "):
-                                raise RuntimeError("VNC server did not speak RFB")
-                            break
-                    except OSError:
-                        if time.monotonic() > deadline:
-                            raise RuntimeError("VNC readiness timeout") from None
-                        time.sleep(0.1)
+                wait_for_vnc(port, processes)
                 self.service(
                     [
                         "websockify",
@@ -173,6 +165,47 @@ class Probe:
                 raise RuntimeError(f"Image service readiness timeout: {command[0]}")
             finally:
                 stop_process(process)
+
+
+def wait_for_vnc(port: int, processes: list[subprocess.Popen]) -> None:
+    """Read a complete RFB greeting within one desktop readiness budget."""
+    deadline = time.monotonic() + VNC_READINESS_TIMEOUT_SECONDS
+    while time.monotonic() < deadline:
+        if any(process.poll() is not None for process in processes):
+            raise RuntimeError("Desktop process exited during verification")
+        remaining_seconds = deadline - time.monotonic()
+        if remaining_seconds <= 0:
+            break
+        try:
+            with socket.create_connection(
+                ("127.0.0.1", port),
+                timeout=min(VNC_POLL_SECONDS, remaining_seconds),
+            ) as connection:
+                banner = b""
+                while time.monotonic() < deadline:
+                    if any(process.poll() is not None for process in processes):
+                        raise RuntimeError("Desktop process exited during verification")
+                    remaining_seconds = deadline - time.monotonic()
+                    if remaining_seconds <= 0:
+                        break
+                    connection.settimeout(min(VNC_POLL_SECONDS, remaining_seconds))
+                    try:
+                        chunk = connection.recv(12 - len(banner))
+                    except TimeoutError:
+                        # x11vnc sniffs for WebSockets before sending RFB. Keep this
+                        # connection open while waiting, rather than restarting sniffing.
+                        continue
+                    if not chunk:
+                        raise RuntimeError("VNC server closed before sending an RFB banner")
+                    banner += chunk
+                    if len(banner) == 12:
+                        if not re.fullmatch(rb"RFB [0-9]{3}\.[0-9]{3}\n", banner):
+                            raise RuntimeError("VNC server did not speak RFB")
+                        return
+        except OSError:
+            # Connection refusal/reset may occur while the server is starting.
+            time.sleep(min(VNC_RETRY_SECONDS, max(0, deadline - time.monotonic())))
+    raise RuntimeError("VNC readiness timeout")
 
 
 def verify_rfb_proxy(port: int) -> None:
