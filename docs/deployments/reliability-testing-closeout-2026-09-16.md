@@ -27,9 +27,21 @@ limit, but the rejected payload size was not captured. Oversize is a hypothesis,
 Safe state: no active sessions, publication false, routing implementation; restored Linear version
 `1a5a58e1-e45e-4a9a-8388-691963ca947c`. No further attempt is authorized by the stop-on-failure
 rule. One numerical slot remains; replacement A plus B needs one additional slot and an explicit
-resumption decision. Mason authorized VPS reboot on continued failure. Both sudo and
-`systemctl --no-ask-password reboot` were denied by host permissions; no reboot occurred.
-An administrator/provider-console restart is required. Do not infer that a reboot repairs admission.
+resumption decision. The coordinator's reboot commands were denied, but Mason subsequently
+rebooted the VPS around 01:26 UTC and resumed the existing DIV-86 child. The restored child
+completed without a replacement worker. The reboot is not evidence that admission was repaired.
+
+PR [#15](https://github.com/mdumas38/background-agents/pull/15), repair `d371a701`, was independently
+reviewed and merged with Mason's authorization at 02:46:36 UTC as
+`47cecb61209f73917d7388f01740705e70f0676f`. It validates the assembled prompt and callback before
+allocation, preserves required content in an explicit optional-context fallback, and emits safe
+field/code/length diagnostics. Unexpected enqueue failures require operator reconciliation;
+archive is not compute cleanup. The historical rejected payload remains unavailable.
+
+All 156 focused tests passed (67 Linear, 80 shared, nine prompt-route); shared build, Linear and
+focused route/test typechecks and changed-file lint passed. Full control-plane typechecking exceeded
+the 384 MiB heap cap; full monorepo/workerd suites were not run. GitHub reported no CI checks or
+post-merge runs. Dev release and replacement A/B are not authorized by the merge instruction.
 
 DIV-78, DIV-81, DIV-82 and DIV-85 are Done. DIV-77 remains open, blocked on DIV-86 and the separate
 DIV-84 callback-durability acceptance. DIV-83 historical allocation investigation is not a gate;
@@ -89,12 +101,12 @@ Wrong-profile rejection evidence from the earlier attempt is retained; it was no
 
 ## Prioritized remaining path
 
-1. **DIV-86: repair prompt admission.** Identify/reproduce the actual rejection without another
-   model run. Validate assembled prompts before allocating compute, preserve required durable
-   context or reject clearly, and handle enqueue failure using supported lifecycle controls.
-   Prepare focused tests and a draft PR or bounded supported dispatch procedure; review any new
-   source fix before merge/release. Do not silently truncate reports, bypass schemas or raise limits.
-2. **Review release and resume A/B together.** The smoke already passed; do not repeat it unless
+1. **DIV-86: release the merged repair.** Review the fresh plan for control-plane and Linear dev
+   Workers, including the existing dependency rebuild. Build shared and both bundles before saving
+   the plan. Obtain approval for the concrete plan, apply only that scope, verify deployed identities,
+   safe flags and focused non-allocating admission checks. No Modal/image, database, access or cron
+   changes are intended. Do not rerun completed offline suites.
+2. **Separately authorize resumption of A/B.** The smoke already passed; do not repeat it unless
    the repair changes its validated boundary. One slot remains, so authorize one additional slot
    and resumption for replacement A plus B, still one active worker, five-minute aim, ten-minute/
    $0.50 observed stop and $2 target with infrastructure reserve. A reboot is not proof that

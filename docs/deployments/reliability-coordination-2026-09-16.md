@@ -423,6 +423,34 @@ DIV-83 historical diagnosis and DIV-79 host reliability remain separate.
 
 Mason conditionally authorized a VPS reboot. After cleanup and pushed checkpoint, `sudo -n -l`
 reported the orca account cannot run sudo, and `systemctl --no-ask-password reboot` returned
-access denied requiring interactive authentication. No reboot occurred and no privilege bypass
-was attempted. Administrator/provider-console restart is the remaining host action. It does not
-prove resolution of HTTP prompt validation. No repair worker was started across the reboot attempt.
+access denied requiring interactive authentication. These commands did not reboot the host and no
+privilege bypass was attempted. This checkpoint is superseded by Mason's reboot below.
+
+## Reboot recovery and DIV-86 completion — 2026-09-17
+
+Mason rebooted the VPS around 01:26 UTC and resumed the existing DIV-86 child. The coordinator
+initially mistook the missing old terminal for stopped work; the restored child was already working.
+No replacement worker was created. Runtime `1ce8f712-f328-4b4a-9cd0-55fb22f366f5` and restored
+terminal `term_8bc43a50-6328-4efa-a09d-26d832a582c2` were verified. Old dispatch
+`ctx_3a73c48b0fd8` lost lifecycle authority; the restored terminal was not closed or released.
+
+The existing child completed repair `d371a701226930dc480fac5ed12a8c7f219a0d68`, draft PR #15,
+and status message `msg_0b4ef1e06ebc`. The coordinator reviewed all six changed files, including
+preallocation validation, required-content preservation, disclosed optional-context fallback,
+diagnostic privacy and ambiguous enqueue outcomes. The original failed payload is unavailable;
+oversize remains a hypothesis. No completed suite was restarted.
+
+All 156 focused tests passed: 67 Linear, 80 shared and nine prompt-route. Shared build, Linear and
+focused route/test typechecks, changed-file lint passed. Full control-plane typechecking exceeded
+the 384 MiB heap limit; full monorepo/workerd suites were not run. The repair task
+`task_15e76bca494a` was explicitly reconciled as completed from this evidence; stale dispatch history
+was retained. No recovery task or duplicate worker was created.
+
+Mason authorized merge. PR [#15](https://github.com/mdumas38/background-agents/pull/15) merged at
+02:46:36 UTC as `47cecb61209f73917d7388f01740705e70f0676f`. No GitHub CI checks or post-merge runs
+were reported. Private deployment integration `2d9cfcef23288bcc953cb17e64a4f81e81faed39` preserves
+deployment configuration. Serial shared/control-plane/Linear builds passed under the resource guards.
+The [concrete release decision](div86-release-decision-2026-09-17.md) records the saved eight-change
+dev Worker plan, hashes, binding review, verification procedure and full remaining pilot path.
+No apply or live pilot occurred. DIV-86 remains a release gate; DIV-84 durability acceptance remains
+open, and one numerical execution slot remains subject to explicit resumption approval.
