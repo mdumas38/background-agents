@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import {
   buildFollowUpPrompt,
+  buildInitialPrompt,
   buildPrompt,
   buildPromptContextPrompt,
   escapeHtml,
@@ -278,6 +279,185 @@ describe("handleAgentSessionEvent environment targets", () => {
       expect(promptBody(fetchMock)?.content).toContain(fullDescription);
     }
   );
+
+  function stubIssueDetails(webhook: AgentSessionWebhook, comments: Array<{ body: string }> = []) {
+    vi.stubGlobal(
+      "fetch",
+      createLinearFetchMock({
+        graphql: ({ operationName }) =>
+          Response.json({
+            data:
+              operationName === "IssueDetails"
+                ? {
+                    issue: {
+                      ...webhook.agentSession.issue,
+                      labels: { nodes: [] },
+                      comments: { nodes: comments },
+                    },
+                  }
+                : {},
+          }),
+      })
+    );
+  }
+
+  function admissionEnv() {
+    const { kv } = createFakeKV({
+      "oauth:client-credentials:org-1": validToken(),
+      "config:project-repos": JSON.stringify({ "project-1": { environmentId: "env_abc" } }),
+    });
+    const env = makeLinearBotEnv(kv, { LINEAR_FOLLOW_UP_PUBLICATION: "true" });
+    return { env, fetchMock: stubControlPlane(env) };
+  }
+
+  it.each([63_999, 64_000, 64_001])(
+    "admits the final publication prompt at %i characters only within the limit",
+    async (length) => {
+      const { env, fetchMock } = admissionEnv();
+      const webhook = makeWebhook();
+      webhook.agentSession.issue!.description = "";
+      const overhead = buildInitialPrompt({
+        webhook,
+        issue: webhook.agentSession.issue!,
+        issueDetails: null,
+        publishFollowUps: true,
+        omitOptionalContext: false,
+      }).length;
+      // Replace the no-description placeholder with a wrapped nonempty description.
+      webhook.agentSession.issue!.description = "x";
+      const withDescription = buildInitialPrompt({
+        webhook,
+        issue: webhook.agentSession.issue!,
+        issueDetails: null,
+        publishFollowUps: true,
+        omitOptionalContext: false,
+      }).length;
+      expect(withDescription).toBeGreaterThan(overhead);
+      webhook.agentSession.issue!.description = "x".repeat(length - withDescription + 1);
+      await handleAgentSessionEvent(webhook, env, "boundary");
+      if (length <= 64_000) {
+        expect(String(promptBody(fetchMock)?.content)).toHaveLength(length);
+        expect(createSessionBody(fetchMock)).not.toBeNull();
+      } else {
+        expect(createSessionBody(fetchMock)).toBeNull();
+        expect(promptBody(fetchMock)).toBeNull();
+        expect(JSON.stringify((console.warn as Mock).mock.calls)).toContain("content:too_big");
+        expect(JSON.stringify((console.warn as Mock).mock.calls)).toContain("content_length=64001");
+        expect(JSON.stringify((console.warn as Mock).mock.calls)).not.toContain("xxxx");
+      }
+    }
+  );
+
+  it.each([true, false])(
+    "rebuilds oversized optional context with full required context (provider=%s)",
+    async (provider) => {
+      const { env, fetchMock } = admissionEnv();
+      const webhook = makeWebhook();
+      if (provider) webhook.promptContext = "provider-private-history".repeat(4_000);
+      webhook.agentSession.comment = {
+        body: "  Preserve this exact current instruction.  ",
+        userId: "human-user-1",
+      };
+      const description =
+        "## Proposed work — awaiting human dispatch\n" +
+        "full report\n".repeat(1_000) +
+        "REPORT_END";
+      webhook.agentSession.issue!.description = description;
+      stubIssueDetails(webhook, [{ body: "optional-private-history".repeat(4_000) }]);
+      await handleAgentSessionEvent(webhook, env, "fallback");
+      const body = promptBody(fetchMock)!;
+      expect(body.content).toContain(webhook.agentSession.comment.body);
+      expect(body.content).toContain(description);
+      expect(body.content).toContain("## Durable follow-up proposals");
+      expect(body.content).toContain(
+        "Optional provider context and recent comment history omitted"
+      );
+      expect(body.content).not.toContain("private-history");
+      expect(body.requiredExecutionProfile).toBe("implementation");
+      expect((body.callbackContext as Record<string, unknown>).publishFollowUps).toBe(true);
+    }
+  );
+
+  it.each([false, true])(
+    "preserves clarification, integration and mode instructions (fallback=%s)",
+    (omitOptionalContext) => {
+      const webhook = makeWebhook();
+      webhook.promptContext = "provider context";
+      const instruction = "  Exact instruction including whitespace  ";
+      const clarification = "  acme/backend  ";
+      const additional = "Integration constraints in full";
+      const prompt = buildInitialPrompt({
+        webhook,
+        issue: webhook.agentSession.issue!,
+        issueDetails: null,
+        instructionComment: { body: instruction },
+        clarificationReply: { body: clarification },
+        additionalInstructions: additional,
+        mode: "read-only",
+        publishFollowUps: true,
+        omitOptionalContext,
+      });
+      expect(prompt).toContain(instruction);
+      expect(prompt).toContain(clarification);
+      expect(prompt).toContain(additional);
+      expect(prompt).toContain("enforced investigation profile");
+      expect(prompt).toContain("## Durable follow-up proposals");
+    }
+  );
+
+  it.each(["instruction", "report", "unknown-instruction", "blank-instruction"])(
+    "rejects oversized required %s without allocating or enqueueing",
+    async (kind) => {
+      const { env, fetchMock } = admissionEnv();
+      const webhook = makeWebhook();
+      webhook.promptContext = "provider-private-history".repeat(4_000);
+      if (kind !== "unknown-instruction")
+        webhook.agentSession.comment = {
+          body:
+            kind === "instruction"
+              ? "secret-instruction".repeat(5_000)
+              : kind === "blank-instruction"
+                ? "  "
+                : "Exact instruction",
+          userId: "human-user-1",
+        };
+      if (kind === "report")
+        webhook.agentSession.issue!.description =
+          "## Proposed work — awaiting human dispatch\n" + "secret-report".repeat(6_000);
+      stubIssueDetails(webhook);
+      await handleAgentSessionEvent(webhook, env, "required-overflow");
+      expect(createSessionBody(fetchMock)).toBeNull();
+      expect(promptBody(fetchMock)).toBeNull();
+      expect(await lookupIssueSession(env, "issue-1")).toBeNull();
+      const logs = JSON.stringify((console.warn as Mock).mock.calls);
+      expect(logs).toContain("content:too_big");
+      expect(logs).not.toContain("secret-");
+      expect(logs).not.toContain("private-history");
+    }
+  );
+
+  it.each([false, true])("reports enqueue failure safely (transport=%s)", async (transport) => {
+    const { env, fetchMock } = admissionEnv();
+    const normalFetch = fetchMock.getMockImplementation() as (
+      input: RequestInfo | URL,
+      init?: RequestInit
+    ) => Promise<Response>;
+    fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith("/prompt")) {
+        if (transport) return Promise.reject(new Error("private-response-content"));
+        return Promise.resolve(new Response("private-response-content", { status: 400 }));
+      }
+      return normalFetch(input, init);
+    });
+    await handleAgentSessionEvent(makeWebhook(), env, "enqueue-rejection");
+    const logs = JSON.stringify((console.error as Mock).mock.calls);
+    expect(logs).toContain("content_length");
+    expect(logs).not.toContain("private-response-content");
+    const activities = JSON.stringify((fetch as Mock).mock.calls);
+    expect(activities).toContain("provider termination before retry");
+    expect(activities).not.toContain("private-response-content");
+    expect(await lookupIssueSession(env, "issue-1")).not.toBeNull();
+  });
 
   function makeWebhook(labels: Array<{ id: string; name: string }> = []): AgentSessionWebhook {
     return {

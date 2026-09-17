@@ -4,6 +4,7 @@ import type { ControlPlaneHonoEnv } from "../routing/hono-env";
 import {
   callbackContextSchema,
   sendPromptRequestSchema,
+  describePromptValidationFailure,
   type CallbackContext,
 } from "@open-inspect/shared/types/session-api";
 import {
@@ -64,7 +65,13 @@ export async function handleSessionPrompt(
 
   const bodyResult = sendPromptRequestSchema.safeParse(rawBody);
   if (!bodyResult.success) {
-    return error("content is required");
+    const diagnostic = describePromptValidationFailure(rawBody, bodyResult.error);
+    logger.warn("prompt.validation_rejected", {
+      request_id: ctx.request_id,
+      trace_id: ctx.trace_id,
+      diagnostic,
+    });
+    return error(diagnostic, 400);
   }
   const body = bodyResult.data;
 
