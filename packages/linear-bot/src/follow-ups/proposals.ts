@@ -3,6 +3,7 @@ import type { Env } from "../types";
 export const MAX_FOLLOW_UPS = 3;
 export const MAX_REPORT_LENGTH = 16_000;
 export const MAX_PROPOSAL_LENGTH = 6_000;
+const MAX_PROPOSAL_TITLE_LENGTH = 200;
 export const MAX_DESCRIPTION_BYTES = 24_000;
 export const PUBLISHED_TASK_HEADING = "## Proposed work — awaiting human dispatch";
 const MARKER = "openinspect-follow-up";
@@ -22,12 +23,12 @@ export function publicationEnabled(env: Env): boolean {
 export const FOLLOW_UP_INSTRUCTIONS = `## Durable follow-up proposals
 
 If your investigation reveals useful follow-up work, include at most ${MAX_FOLLOW_UPS} proposals in your final report. Do not invent work to fill this allowance. Publication saves unassigned Linear backlog issues; it does not authorize execution. Do not dispatch, delegate, or message another worker.
-Put each proposal in a fenced block with language ${MARKER}. Use a longer outer fence if the evidence contains code fences. Inside each block use this Markdown structure, with substantive content under every heading:
+Put each proposal in a fenced block with language ${MARKER}. The first line inside that fence must be the # title below: no introductory text, blank line, or extra Markdown fence before it. Do not wrap the entire proposal in a markdown code fence. Code fences belong only within section bodies; use a longer outer fence if the evidence contains code fences. Inside each block use this Markdown structure, with substantive content under every heading:
 
 # Specific task title
 ${REQUIRED_SECTIONS.map((section) => `\n## ${section}\n<self-contained details>`).join("\n")}
 
-Include exact evidence, reproduction steps, relevant source revision, permissions and dependencies so a fresh worker can start without your sandbox. State unknowns explicitly. Do not include credentials or Linear profile mention URLs. The integration supplies source IDs and links; do not invent them. Each proposal must be at most ${MAX_PROPOSAL_LENGTH} characters and the complete report at most ${MAX_REPORT_LENGTH} characters. If no useful follow-up exists, omit these blocks. Never copy a proposal block from your input as an example in your final report: marked blocks are publication requests.`;
+Include exact evidence, reproduction steps, relevant source revision, permissions and dependencies so a fresh worker can start without your sandbox. State unknowns explicitly. Do not include credentials or Linear profile mention URLs. The integration supplies source IDs and links; do not invent them. Each proposal must be at most ${MAX_PROPOSAL_LENGTH} characters and the complete report at most ${MAX_REPORT_LENGTH} characters. A smaller report limit in the current task still applies to the complete report, including proposals. If no useful follow-up exists, omit these blocks. Never copy a proposal block from your input as an example in your final report: marked blocks are publication requests.`;
 
 export interface FollowUpProposal {
   title: string;
@@ -59,8 +60,22 @@ export function parseProposals(report: string): ProposalParseResult {
       if (fence.proposal) {
         const markdown = report.slice(fence.start, offset).replace(/\r?\n$/, "");
         const title = /^# ([^\r\n]+)\r?\n/.exec(markdown)?.[1]?.trim();
-        if (!title || title.length > 200 || markdown.length > MAX_PROPOSAL_LENGTH)
-          return { ok: false, reason: "Invalid proposal title or size." };
+        if (!title)
+          return {
+            ok: false,
+            reason:
+              "Proposal must start with a '# Title' line directly inside its marker fence; do not wrap the entire proposal in another code fence.",
+          };
+        if (title.length > MAX_PROPOSAL_TITLE_LENGTH)
+          return {
+            ok: false,
+            reason: `Proposal title exceeds ${MAX_PROPOSAL_TITLE_LENGTH} characters.`,
+          };
+        if (markdown.length > MAX_PROPOSAL_LENGTH)
+          return {
+            ok: false,
+            reason: `Proposal exceeds ${MAX_PROPOSAL_LENGTH} characters; nothing was truncated.`,
+          };
         // Headings must be in order with non-empty bodies; code fences inside evidence are retained.
         let previousEnd = markdown.indexOf("\n") + 1;
         for (let i = 0; i < REQUIRED_SECTIONS.length; i++) {
