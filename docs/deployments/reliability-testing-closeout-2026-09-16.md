@@ -41,9 +41,10 @@ archive is not compute cleanup. The historical rejected payload remains unavaila
 All 156 focused tests passed (67 Linear, 80 shared, nine prompt-route); shared build, Linear and
 focused route/test typechecks and changed-file lint passed. Full control-plane typechecking exceeded
 the 384 MiB heap cap; full monorepo/workerd suites were not run. GitHub reported no CI checks or
-post-merge runs. Dev release and replacement A/B are not authorized by the merge instruction.
+post-merge runs. Mason separately approved the dev release; apply and non-allocating verification
+passed. Replacement A/B remains gated on explicit resumption and one additional execution slot.
 
-DIV-78, DIV-81, DIV-82 and DIV-85 are Done. DIV-77 remains open, blocked on DIV-86 and the separate
+DIV-78, DIV-81, DIV-82 and DIV-85 are Done. DIV-86 repair/release is complete. DIV-77 remains open for explicit A/B resumption and
 DIV-84 callback-durability acceptance. DIV-83 historical allocation investigation is not a gate;
 DIV-79 remains separate. Evidence: `/home/orca/.local/state/openinspect/div78-release-20260917/`,
 `div77-smoke4-20260917/`, and `div77-a-20260917/` under the same private state root.
@@ -101,11 +102,10 @@ Wrong-profile rejection evidence from the earlier attempt is retained; it was no
 
 ## Prioritized remaining path
 
-1. **DIV-86: release the merged repair.** Review the fresh plan for control-plane and Linear dev
-   Workers, including the existing dependency rebuild. Build shared and both bundles before saving
-   the plan. Obtain approval for the concrete plan, apply only that scope, verify deployed identities,
-   safe flags and focused non-allocating admission checks. No Modal/image, database, access or cron
-   changes are intended. Do not rerun completed offline suites.
+1. **DIV-86 release passed.** Control-plane version `2ed9a9a5-353d-4e39-a97b-6e8f5192ad8f`,
+   Linear `0bd470bd-75a0-4f93-b26a-50079eb6d8df`; both healthy, bindings unchanged,
+   publication false/implementation. Missing/oversized invalid-only probes returned safe 400
+   diagnostics with no new sessions/messages. See the [release evidence](div86-release-decision-2026-09-17.md).
 2. **Separately authorize resumption of A/B.** The smoke already passed; do not repeat it unless
    the repair changes its validated boundary. One slot remains, so authorize one additional slot
    and resumption for replacement A plus B, still one active worker, five-minute aim, ten-minute/
@@ -123,8 +123,9 @@ Wrong-profile rejection evidence from the earlier attempt is retained; it was no
 
 ## Board scope that remains visible
 
-- **DIV-77:** A/publication/independent-B acceptance incomplete; DIV-86 is the immediate blocker.
+- **DIV-77:** A/publication/independent-B acceptance incomplete; explicit resumption is the next gate.
 - **DIV-78, DIV-81, DIV-82, DIV-85:** Done, based on successful release and live smoke evidence.
+- **DIV-86:** repair released; focused tests and non-allocating admission verification passed.
 - **DIV-83:** diagnosis PR #11 remains for review; historical provider cause is unresolved but
   operator acceptance removed the allocation-proof gate. No historical polling is needed.
 - **DIV-84:** cancellation/settlement passed live; stronger durable callback acceptance remains open.
@@ -132,3 +133,5 @@ Wrong-profile rejection evidence from the earlier attempt is retained; it was no
 - **DIV-76, DIV-71, DIV-72:** unchanged separate/deferred work.
 
 Detailed release history remains in [the coordination record](reliability-coordination-2026-09-16.md).
+
+Concrete [replacement-A/B decision and instruction](div77-replacement-a-decision-2026-09-17.md) are prepared; no dispatch occurred.

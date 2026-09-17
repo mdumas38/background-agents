@@ -454,3 +454,24 @@ The [concrete release decision](div86-release-decision-2026-09-17.md) records th
 dev Worker plan, hashes, binding review, verification procedure and full remaining pilot path.
 No apply or live pilot occurred. DIV-86 remains a release gate; DIV-84 durability acceptance remains
 open, and one numerical execution slot remains subject to explicit resumption approval.
+
+
+## Approved DIV-86 dev release and verification — 03:03 UTC
+
+Mason approved the concrete eight-change dev Worker plan and non-allocating verification. The exact
+saved plan passed source/bundle/state/live-version/safe-flag preflight, then applied successfully.
+Control plane is `2ed9a9a5-353d-4e39-a97b-6e8f5192ad8f`; Linear is
+`0bd470bd-75a0-4f93-b26a-50079eb6d8df`. Both healthy; all live bindings unchanged, publication false,
+routing implementation. No Modal/image release, migrations, access changes or model execution.
+
+Missing and oversized invalid-only requests against archived failed-A session returned new safe
+400 diagnostics. Session count, archived session and empty messages stayed unchanged; zero active
+sessions. An initial health 403 was resolved by using established operator HTTP headers; failed
+attempt evidence remains preserved. Apply and verification evidence lives under
+`/home/orca/.local/state/openinspect/div86-release-20260917/`; see the detailed release decision.
+
+DIV-86 repair/release is complete. Replacement A/B still needs explicit resumption plus one added
+slot (one remains), then Mason's selection of A's actual published task before B. The concrete
+instruction/bounds are in `div77-replacement-a-decision-2026-09-17.md`. No repeated smoke or new
+pilot ran. DIV-84 outbox/exactly-once acceptance remains unimplemented; close or explicitly revise
+that acceptance before claiming DIV-77 complete. DIV-79 remains a separate host track.

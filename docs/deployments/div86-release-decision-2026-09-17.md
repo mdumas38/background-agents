@@ -1,7 +1,7 @@
 # DIV-86 dev release decision
 
 PR [#15](https://github.com/mdumas38/background-agents/pull/15) merged with Mason's authorization
-as `47cecb61209f73917d7388f01740705e70f0676f` at 02:46:36 UTC. Deployment is not yet authorized.
+as `47cecb61209f73917d7388f01740705e70f0676f` at 02:46:36 UTC. Mason subsequently approved the concrete dev release and non-allocating verification; both are complete.
 The preserved deployment checkout integrates it at `2d9cfcef23288bcc953cb17e64a4f81e81faed39`.
 
 ## Prepared scope
@@ -57,3 +57,29 @@ terminate A. Mason selects that actual proposal before independent B, with publi
 durable context transfer, completion and cleanup; restore safe flags and record costs/IDs. Failure
 stops downstream work, with no automatic retry. DIV-84 outbox/exactly-once durability still needs
 implementation or explicit acceptance revision before DIV-77 closes. DIV-79 remains separate.
+
+
+## Verified release result
+
+The exact approved plan and review are preserved under
+`/home/orca/.local/state/openinspect/div86-release-20260917/`. Apply succeeded against unchanged
+state serial 47, source and bundle hashes; preflight found no active sessions. Terraform rebuilds
+retained both bundle hashes. Apply peak process-tree RSS was 691,196 KiB including Terraform,
+providers and builds; minimum MemAvailable was 1,989,636 KiB. Node heap remained 384 MiB and no
+resource stop occurred. This apply measurement is separate from the 512 MiB focused-test limit.
+
+- Control plane: `2ed9a9a5-353d-4e39-a97b-6e8f5192ad8f`, 03:03:05.359 UTC.
+- Linear bot: `0bd470bd-75a0-4f93-b26a-50079eb6d8df`, 03:02:56.708 UTC.
+
+Both health endpoints returned 200/healthy. Complete live bindings compare equal before/after,
+including service/D1/DO identities and secrets; publication false, task mode implementation.
+The first health request returned 403 before any prompt probe; retry with established operator
+HTTP headers passed. First-attempt evidence was preserved.
+
+Authenticated missing-content and 64,001-code-unit prompts against archived failed-A session
+`c83e45fa0ff4b31de7be53c9c58501cb` returned HTTP 400 with `content:invalid_type` and `content:too_big`,
+correct lengths/limit and no prompt text. Session count, archived row and empty messages remained
+unchanged; zero active sessions. No native Linear session or model execution was created. Linear
+preallocation/fallback has offline coverage, pending observation during separately authorized A.
+Evidence: `verification-2/verified-release.json` under the private release directory.
+See the [resumption decision](div77-replacement-a-decision-2026-09-17.md).
