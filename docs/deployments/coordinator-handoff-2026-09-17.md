@@ -1,7 +1,26 @@
-# OpenInspect coordinator handoff — DIV-87 release verified
+# OpenInspect coordinator handoff — cleanup drafts ready
+
+## Current checkpoint — authorized post-B source cleanup
+
+Mason approved cleanup in workspaces/worktrees after the proposed plan. The sole coordinator
+created three isolated children from `origin/main` `1f7cbe3a`, without launching workers:
+
+- [Draft PR #17](https://github.com/mdumas38/background-agents/pull/17), DIV-84 durable completion:
+  `div-84-durable-completion`, commit `0fe04e1e8164b5d8fb28d1e9c7d69fc61e47aa13`.
+- [Draft PR #18](https://github.com/mdumas38/background-agents/pull/18), DIV-89 pinned revision
+  provenance: `div-89-revision-provenance`, commit `4e50051b7bbfc8434bf9ccc5b323584739a0d6b3`.
+- [Draft PR #19](https://github.com/mdumas38/background-agents/pull/19), event-backed tool accounting
+  and denial guidance: `investigation-report-accounting`, commit
+  `df359854b8ff84462593d44e9e705a52c6cb97d6`.
+
+Read [cleanup closeout](reliability-cleanup-2026-09-17.md) for validation and release limits.
+Prior deployment/repair trees, evidence and the DIV-86 terminal's unsent draft are preserved.
+No merge, deployment, live callback replay, sandbox, model run or pilot occurred during cleanup.
+DIV-84/DIV-77 acceptance remains open; DIV-89 is ready for source review. Pilot resumption and
+release execution require separate authorization. No pilot slots remain.
 
 
-## Current checkpoint — B completed; no pilot slots remain
+## Historical checkpoint — B completed; no pilot slots remain
 
 Mason explicitly selected B and deferred gap repair until afterward. B completed against actual
 DIV-88 with full durable context, one native report, no child publication/extra compute, and exact
