@@ -17,6 +17,7 @@ import {
 import { callbackSigningSecret, type CallbackDestination } from "../auth/service/callback-signing";
 import type { Logger } from "../logger";
 import { deliverWithRetry, retryDelivery } from "./callback-delivery";
+import { LINEAR_COMPLETION_RETRY_MS } from "./linear-completion-policy";
 import { notifyLinearStarted } from "./linear-start-callback";
 import type { SessionRow } from "./types";
 import type { MessageRepository } from "./message-repository";
@@ -56,6 +57,7 @@ export interface CallbackServiceDeps {
   getSessionId: () => string;
   completeAutomationRun?: AutomationRunCompletionHandler;
   sleep?: (ms: number) => Promise<void>;
+  scheduleRetry?: (deadlineMs: number) => Promise<void>;
 }
 
 /**
@@ -65,6 +67,7 @@ export interface CallbackServiceDeps {
  * single duplicate Linear/Slack activity, not data loss.
  */
 const NOTIFIED_CALL_IDS_CAP = 500;
+
 const EMPTY_TOOL_ARGS: Record<string, unknown> = {};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -111,6 +114,8 @@ export class CallbackNotificationService {
   private readonly getSessionId: () => string;
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly completeAutomationRun: AutomationRunCompletionHandler | undefined;
+  private readonly scheduleRetry?: (deadlineMs: number) => Promise<void>;
+  private flushing?: Promise<void>;
   private _lastToolCallCallbackTs = 0;
   /**
    * When Slack's activity indicator was last (re)asserted for this session, by
@@ -122,6 +127,7 @@ export class CallbackNotificationService {
   private readonly notifiedCallIds = new Set<string>();
 
   constructor(deps: CallbackServiceDeps) {
+    this.scheduleRetry = deps.scheduleRetry;
     this.repository = deps.repository;
     this.messageRepository = deps.messageRepository;
     this.env = deps.env;
@@ -206,6 +212,23 @@ export class CallbackNotificationService {
     });
   }
 
+  async rearmCompletions(): Promise<void> {
+    if (this.messageRepository.listPendingLinearCompletions().length)
+      await this.scheduleRetry?.(Date.now() + LINEAR_COMPLETION_RETRY_MS);
+  }
+
+  flushCompletions(): Promise<void> {
+    if (!this.flushing)
+      this.flushing = (async () => {
+        await this.rearmCompletions();
+        for (const item of this.messageRepository.listPendingLinearCompletions())
+          await this.notifyComplete(item.message_id, item.success === 1, item.error ?? undefined);
+      })().finally(() => {
+        this.flushing = undefined;
+      });
+    return this.flushing;
+  }
+
   /**
    * Best-effort notification of the originating client with retry.
    * Routes to the correct service binding based on the message source.
@@ -251,6 +274,7 @@ export class CallbackNotificationService {
         return;
       }
 
+      if (source === "linear") await this.scheduleRetry?.(Date.now() + LINEAR_COMPLETION_RETRY_MS);
       const { binding, secret } = this.resolveCallbackRoute(source);
       if (!secret) {
         result.rejectReason = "no_secret";
@@ -303,6 +327,8 @@ export class CallbackNotificationService {
           });
         }
       );
+      if (source === "linear" && result.delivered)
+        this.messageRepository.acceptLinearCompletion(messageId);
     } catch (caught) {
       thrownError = caught;
     } finally {

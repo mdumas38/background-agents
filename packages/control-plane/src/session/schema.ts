@@ -56,7 +56,15 @@ const TERMINAL_MESSAGE_PROJECTION_TABLE_SQL = `CREATE TABLE IF NOT EXISTS termin
   next_attempt_at INTEGER NOT NULL
 );`;
 
+const COMPLETION_OUTBOX_TABLE_SQL = `CREATE TABLE IF NOT EXISTS linear_completion_outbox (
+  message_id TEXT PRIMARY KEY,
+  success INTEGER NOT NULL,
+  error TEXT,
+  accepted_at INTEGER
+);`;
+
 export const SCHEMA_SQL = `
+${COMPLETION_OUTBOX_TABLE_SQL}
 -- Core session state
 CREATE TABLE IF NOT EXISTS session (
   id TEXT PRIMARY KEY,                              -- Same as DO ID
@@ -698,6 +706,7 @@ export const MIGRATIONS: readonly SchemaMigration[] = [
         "ALTER TABLE session ADD COLUMN execution_profile TEXT NOT NULL DEFAULT 'implementation'"
       ),
   },
+  { id: 52, description: "Durable Linear completion outbox", run: COMPLETION_OUTBOX_TABLE_SQL },
 ];
 
 /**

@@ -1,6 +1,7 @@
 import type { AgentSessionWebhook, Env } from "./types";
 import { handleAgentSessionEvent } from "./webhook-handler";
 import { linearCompletionCallbackSchema } from "@open-inspect/shared/types/session-api";
+import { CompletionDelivery } from "./completion/delivery";
 import { publishFollowUps } from "./follow-ups/publication";
 
 /** Logical identity survives a new delivery ID for the same creation/activity. */
@@ -12,12 +13,25 @@ export function dispatchKey(webhook: AgentSessionWebhook, deliveryId: string): s
 
 /** One coordinator per workspace/issue; claims and the session mapping are strongly consistent. */
 export class LinearDispatch {
+  private readonly completions: CompletionDelivery;
   constructor(
     private readonly state: DurableObjectState,
     private readonly env: Env
-  ) {}
+  ) {
+    this.completions = new CompletionDelivery(state, env);
+  }
+
+  async alarm(): Promise<void> {
+    await this.completions.flush();
+  }
 
   async fetch(request: Request): Promise<Response> {
+    if (new URL(request.url).pathname === "/complete") {
+      const body = (await request.json()) as { payload: unknown; traceId: string };
+      const parsed = linearCompletionCallbackSchema.safeParse(body.payload);
+      if (!parsed.success) return Response.json({ error: "Invalid completion" }, { status: 400 });
+      return this.completions.accept(parsed.data, body.traceId);
+    }
     if (new URL(request.url).pathname === "/publish-follow-ups") {
       // This DO has no public route. The callback router verifies the CP signature first.
       const body = (await request.json()) as { payload: unknown; report: unknown; traceId: string };
