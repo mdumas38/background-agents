@@ -2,7 +2,9 @@
 
 Mason approved merge of PR [#16](https://github.com/mdumas38/background-agents/pull/16).
 Reviewed commit `4b2d728524d987a9be8aae07ff5f1e20639e4fc5` merged at 03:46:14 UTC as
-`1f7cbe3a0ac004f38f6313977c704ad286ace55c`. Deployment and pilot resumption are not yet authorized.
+`1f7cbe3a0ac004f38f6313977c704ad286ace55c`. Mason explicitly approved applying this exact dev plan
+("great. approved to apply the dev plan"). It applied successfully at 12:33:59 UTC after the handoff
+preflight. Read-only verification passed. Pilot resumption is not authorized.
 
 The preserved deployment checkout integrates this at `f32cfb47f05ae3fc262329baa505025c26fb556b`.
 Its diff is exactly the reviewed three-file instruction/diagnostic/test/documentation repair.
@@ -30,9 +32,9 @@ fields, the existing service environment default and null/absent metadata were n
 observability configuration is unchanged. No migrations, control-plane redeploy, Modal/image,
 access, scheduler or unrelated automation change is included.
 
-## Requested authorization and checks
+## Approved authorization and checks
 
-Authorize applying this exact reviewed dev scope and read-only verification. Recheck source, bundle,
+Mason authorized this exact reviewed dev scope and read-only verification. Recheck source, bundle,
 plan hash, state freshness, active sessions and deployed baseline before apply. If the plan is stale,
 make a fresh plan and compare configured scope; expansion requires a new decision. Keep Terraform's
 normal serial build provisioner and verify its bundle remains deterministic. Inspect partial failure
@@ -60,3 +62,34 @@ terminate A. Mason selects the actual published task before independent B; verif
 completion and termination with publication off, restore safe flags and record costs/IDs. Any failure
 stops downstream work. DIV-84 outbox/exactly-once acceptance still needs implementation or explicit
 revision before DIV-77 closes; DIV-79 remains separate.
+
+
+## Verified release — 2026-09-17
+
+The exact saved plan above applied once, successfully, without replanning. Preflight verified clean
+integration HEAD and both hashes, Terraform state lineage/serial (51) against the saved plan, the
+four authorized actions, baseline live versions and complete settings, zero active sessions and
+absence of another heavy job. Existing completed workers and the restored child's unsent draft
+were preserved. Completed tests and source-tool smoke were not repeated.
+
+Linear version `978c0dbd-970b-4f4b-9dcd-39c548172d5e` deployed at **12:33:59.535 UTC**, at 100%,
+and matches Terraform. Its health returned 200/healthy. The normal serial build provisioner retained
+bundle SHA-256 `e0d295e2d35f3060fbeb4ef8b8a9a591d4a41514ba264e4e02959d87a9562353`.
+Control plane remains `2ed9a9a5-353d-4e39-a97b-6e8f5192ad8f`, also 100% and healthy. Complete live
+settings, including all bindings/secrets, matched before/after for both Workers. Publication remains
+`false`, routing `implementation`; D1 counts stayed **21 total / zero active**.
+
+Apply peak process-tree RSS was 307,316 KiB; minimum host MemAvailable was 2,344,332 KiB. No
+resource stop occurred. Private evidence under `div87-release-20260917/` retains the original
+`preflight.json` and exclusive `apply-preflight.json`, `apply-attempt.json`, `apply.log`,
+`apply-result.json`, and `verification/verified-release.json` plus private post-settings.
+
+DIV-87 is complete. DIV-77 stays incomplete; guidance cannot establish future model compliance.
+No session/prompt, callback replay, sandbox, model run or pilot resumption occurred. The
+[new A+B resumption decision](div77-post-div87-resumption-decision-2026-09-17.md) is prepared for
+separate authorization; DIV-84 durability acceptance remains open and DIV-79 remains separate.
+
+Linear completion comment: `a41fdd41-834c-4436-af50-0e22e310a786`; DIV-77 checkpoint:
+`514bdc14-b9ef-4e14-8cf9-88237951b57d`. Readback confirmed DIV-87 Done and DIV-77 In Review.
+The initial UUID-form CLI comment call was rejected before writing; identifier-form calls succeeded
+once, with receipts preserved privately.

@@ -54,7 +54,8 @@ This improves guidance/diagnostics; future model compliance remains unproven.
 The coordinator staged the three-file patch using a temporary Git index based on exact main,
 keeping the existing coordinator and child checkouts unchanged. No new worker/worktree or install
 was required. Mason subsequently approved merge: PR #16 merged as
-`1f7cbe3a0ac004f38f6313977c704ad286ace55c`; dev release remains pending. See the
+`1f7cbe3a0ac004f38f6313977c704ad286ace55c`; the separately approved dev release is now verified as Linear
+`978c0dbd-970b-4f4b-9dcd-39c548172d5e` (12:33:59 UTC), with safe flags and full settings unchanged. See the
 [concrete release decision](div87-release-decision-2026-09-17.md).
 
 ## Release and operator evidence
@@ -75,8 +76,8 @@ actor attribution for message reads; those read failures did not trigger another
 
 ## Complete remaining path
 
-1. PR #16 is merged. Approve the prepared concrete Linear-only dev release after
-   integration, then verify bundle/version and safe flags. No Modal image or
+1. PR #16 is merged and the approved Linear-only dev release passed bundle/version, health,
+   full-settings and session-count verification. No Modal image or
    repeat source-tool smoke is needed for these instruction/diagnostic changes.
 2. Explicitly resume after failure and add one slot if another A plus B is desired: one numerical
    slot remains, but it is not permission to retry. Preserve one-active-worker, five-minute aim,
@@ -87,3 +88,6 @@ actor attribution for message reads; those read failures did not trigger another
    transfer, enforced behavior, completion and cleanup, then restore safe flags.
 5. Implement or explicitly revise DIV-84 outbox/exactly-once durability acceptance before claiming
    DIV-77 closed. Keep DIV-79 separate. Any new failure stops downstream execution again.
+
+The [post-DIV-87 A+B decision](div77-post-div87-resumption-decision-2026-09-17.md) supersedes the
+historical A2 approval for any future attempt. It remains unauthorized.

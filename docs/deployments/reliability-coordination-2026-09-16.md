@@ -528,3 +528,26 @@ verification procedure and remaining pilot gates are recorded in the
 No apply, native dispatch, callback replay or model execution occurred during this merge/preparation.
 DIV-87 stays In Review until release verification; DIV-77 remains incomplete, with one numerical slot
 and stop-on-failure in effect. A/B resumption and DIV-84 durability acceptance remain separate gates.
+
+
+## Approved DIV-87 release and verification — 2026-09-17 12:33 UTC
+
+The sole coordinator resumed the existing workspace under Mason's explicit dev-plan approval.
+No duplicate worker or completed test was started. Clean source `f32cfb47`, exact plan/bundle hashes,
+Terraform lineage/serial 51, four-resource scope, live versions/full settings, zero active sessions,
+and host-memory admission all passed. The original saved plan applied once with the normal serial
+build provisioner; no replan or recovery was needed.
+
+Linear version `978c0dbd-970b-4f4b-9dcd-39c548172d5e` deployed at 12:33:59.535 UTC, 100% and healthy,
+and matches Terraform. Full settings for both Workers are unchanged, including private secrets;
+publication false/implementation remains in force. Control plane stays
+`2ed9a9a5-353d-4e39-a97b-6e8f5192ad8f` at 100% and healthy. D1 remains 21 total / zero active
+sessions; bundle identity remains approved. Apply peaked at 307,316 KiB process-tree RSS with
+2,344,332 KiB minimum host MemAvailable, without a resource stop.
+
+The [release decision](div87-release-decision-2026-09-17.md) and private
+`div87-release-20260917/verification/verified-release.json` record verification. DIV-87 is complete;
+DIV-77 remains In Review/incomplete. The [new A+B resumption decision](div77-post-div87-resumption-decision-2026-09-17.md)
+is concrete but unauthorized: one added slot, explicit resumption, actual A publication/replay and
+termination, then Mason's actual-proposal selection before B. DIV-84 stronger durability acceptance
+remains open; DIV-79 is separate. No pilot, prompt, replay, sandbox or model execution occurred.
