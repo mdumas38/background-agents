@@ -385,3 +385,44 @@ worker observation showed exited, disconnected and unwritable with transcript ca
 No broad close was used; the worktree remains preserved. DIV-78 moved to In Review, PR #14
 attached, with its blocking relation to DIV-77 restored. DIV-77 and DIV-85 received the failed
 release and full remaining-path update. No further pilot or deployment was attempted.
+
+
+## Approved PR #14 release and resumed acceptance — 2026-09-17
+
+PR #14 merged as `c14f854a2f99adbd48f1908a5186a569988a875f`; private deployment integration
+`099fcae09aecf5582dc3772de9df1cee250d1148` is pushed. Fresh Modal-only plan SHA-256
+`ebc433b3828e4e56e95ea0a5453e71ad9d2cd0a80d72420b5ab4184988167138` replaced the tainted
+release resource. Full image verification passed; Modal v6 deployed at 01:04:05 UTC with
+image `im-Px5Ep8pxXAVwzHEbd9I8EG`, build hash
+`e8520d3e9dc830e3f2e730473e7dffa029185e138ac8dbc9d0e76eaee0d64b51`. Health endpoints
+returned 200. No verifier bypass or unrelated deployment was performed.
+
+The new smoke passed model/source/report and independent live boundary checks. See the
+[closeout scorecard](reliability-testing-closeout-2026-09-16.md) for exact identities and evidence.
+Operator scaffolding corrections were necessary: use the existing Modal Python environment
+for websockets; accept the SDK's expected SandboxTerminatedError on wait and verify poll=137;
+compare native report text allowing the session-link prefix and Markdown blank-line normalization.
+The first strict Terraform binding comparison also treated computed fields/absent null keys as
+changes; apply continued in the shell. Subsequent inspection confirmed the live service environment
+and Durable Object namespace unchanged and only the intended task-mode flag changed. Future
+flag application used sequential validation inside one checked Python process.
+
+Stage A used native session `6dc12542-7770-4603-87e8-0a0208f6d7bf`, OpenInspect
+`c83e45fa0ff4b31de7be53c9c58501cb`. Prompt submission failed HTTP 400 `content is required`
+after allocation but before enqueue/inference. Zero messages/tool calls/reports; $0 recorded
+model cost, infrastructure/classifier cost unknown. Exact sandbox `sb-dh0gF50EVYLc1kP2hBOjlw`
+was correlated through SESSION_CONFIG, terminated and polled exit 137. The empty session was
+archived through the supported route. The operator watcher was stopped, not left polling.
+DIV-86 `0f28c943-a3e4-4113-a7e5-e033623aa9d2` now tracks admission diagnosis and preallocation
+validation/cleanup, blocks DIV-77, and is not a model-generated proposal. No A report/proposal,
+replay or B occurred. One numerical pilot slot remains; stop-on-failure blocks automatic retry.
+
+Safe flags restored with Linear version `1a5a58e1-e45e-4a9a-8388-691963ca947c`; no active
+D1 sessions. DIV-78, DIV-81, DIV-82 and DIV-85 are Done. DIV-84 callback durability stays open;
+DIV-83 historical diagnosis and DIV-79 host reliability remain separate.
+
+Mason conditionally authorized a VPS reboot. After cleanup and pushed checkpoint, `sudo -n -l`
+reported the orca account cannot run sudo, and `systemctl --no-ask-password reboot` returned
+access denied requiring interactive authentication. No reboot occurred and no privilege bypass
+was attempted. Administrator/provider-console restart is the remaining host action. It does not
+prove resolution of HTTP prompt validation. No repair worker was started across the reboot attempt.

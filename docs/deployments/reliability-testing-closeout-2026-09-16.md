@@ -27,8 +27,9 @@ limit, but the rejected payload size was not captured. Oversize is a hypothesis,
 Safe state: no active sessions, publication false, routing implementation; restored Linear version
 `1a5a58e1-e45e-4a9a-8388-691963ca947c`. No further attempt is authorized by the stop-on-failure
 rule. One numerical slot remains; replacement A plus B needs one additional slot and an explicit
-resumption decision. Mason authorized VPS reboot on continued failure; sudo was denied, and
-normal system reboot permission is being checked after this durable checkpoint.
+resumption decision. Mason authorized VPS reboot on continued failure. Both sudo and
+`systemctl --no-ask-password reboot` were denied by host permissions; no reboot occurred.
+An administrator/provider-console restart is required. Do not infer that a reboot repairs admission.
 
 DIV-78, DIV-81, DIV-82 and DIV-85 are Done. DIV-77 remains open, blocked on DIV-86 and the separate
 DIV-84 callback-durability acceptance. DIV-83 historical allocation investigation is not a gate;
