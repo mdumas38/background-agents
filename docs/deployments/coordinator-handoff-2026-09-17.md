@@ -1,6 +1,29 @@
 # OpenInspect coordinator handoff — DIV-87 release verified
 
 
+## Current checkpoint — A3 complete, B not selected
+
+Mason approved the post-DIV-87 resumption plus one added slot. A3 published actual
+[DIV-88](https://linear.app/divinedesign/issue/DIV-88/trace-whether-a-sessions-executed-source-revision-is-durable-and).
+Read [A3 closeout](div77-a3-closeout-2026-09-17.md) and
+[concrete B selection decision](div77-div88-b-decision-2026-09-17.md) before further work.
+A3's full report/provenance, source integrity and issue replay deduplication passed; replay delivered
+a second native report, so DIV-84 exactly-once acceptance remains unmet. B was NOT dispatched.
+One execution slot remains, gated on Mason's actual DIV-88 selection and explicit resumption with
+that duplicate-delivery limitation. Do not automatically retry, launch A again or claim DIV-77 done.
+
+A3: native `382ff7bc-926f-4d9a-b5ed-c379868ba48c`, OpenInspect
+`6818c85066dc6285b586e41bc82cc1f4`, message `3069f88153360e33fc20d1c4893cec8b`;
+19 successful source calls, 75.160 seconds, $0.018958128 model cost, 4,921-character report.
+Sandbox `sb-4pe8K4OfLAGbEKtq7htNBu` terminated exit 137. Final audit: zero active sessions,
+automation runs and app sandboxes. Safe Linear version `5759100c-3cde-439a-b900-fc5c058d0767`,
+publication false/implementation; unchanged control-plane `2ed9a9a5-353d-4e39-a97b-6e8f5192ad8f`.
+Private evidence: `/home/orca/.local/state/openinspect/div77-a3-20260917/`.
+The unrelated completed automation sandbox was terminated only under Mason's separate exact
+approval; its configuration remains unchanged. No duplicate repair workers or completed tests ran.
+
+The release-only and pre-apply checkpoints below are historical and superseded by this section.
+
 ## Superseding checkpoint — release complete
 
 **Do not apply the saved plan again.** The sole coordinator applied the approved plan once at

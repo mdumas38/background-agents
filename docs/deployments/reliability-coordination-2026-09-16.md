@@ -551,3 +551,28 @@ DIV-77 remains In Review/incomplete. The [new A+B resumption decision](div77-pos
 is concrete but unauthorized: one added slot, explicit resumption, actual A publication/replay and
 termination, then Mason's actual-proposal selection before B. DIV-84 stronger durability acceptance
 remains open; DIV-79 is separate. No pilot, prompt, replay, sandbox or model execution occurred.
+
+
+## Approved post-DIV-87 A3 — 13:15–13:20 UTC
+
+Mason approved resumption and one added slot. Preflight caught the unrelated Daily repository
+findings run, which completed but left its sandbox running. After exact correlation, Mason separately
+authorized terminating `sb-57KWKbO3gPgeEAdtCzFfoM`; exit 137 and no remaining app sandboxes were
+confirmed. Its automation configuration remained unchanged. No pilot slot was consumed by cleanup.
+
+A3 then ran once at approved main `1f7cbe3a`, native `382ff7bc-926f-4d9a-b5ed-c379868ba48c`,
+OpenInspect `6818c85066dc6285b586e41bc82cc1f4`, message `3069f88153360e33fc20d1c4893cec8b`.
+It completed 19 source calls in 75.160 seconds, $0.018958128 recorded model cost. The 4,921-character
+report stayed within the task limit but incorrectly claimed eight calls. Required prompt context,
+source integrity, and full durable report/provenance passed. Actual unassigned Backlog DIV-88 was
+published without compute. One successful-completion replay kept the same issue/messages/session
+but delivered a second native report: publication deduplication passed, exactly-once native delivery
+failed, reinforcing DIV-84's existing gap.
+
+A3 sandbox `sb-4pe8K4OfLAGbEKtq7htNBu` terminated exit 137. Reviewed Linear-only plans restored
+false/implementation at version `5759100c-3cde-439a-b900-fc5c058d0767`; full non-flag settings and
+control-plane version remain unchanged. Final audit: no active sessions/runs/app sandboxes. No
+repeated tests, smoke, replacement A or B occurred. The [A3 closeout](div77-a3-closeout-2026-09-17.md)
+records all evidence, including the duplicate response IDs. DIV-77 and DIV-84 remain In Review;
+DIV-88 remains Backlog for [explicit B selection/resumption](div77-div88-b-decision-2026-09-17.md).
+One slot remains. DIV-87 is Done; DIV-79 remains separate.

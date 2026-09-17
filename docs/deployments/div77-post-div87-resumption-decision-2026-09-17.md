@@ -1,11 +1,16 @@
 # Post-DIV-87 A and independent B resumption decision
 
-Prepared after the verified DIV-87 release; **not authorized or executed**. The previous A2
-publication failure remains a stop. No source-tool smoke or completed tests need repeating.
-Linear `978c0dbd-970b-4f4b-9dcd-39c548172d5e` is deployed with publication false/implementation;
+Mason approved this resumption and one added execution slot ("approved to proceed") after the
+verified DIV-87 release. A was dispatched once after preflight; B still requires selection of A's actual published
+proposal. Preflight found a completed unrelated automation with a live provider sandbox; Mason
+separately authorized terminating that exact sandbox, and exit 137 plus an empty app listing were
+verified before enabling A. A was then dispatched once: [A3 closeout](div77-a3-closeout-2026-09-17.md). Actual DIV-88
+publication and issue deduplication passed; replay duplicated the native report. B remains stopped
+for [actual proposal selection](div77-div88-b-decision-2026-09-17.md). No source-tool smoke or completed tests need repeating.
+Linear `5759100c-3cde-439a-b900-fc5c058d0767` is now deployed with publication false/implementation;
 control plane remains `2ed9a9a5-353d-4e39-a97b-6e8f5192ad8f`.
 
-## Decision requested
+## Approved decision
 
 Resume the stopped pilot and add one execution slot to the one remaining for replacement A and
 later independently approved B. Authorize temporary dev Linear flags for A (`read-only`, publication
@@ -13,10 +18,10 @@ later independently approved B. Authorize temporary dev Linear flags for A (`rea
 Linear-only plans before each apply; stop on scope expansion. No Modal/image release, access
 expansion or scheduler. B still requires Mason's selection of A's actual published proposal.
 
-## Proposed A instruction
+## Approved A instruction — executed once
 
-After approval, publish a fresh current instruction on DIV-77 with this full scope. Do not redispatch
-the failed comment or reuse historical launch helpers/output paths.
+This exact scope was published for A3 and executed once. Retain it as evidence; do not redispatch
+it or reuse historical launch helpers/output paths.
 
 > This is a fresh post-DIV-87 stage A of the DIV-77 enforced-investigation pilot, superseding older stopped
 > instructions and the failed A2 attempt. Repository mdumas38/background-agents, branch main, expected revision
@@ -75,4 +80,5 @@ explicit acceptance revision before DIV-77 closes. DIV-79 stays separate.
 A2's unpublished report and operator-created DIV-87 are not eligible B selections. A malformed
 proposal or publication rejection is a failure, never a valid no-proposal outcome. Publication alone
 authorizes no compute. Do not launch from this document, post its instruction, change pilot flags,
-or invoke historical launch scripts until Mason explicitly authorizes this resumption and added slot.
+or invoke historical launch scripts blindly. Resumption and the added slot are approved; all live
+preflight checks and B's separate selection gate still apply.

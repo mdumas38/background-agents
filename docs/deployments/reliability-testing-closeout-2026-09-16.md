@@ -1,6 +1,25 @@
 # OpenInspect end-to-end testing closeout
 
-## Current result — DIV-87 released; pilot remains stopped, 2026-09-17
+## Current result — A3 published DIV-88; B selection remains gated
+
+Mason approved the post-DIV-87 resumption and one added slot. A3 completed 19 source calls in
+75.160 seconds for $0.018958128 model cost, producing a 4,921-character report and actual
+[DIV-88](https://linear.app/divinedesign/issue/DIV-88/trace-whether-a-sessions-executed-source-revision-is-durable-and).
+Required prompt/context, exact source integrity and full durable report/provenance passed. The
+report's eight-call claim is incorrect; persisted events prove 19 successful calls.
+
+One completion replay kept the same issue and created no new compute, but delivered a second
+native report. Publication deduplication passes; exactly-once native delivery fails and DIV-84's
+stronger acceptance remains open. A terminated exit 137; final audit found zero active
+sessions/runs/app sandboxes. Publication false/implementation was restored as Linear
+`5759100c-3cde-439a-b900-fc5c058d0767`; control plane and other settings are unchanged.
+
+See [complete A3 evidence](div77-a3-closeout-2026-09-17.md) and the
+[actual DIV-88 B decision](div77-div88-b-decision-2026-09-17.md). One slot remains; B was not
+dispatched and needs explicit selection/resumption in light of the duplicate native delivery.
+No tests or smoke were repeated. DIV-77 remains In Review; DIV-87 is Done; DIV-79 stays separate.
+
+## Previous result — DIV-87 released; pilot stopped before A3
 
 DIV-86 is released and its admission fallback passed live. Newly authorized replacement A completed
 13 allowed source calls and one native report in 80.795 seconds, with $0.013812186 recorded model
@@ -124,33 +143,26 @@ Wrong-profile rejection evidence from the earlier attempt is retained; it was no
    Linear `0bd470bd-75a0-4f93-b26a-50079eb6d8df`; both healthy, bindings unchanged,
    publication false/implementation. Missing/oversized invalid-only probes returned safe 400
    diagnostics with no new sessions/messages. See the [release evidence](div86-release-decision-2026-09-17.md).
-2. **DIV-87 release passed; separately authorize A/B resumption.** PR #16 is deployed and verified.
-   The [new concrete resumption decision](div77-post-div87-resumption-decision-2026-09-17.md)
-   is prepared but not authorized. The newly observed A2 publication
-   failure does not justify replay, B or an automatic retry. The smoke already passed; do not repeat it unless
-   the repair changes its validated boundary. One slot remains, so authorize one additional slot
-   and resumption for replacement A plus B, still one active worker, five-minute aim, ten-minute/
-   $0.50 observed stop and $2 target with infrastructure reserve. A reboot is not proof that
-   request validation is repaired. Any new pilot failure stops downstream work.
-3. **A: investigation/publication/replay.** Use a focused task context, at most one warranted
-   proposal, durable report/provenance, unassigned backlog and no execution caused by publication.
-   Replay the successful logical completion and verify issue deduplication. Terminate A.
-4. **Select the actual proposal, then independent B.** Mason chooses the real published task;
-   dispatch B with publication off, validate durable context transfer and enforced behavior,
-   then terminate. No proposal means a valid no-publication branch; never manufacture B.
-5. **Close the scorecard and remaining acceptance.** Restore safe flags, record exact identities,
-   costs and limitations, and close only fulfilled scope. DIV-84's stronger durable callback
-   requirement needs implementation or explicit acceptance revision; DIV-79 is separate host work.
+2. **DIV-87 and A3 publication passed.** Exact source/prompt/report/provenance are preserved;
+   actual DIV-88 exists unassigned in Backlog. One replay retained one issue/no new compute but
+   duplicated native delivery. A is terminated and safe flags restored; no retry is authorized.
+3. **Select actual DIV-88 and explicitly resume B.** The concrete B decision names the published
+   issue and preserves one-slot/one-active-worker, five-minute aim, ten-minute/$0.50 observed stop
+   and $2 campaign target. No repeat smoke or A is needed. B uses normal durable context assembly.
+4. **Verify B and clean up.** Validate complete context transfer, useful completion, source integrity,
+   no child publication and provider termination; restore safe flags and record cost/limitations.
+5. **Close only fulfilled acceptance.** DIV-84's outbox/exactly-once native delivery requirement
+   needs implementation or explicit revision. Publication deduplication does not satisfy it.
 
 ## Board scope that remains visible
 
-- **DIV-77:** A/publication/independent-B acceptance incomplete; separate A/B resumption and DIV-84 acceptance remain.
+- **DIV-77:** A publication verified; independent B selection/execution and DIV-84 acceptance remain.
 - **DIV-78, DIV-81, DIV-82, DIV-85:** Done, based on successful release and live smoke evidence.
 - **DIV-86:** released; focused/non-allocating checks and actual A2 fallback preservation passed.
 - **DIV-87:** Done; PR #16 merged, dev release verified; not a model-published task.
 - **DIV-83:** diagnosis PR #11 remains for review; historical provider cause is unresolved but
   operator acceptance removed the allocation-proof gate. No historical polling is needed.
-- **DIV-84:** cancellation/settlement passed live; stronger durable callback acceptance remains open.
+- **DIV-84:** cancellation/settlement passed live; A3 replay confirms duplicate native delivery; durability remains open.
 - **DIV-79:** separate host reliability; no swap, resize, service-limit or automation changes.
 - **DIV-76, DIV-71, DIV-72:** unchanged separate/deferred work.
 
