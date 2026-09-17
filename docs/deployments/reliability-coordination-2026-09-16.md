@@ -336,3 +336,52 @@ then verified. DIV-85 has the PR attached and is In Review; it still blocks depl
 acceptance. The [closeout checklist](reliability-testing-closeout-2026-09-16.md) gives the full order:
 human fix review, verified dev image release, explicit resumed smoke/remaining-budget decision,
 A publication, actual proposal selection and independent B, then final scorecard/board closeout.
+
+
+## PR #13 merge and failed dev image release — 2026-09-17
+
+Mason approved merge and continuation. PR #13 merged at 00:40:54 UTC as
+`fcd61d213a2350851d0b5dccaff60f302b9f5169`; the preserved private deployment branch
+integrates it at `7622fd7392b811a3ce7ab99db77c89a25c970aba` (pushed). The reviewed
+saved plan changed only `module.modal_app[0].null_resource.modal_deploy`, with source
+hash `e5db5004926bb015596b321293017e3bb8c4f3bc719e93f24106a7e6cc58035c`.
+Its app/environment/secrets trigger remained unchanged. No Workers, migrations, credentials,
+access or cron changes were part of this release.
+
+The standard eager image builder failed the full desktop verifier with `VNC readiness timeout`
+and x11vnc `webSocketsHandshake: unknown connection error`, reproducing DIV-78. Deployment
+never advanced: Modal app history still ends at v5, and the image reference remains
+`im-O9SN8sTS5qzxtJiKOogXRH` with the previous verified hash. The Terraform resource is
+tainted; reconcile with a fresh reviewed plan after repair, never replay the failed plan.
+Post-failure checks found no active D1 sessions and an empty current Modal sandbox listing.
+Publication remains false and routing implementation. The new smoke was prepared but not
+launched; three authorized executions remain (replacement smoke, A, B), with B requiring
+Mason's choice of the actual published proposal. Failed image verification consumed no pilot slot.
+
+DIV-78 is now the immediate release blocker. Repair task `task_2430c8ce1059`, dispatch
+`ctx_c8e4ea43a2cf`, belongs to existing run `run_b1bec0e36d51` in a fresh child workspace
+`div-78-vnc-readiness-repair`, explicitly based on `origin/main`. Setup was skipped because
+this is focused Python verification work and the host cannot justify a full npm install.
+Only that worker owns the heavy-job token; lightweight focused tests may run under 128 MiB
+with a 1 GiB host-available floor. No unrelated processes or host configuration were changed.
+
+Private evidence: `/home/orca/.local/state/openinspect/div85-release-20260917/`.
+The complete remaining path is maintained in the linked testing-closeout document.
+
+
+The DIV-78 worker completed with draft [PR #14](https://github.com/mdumas38/background-agents/pull/14),
+commit `81fb54b9caf494c2e543c74e0d07b7d6b107e0e8`. Coordinator reviewed both changed
+files and required a deadline-edge guard, now covered. All 33 focused verifier tests passed;
+Ruff and diff checks passed. A real delayed loopback server showed old-client disconnect at
+1.00 seconds and repaired complete-banner receipt at 1.50 seconds. Exact provider-side delay
+remains inferential; full fresh-artifact verification is pending human review of the new fix.
+Tests peaked at 44,688 KiB process-tree RSS, minimum available host memory 1,405,616 KiB.
+No npm install or deployment venv changes were needed.
+
+Worker completion `msg_c0ec34380df4` was accepted and delivery `delivery_8483690bbc3d`
+acknowledged after cleanup. Release and exact retry request
+`9000ed31-bf7e-4aae-9ab4-52bdbb31392b` returned `release_unknown/tab_not_found`, but exact
+worker observation showed exited, disconnected and unwritable with transcript captured.
+No broad close was used; the worktree remains preserved. DIV-78 moved to In Review, PR #14
+attached, with its blocking relation to DIV-77 restored. DIV-77 and DIV-85 received the failed
+release and full remaining-path update. No further pilot or deployment was attempted.

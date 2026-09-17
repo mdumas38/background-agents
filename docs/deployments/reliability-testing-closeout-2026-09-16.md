@@ -1,6 +1,32 @@
 # OpenInspect end-to-end testing closeout
 
-## Current result — replacement smoke at 22:57 UTC
+## Current result — release blocked on 2026-09-17
+
+PR #13 was approved and merged as `fcd61d213a2350851d0b5dccaff60f302b9f5169`
+at 00:40:54 UTC. The approved continuation includes replacement smoke, A and B (three
+remaining executions), with B still requiring selection of A's actual published proposal.
+No new pilot execution has started or consumed that allowance.
+
+The standard Modal-only dev release failed during full baked-image verification at the
+existing DIV-78 VNC readiness check. The verifier reported `VNC readiness timeout` and
+repeated x11vnc `webSocketsHandshake: unknown connection error`. No verifier bypass was
+used. A supervised DIV-78 repair is ready from `origin/main` in a separate worktree.
+
+Reconciled state: Modal remains v5, verified image `im-O9SN8sTS5qzxtJiKOogXRH`;
+the new image reference was not published. Terraform's Modal deploy resource is tainted;
+prepare a fresh reviewed plan after repair, rather than replaying the failed saved plan.
+D1 has no active sessions, current Modal sandbox listing is empty, publication is false
+and routing is implementation. No database, access, credential or cron changes occurred.
+
+Private release evidence: `/home/orca/.local/state/openinspect/div85-release-20260917/`.
+Private deployment integration: `7622fd7392b811a3ce7ab99db77c89a25c970aba`.
+Attempted source hash: `e5db5004926bb015596b321293017e3bb8c4f3bc719e93f24106a7e6cc58035c`.
+
+Immediate path: repair/review DIV-78 → fresh verified dev release → replacement smoke → A
+→ actual proposal selection → independent B → final scorecard. DIV-84's durable callback
+acceptance remains separately open; DIV-83 historical allocation investigation is not a gate.
+
+## Previous result — replacement smoke at 22:57 UTC
 
 **The smoke failed useful source access.** Startup, approved-model inference and report delivery
 worked; all eight source-tool calls failed. DIV-85 owns the repair. No A or B has run.
@@ -53,21 +79,21 @@ Wrong-profile rejection evidence from the earlier attempt is retained; it was no
 
 ## Prioritized remaining path
 
-1. **DIV-85: review the source-tool repair.** The supervised repair corrects relative read
-   permissions, bakes ripgrep into the image and rejects unsafe source symlinks before launch.
-   Forty focused investigation cases, 17 image-verifier checks and 27 image-bundle tests passed
-   in completed serial runs. The
-   unchanged model-catalog regression was not rerun successfully due the diagnostic memory cap;
-   broader builds and live release remain unrun. Review [draft PR #13](https://github.com/mdumas38/background-agents/pull/13) before merge or release.
-2. **Release the reviewed fix to dev.** Preserve private deployment configuration. Rebuild and verify
-   the Modal image through standard entrypoints, inspect the exact release scope, then deploy only
-   after the concrete human release decision. Keep publication off. No verifier bypass or unrestricted
-   fallback. Build bundles before saving any Terraform plan.
-3. **Explicitly resume with one replacement smoke.** This failed attempt reactivates stop-on-failure.
-   No automatic retry is authorized. Numerically one additional campaign slot remains; completing
-   replacement smoke + A + B needs three slots, hence two more than the remaining allowance. Bundle
-   that bounded allowance and resumption decision with the release review. Keep one active worker,
-   five-minute aim, stop at ten minutes or $0.50 observed model spend, $2 target including reserve.
+1. **DIV-78: review [draft PR #14](https://github.com/mdumas38/background-agents/pull/14).**
+   Commit `81fb54b9caf494c2e543c74e0d07b7d6b107e0e8` preserves the VNC connection across
+   receive timeouts, handles fragmented banners and guards the overall deadline. All 33 focused
+   verifier tests and Ruff checks passed; a real loopback old/new comparison reproduces the
+   premature-disconnect defect. Exact provider delay remains unproven. Full fresh-image
+   verification remains required; no checks are bypassed. Review this new fix before merge/release.
+2. **Release to dev.** PR #13 is merged; its 84 focused checks passed. Integrate any approved
+   verifier fix into the preserved private deployment checkout, prepare a fresh Modal-only plan
+   accounting for the tainted resource, then build, fully verify and deploy through standard
+   entrypoints. Keep publication off and verify the exact image/hash and live version.
+3. **Run one replacement smoke.** Resumption and three remaining executions are authorized by
+   Mason's approval of the continuation. Start only after the image passes. Verify useful source
+   access, corrected excluded-tool probes, source integrity, report delivery and cleanup. Keep
+   one active worker, five-minute aim, stop at ten minutes or $0.50 observed model spend,
+   $2 target including reserve. A failed pilot stops downstream executions; no automatic retry.
 4. **A: useful investigation and publication.** Only after smoke passes. Enable publication for A,
    publish at most one warranted proposal, verify durable report/provenance, unassigned backlog
    state, no execution caused by publication, and callback replay deduplication of the issue.
@@ -84,8 +110,7 @@ Any new failure stops downstream execution and returns a concrete repair/retest 
 
 ## Board scope that remains visible
 
-- **DIV-77:** final smoke/publication/independent-B acceptance remains incomplete; DIV-85 is the
-  immediate source-access blocker.
+- **DIV-77:** final smoke/publication/independent-B acceptance remains incomplete; DIV-78 currently blocks release; DIV-85 still awaits live source-access acceptance.
 - **DIV-81:** approved model now resolved and produced live inference. Source fix and live acceptance
   are evidenced; model resolution no longer blocks the pilot.
 - **DIV-82:** both the old failed startup and this newly failed source-access smoke retain their own
