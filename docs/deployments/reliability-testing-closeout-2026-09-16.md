@@ -1,6 +1,20 @@
 # OpenInspect end-to-end testing closeout
 
-## Current result — smoke passed; A admission failed, 2026-09-17
+## Current result — replacement A publication failed, 2026-09-17
+
+DIV-86 is released and its admission fallback passed live. Newly authorized replacement A completed
+13 allowed source calls and one native report in 80.795 seconds, with $0.013812186 recorded model
+cost and unchanged source. Publication rejected an extra Markdown fence before the proposal title;
+no proposal issue, replay or B resulted. Sandbox termination returned exit 137; no active sessions or
+app-scoped sandboxes remain. Publication false/implementation was restored as Linear version
+`fbe22f40-e825-4a9e-94e3-d5db20130328`.
+
+DIV-87 draft [PR #16](https://github.com/mdumas38/background-agents/pull/16) clarifies the strict
+output contract and safe errors; 14 focused tests, lint and formatting passed. It is not merged or
+released and does not guarantee future model compliance. One numerical slot remains, but retry is
+blocked by stop-on-failure. See the [full A2 scorecard and remaining path](div77-a2-closeout-2026-09-17.md).
+
+## Previous result — smoke passed; first A admission failed, 2026-09-17
 
 PR #14 merged as `c14f854a2f99adbd48f1908a5186a569988a875f`. Full baked-image verification
 passed and Modal dev v6 deployed at 01:04:05 UTC, image `im-Px5Ep8pxXAVwzHEbd9I8EG`,
@@ -106,7 +120,9 @@ Wrong-profile rejection evidence from the earlier attempt is retained; it was no
    Linear `0bd470bd-75a0-4f93-b26a-50079eb6d8df`; both healthy, bindings unchanged,
    publication false/implementation. Missing/oversized invalid-only probes returned safe 400
    diagnostics with no new sessions/messages. See the [release evidence](div86-release-decision-2026-09-17.md).
-2. **Separately authorize resumption of A/B.** The smoke already passed; do not repeat it unless
+2. **DIV-87 review/release, then separately authorize resumption of A/B.** Review PR #16 and
+   a concrete Linear-only release; merge/deploy require approval. The newly observed A2 publication
+   failure does not justify replay, B or an automatic retry. The smoke already passed; do not repeat it unless
    the repair changes its validated boundary. One slot remains, so authorize one additional slot
    and resumption for replacement A plus B, still one active worker, five-minute aim, ten-minute/
    $0.50 observed stop and $2 target with infrastructure reserve. A reboot is not proof that
@@ -123,9 +139,10 @@ Wrong-profile rejection evidence from the earlier attempt is retained; it was no
 
 ## Board scope that remains visible
 
-- **DIV-77:** A/publication/independent-B acceptance incomplete; explicit resumption is the next gate.
+- **DIV-77:** A/publication/independent-B acceptance incomplete; DIV-87 review/release and resumption are next.
 - **DIV-78, DIV-81, DIV-82, DIV-85:** Done, based on successful release and live smoke evidence.
-- **DIV-86:** repair released; focused tests and non-allocating admission verification passed.
+- **DIV-86:** released; focused/non-allocating checks and actual A2 fallback preservation passed.
+- **DIV-87:** draft PR #16; publication-format guidance/diagnostics repair, not a model-published task.
 - **DIV-83:** diagnosis PR #11 remains for review; historical provider cause is unresolved but
   operator acceptance removed the allocation-proof gate. No historical polling is needed.
 - **DIV-84:** cancellation/settlement passed live; stronger durable callback acceptance remains open.
@@ -134,4 +151,5 @@ Wrong-profile rejection evidence from the earlier attempt is retained; it was no
 
 Detailed release history remains in [the coordination record](reliability-coordination-2026-09-16.md).
 
-Concrete [replacement-A/B decision and instruction](div77-replacement-a-decision-2026-09-17.md) are prepared; no dispatch occurred.
+The [replacement-A/B decision](div77-replacement-a-decision-2026-09-17.md) was approved and A ran;
+its failure and superseding gates are recorded in the A2 scorecard.

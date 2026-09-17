@@ -1,6 +1,8 @@
 # Replacement A and independent B decision
 
-Prepared, not dispatched. DIV-86 is released and non-allocating admission checks passed.
+Approved and executed for A only. A completed investigation but publication rejected malformed
+proposal framing; B was not dispatched. See the [A2 result](div77-a2-closeout-2026-09-17.md).
+This historical approval does not authorize another attempt. DIV-86 admission passed live.
 The source-tool smoke remains passed; do not repeat it.
 
 ## Decision requested

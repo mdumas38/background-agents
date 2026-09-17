@@ -475,3 +475,36 @@ slot (one remains), then Mason's selection of A's actual published task before B
 instruction/bounds are in `div77-replacement-a-decision-2026-09-17.md`. No repeated smoke or new
 pilot ran. DIV-84 outbox/exactly-once acceptance remains unimplemented; close or explicitly revise
 that acceptance before claiming DIV-77 complete. DIV-79 remains a separate host track.
+
+
+## Approved replacement A: publication failure and offline repair — 03:26–03:40 UTC
+
+Mason approved replacement A/B and one additional slot; only A ran. Native
+`c5078362-5b14-445d-888c-f08c0bd7d71c`, OpenInspect `e5e7fd4a15530e6db089ba36134f631c`,
+message `527e9eab128ebd29d3c1fe71369c9e5f` completed 13 allowed tools in 80.795 seconds at
+$0.013812186 model cost. DIV-86 fallback disclosed omitted optional context and preserved exact
+instruction, complete issue and publication contract in an 11,823-code-unit prompt. Source/head
+and tracked digest matched approved main. Sandbox `sb-bM2TEWMekJ0H7lmEoM8Xeq` terminated exit137.
+
+The report violated its 5,000-character instruction (6,963 actual) and included an extra Markdown
+wrapper before the proposal title. The parser rejected publication; native Linear delivered one
+report with explicit rejection and created no proposal issue. No callback replay or B ran. Exact
+parser reproduction rejects the original; a private two-line-removal control accepts the same
+proposal body, establishing framing as the rejection cause. The control was never published.
+
+Safe flags restored to false/implementation as Linear `fbe22f40-e825-4a9e-94e3-d5db20130328`;
+zero active sessions or app-scoped Modal sandboxes. One numerical slot remains, subject to a fresh
+stop-on-failure resumption decision. The existing external-webhook automation was inspected and
+left untouched; no active run or schedule conflicted with the temporary Linear flags.
+
+Operator-created DIV-87 owns output-contract guidance and precise safe diagnostics. The coordinator
+prepared draft PR #16 (`4b2d728524d987a9be8aae07ff5f1e20639e4fc5`) with 14 focused parser tests,
+lint and formatting passing. A temporary source copy/index preserved both worktrees; no new worker,
+install, source merge, release or model execution occurred. The original restored child and its
+unsent draft input were left untouched. No GitHub CI checks were reported for PR #16.
+
+The [A2 scorecard](div77-a2-closeout-2026-09-17.md) retains complete evidence and the remaining path:
+review/merge, concrete approved Linear-only release, new A/B resumption plus one slot, actual A
+publication/replay/termination, Mason's selection before B, transfer/completion/cleanup, safe flags
+and DIV-84 durability disposition. DIV-79 remains separate. Private evidence is under
+`/home/orca/.local/state/openinspect/div77-a2-20260917/`.
