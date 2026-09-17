@@ -164,6 +164,26 @@ export const sendPromptRequestSchema = z
     }
   );
 
+/** Safe diagnostics: never include input values or validator messages. Lengths use JS UTF-16 units. */
+export function describePromptValidationFailure(raw: unknown, failure: z.ZodError): string {
+  const fields = new Set([
+    "content",
+    "source",
+    "model",
+    "reasoningEffort",
+    "requiredExecutionProfile",
+    "attachments",
+    "callbackContext",
+  ]);
+  const issues = failure.issues.map((issue) => {
+    const field = String(issue.path[0] ?? "request");
+    return `${fields.has(field) ? field : "request"}:${issue.code}`;
+  });
+  const content = raw && typeof raw === "object" && "content" in raw ? raw.content : undefined;
+  const length = typeof content === "string" ? content.length : "not_string";
+  return `Invalid prompt request (${issues.join(", ")}); content_length=${length}; max_content_length=${MAX_WEB_PROMPT_CHARS}`;
+}
+
 export type SendPromptRequest = z.infer<typeof sendPromptRequestSchema>;
 
 export const sessionBudgetUpdateSchema = z.strictObject({
