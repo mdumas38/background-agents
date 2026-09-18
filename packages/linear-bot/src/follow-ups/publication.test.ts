@@ -222,9 +222,32 @@ describe("durable publication", () => {
       null
     );
     expect(prompt).toContain(report);
-    expect(s.env.CONTROL_PLANE.fetch).not.toHaveBeenCalled();
+    expect(s.env.CONTROL_PLANE.fetch).toHaveBeenCalledTimes(1);
+    expect(input.description).toContain("Validated session baselines unavailable");
     expect(mocks.activity).not.toHaveBeenCalled();
     expect(s.data.get(publicationKey(payload))).toMatchObject({ result, inputs: [input] });
+  });
+  it("freezes machine provenance with the durable publication record", async () => {
+    const s = setup();
+    vi.mocked(s.env.CONTROL_PLANE.fetch).mockResolvedValue(
+      Response.json({
+        revisionProvenance: {
+          source: "session_pinned_baselines",
+          status: "available",
+          repositories: [
+            { position: 0, repoOwner: "group/subgroup", repoName: "repo", baseSha: "a".repeat(40) },
+          ],
+        },
+      })
+    );
+    await s.run();
+    const description = mutationCalls()[0][2].input.issues[0].description;
+    expect(description).toContain("a".repeat(40));
+    expect(description).toContain(report);
+    vi.mocked(s.env.CONTROL_PLANE.fetch).mockRejectedValue(new Error("offline"));
+    await s.run();
+    expect(s.env.CONTROL_PLANE.fetch).toHaveBeenCalledTimes(1);
+    expect(mutationCalls()).toHaveLength(1);
   });
   it("deduplicates concurrent callbacks, changed timestamps, and coordinator restarts", async () => {
     const s = setup();
@@ -381,6 +404,6 @@ describe("signed completion-to-publication", () => {
           .content.body
       ).toContain("Useful report");
     }
-    expect(s.env.CONTROL_PLANE.fetch).not.toHaveBeenCalled();
+    expect(s.env.CONTROL_PLANE.fetch).toHaveBeenCalledTimes(valid ? 1 : 0);
   });
 });

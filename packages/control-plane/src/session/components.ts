@@ -108,6 +108,7 @@ import { SessionBudgetHandler } from "./http/handlers/session-budget.handler";
 import { PullRequestHandler } from "./http/handlers/pull-request.handler";
 import { ParticipantsHandler } from "./http/handlers/participants.handler";
 import { MessageService } from "./services/message.service";
+import { revisionProvenance } from "./revision-provenance";
 import { createAlarmHandler } from "./alarm/handler";
 import {
   createEarliestAlarmScheduler,
@@ -790,7 +791,15 @@ export function createSessionRuntime(platform: SessionPlatform, env: Env): Sessi
       );
     },
     listParticipants: () => participantsHandler.listParticipants(),
-    listEvents: (_request, url) => messagesHandler.listEvents(url),
+    listEvents: async (_request, url) => {
+      const response = messagesHandler.listEvents(url);
+      if (!response.ok || url.searchParams.get("include_revision_provenance") !== "true")
+        return response;
+      return Response.json({
+        ...((await response.json()) as object),
+        revisionProvenance: revisionProvenance(sessionCoreRepository),
+      });
+    },
     listArtifacts: (_request, url) => messagesHandler.listArtifacts(url),
     listMessages: (_request, url) => messagesHandler.listMessages(url),
     createPr: (request, _url, requestLog) => pullRequestHandler.createPr(request, requestLog),
