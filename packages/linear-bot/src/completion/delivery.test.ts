@@ -204,3 +204,96 @@ it("does not switch a frozen activity to a comment after an uncertain send", asy
   });
   expect(mocks.graphql).toHaveBeenCalledTimes(calls);
 });
+
+const rawMarkdown = "- [source](https://example.com)";
+const providerMarkdown = "* [source](<https://example.com>)";
+it.each(["activity", "comment"] as const)(
+  "reconciles normalized %s readback without changing frozen content",
+  async (kind) => {
+    const frozen = { ...content, kind, body: rawMarkdown };
+    const record = { payload, deliveryId: "id", content: frozen };
+    const item = {
+      id: "id",
+      agentSession: { id: "agent" },
+      issue: { id: "agent" },
+      content: { type: "response", body: providerMarkdown },
+      body: providerMarkdown,
+    };
+    mocks.graphql
+      .mockRejectedValueOnce(new Error("response lost"))
+      .mockResolvedValueOnce({ data: { agentActivity: item } });
+    const fetch = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("response lost"))
+      .mockResolvedValueOnce(Response.json({ data: { comment: item } }));
+    vi.stubGlobal("fetch", fetch);
+    try {
+      await expect(
+        deliverRecordedCompletion(record, { ...env, LINEAR_API_KEY: "key" })
+      ).resolves.toBeUndefined();
+      expect(record.content).toEqual(frozen);
+      expect(record.content.body).toBe(rawMarkdown);
+      const input =
+        kind === "activity"
+          ? mocks.graphql.mock.calls[0][2].input
+          : JSON.parse(fetch.mock.calls[0][1].body).variables.input;
+      expect(input.id).toBe("id");
+      expect(kind === "activity" ? input.content.body : input.body).toBe(rawMarkdown);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  }
+);
+it.each(["id", "target", "type", "body"])(
+  "rejects activity readback with conflicting %s despite normalized formatting",
+  async (field) => {
+    const item = {
+      id: field === "id" ? "other" : "id",
+      agentSession: { id: field === "target" ? "other" : "agent" },
+      content: {
+        type: field === "type" ? "error" : "response",
+        body: field === "body" ? "changed" : providerMarkdown,
+      },
+    };
+    mocks.graphql
+      .mockRejectedValueOnce(new Error("response lost"))
+      .mockResolvedValueOnce({ data: { agentActivity: item } });
+    await expect(
+      deliverRecordedCompletion(
+        { payload, deliveryId: "id", content: { ...content, body: rawMarkdown } },
+        env
+      )
+    ).rejects.toThrow("unconfirmed");
+  }
+);
+it.each(["id", "target", "body"])("rejects comment readback with conflicting %s", async (field) => {
+  const fetch = vi
+    .fn()
+    .mockRejectedValueOnce(new Error("response lost"))
+    .mockResolvedValueOnce(
+      Response.json({
+        data: {
+          comment: {
+            id: field === "id" ? "other" : "id",
+            issue: { id: field === "target" ? "other" : "issue" },
+            body: field === "body" ? "changed" : providerMarkdown,
+          },
+        },
+      })
+    );
+  vi.stubGlobal("fetch", fetch);
+  try {
+    await expect(
+      deliverRecordedCompletion(
+        {
+          payload,
+          deliveryId: "id",
+          content: { kind: "comment", target: "issue", body: rawMarkdown },
+        },
+        { ...env, LINEAR_API_KEY: "key" }
+      )
+    ).rejects.toThrow("unconfirmed");
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
