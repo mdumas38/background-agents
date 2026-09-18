@@ -1,3 +1,4 @@
+import { LINEAR_COMPLETION_RETRY_MS } from "./linear-completion-policy";
 import type { SandboxEvent } from "@open-inspect/shared/types/sandbox-events";
 import type { PromptQueueItem } from "@open-inspect/shared/types/server-messages";
 import type { MessageSource, MessageStatus } from "@open-inspect/shared/types/sessions";
@@ -448,6 +449,27 @@ export class MessageRepository {
         event.messageId
       );
       this.eventRepository.upsertExecutionCompleteEvent(event.messageId, event, completedAt);
+      // The outbox and terminal message/event commit together. Never backfill old
+      // completions: their externally delivered IDs predate receiver deduplication.
+      this.sql.exec(
+        `INSERT OR IGNORE INTO linear_completion_outbox (message_id, success, error)
+        SELECT id, ?, ? FROM messages WHERE id = ? AND source = 'linear' AND callback_context IS NOT NULL`,
+        event.success ? 1 : 0,
+        event.error ?? null,
+        event.messageId
+      );
+
+      // Persist wakeup intent with the terminal transition. Activation rehydrates
+      // it even if the isolate dies before the background delivery is submitted.
+      this.sql.exec(
+        `INSERT INTO session_alarm_state (singleton, pending_deadline)
+        SELECT 1, ? WHERE EXISTS (SELECT 1 FROM linear_completion_outbox WHERE message_id = ? AND accepted_at IS NULL)
+        ON CONFLICT(singleton) DO UPDATE SET pending_deadline =
+          CASE WHEN session_alarm_state.pending_deadline IS NULL THEN excluded.pending_deadline
+          ELSE MIN(session_alarm_state.pending_deadline, excluded.pending_deadline) END`,
+        completedAt + LINEAR_COMPLETION_RETRY_MS,
+        event.messageId
+      );
 
       return {
         messageId: event.messageId,
@@ -457,6 +479,26 @@ export class MessageRepository {
         status,
       };
     });
+  }
+
+  listPendingLinearCompletions(): Array<{
+    message_id: string;
+    success: number;
+    error: string | null;
+  }> {
+    return this.sql
+      .exec(
+        `SELECT message_id, success, error FROM linear_completion_outbox WHERE accepted_at IS NULL`
+      )
+      .toArray() as Array<{ message_id: string; success: number; error: string | null }>;
+  }
+
+  acceptLinearCompletion(messageId: string): void {
+    this.sql.exec(
+      `UPDATE linear_completion_outbox SET accepted_at = ? WHERE message_id = ?`,
+      Date.now(),
+      messageId
+    );
   }
 
   listPendingMessagesWithCreatedAt(): Array<{ id: string; created_at: number }> {
