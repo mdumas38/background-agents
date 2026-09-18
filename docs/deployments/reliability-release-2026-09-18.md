@@ -1,5 +1,10 @@
 # Reliability cleanup dev release — 2026-09-18
 
+**Subsequent acceptance:** Mason approved both live tests. Production replay and isolated live
+sender recovery passed; actual Linear Markdown normalization exposed a receiver reconciliation
+blocker. Read the [live acceptance record](reliability-live-acceptance-2026-09-18.md) for current
+results and remaining work. The historical separate-approval proposal below has been authorized.
+
 Mason authorized deployment of merged PRs
 [#17](https://github.com/mdumas38/background-agents/pull/17),
 [#18](https://github.com/mdumas38/background-agents/pull/18), and

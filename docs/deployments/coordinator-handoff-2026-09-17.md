@@ -1,6 +1,41 @@
 # OpenInspect coordinator handoff — cleanup deployed, live acceptance open
 
-## Current checkpoint — dev release verified (2026-09-18)
+## Current checkpoint — live replay/sender recovery passed; receiver defect found (2026-09-18)
+
+Mason approved both the B replay and live recovery tests. Read the
+[live acceptance record](reliability-live-acceptance-2026-09-18.md) before continuing. The two
+production callbacks returned pending then done; exactly one approved new native response
+`cf355f7f-e1ae-4654-99d9-c1c5baf80339` appeared on B's existing native session. Its 46/44/2 counts
+are now verified live, with all report content retained. Linear normalizes Markdown, so do not claim
+byte-identical provider body storage. No duplicate appeared in the 120-second replay window.
+
+An isolated live Cloudflare sender test using shipped persistence/callback/alarm modules passed
+crash-before-runtime-alarm and crash-after-receiver-acceptance recovery: two native alarms/two
+sends, one terminal event and accepted outbox, no additional report or compute. The temporary test
+Worker and SQLite namespace were removed after evidence export. Existing production versions are
+unchanged: Linear `9f8b33f3-1f22-4531-bdcc-10c679b23978`, control plane
+`d2f16f8a-ba52-4a34-98e3-4a26ec2a6941`.
+
+Receiver recovery is blocked by a concrete defect: delivery readback compares raw Markdown bodies,
+but Linear canonicalizes them. A local execution of the production reconciliation function using the
+actual live response and a simulated lost-create response rejects the correct ID/target/type with
+`Completion delivery unconfirmed or conflicting`. This is a confirmed source comparison failure
+against live provider data, not a performed live receiver crash. No receiver fixture or additional
+provider-write injection was deployed. Preserve its frozen delivery records; never reissue with a
+new ID. The release record's simulated recovery evidence did not cover this behavior.
+
+Next source repair: explicit Markdown content comparison preserving meaningful text/code/links/
+structure, same UUID/destination/type checks and frozen raw body, with observed-provider regression
+and negative content-change tests; then review/redeploy receiver and finish the already approved
+receiver fault test. No repair was made under the test-only work. DIV-84 and DIV-77 remain In
+Review; DIV-89 stays Done. Keep publication false/implementation, preserve the 24 historical
+sessions and zero active sessions/runs, private configuration, unrelated automation and DIV-86's
+unsent draft.
+
+Private evidence: `/home/orca/.local/state/openinspect/reliability-live-20260918/`. The source
+deployment remains `baca0fff`; Terraform state serial remains 59.
+
+## Historical checkpoint — dev release verified (2026-09-18)
 
 Mason authorized deploying merged PRs #17/#18/#19 and focused verification. The sole coordinator
 completed the receiver-before-sender rollout in the preserved div61-dev deployment checkout,
