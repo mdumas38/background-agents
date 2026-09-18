@@ -1,6 +1,40 @@
 # Post-B reliability source cleanup
 
-## Current checkpoint — review fixes merged, release pending (2026-09-18)
+## Current checkpoint — dev release verified (2026-09-18)
+
+Mason authorized deploying merged PRs #17/#18/#19 and focused verification. The sole coordinator
+completed the receiver-before-sender rollout in the preserved div61-dev deployment checkout,
+integrating main `aa87fec879987407c4217f1344b72925f06e9d13` at
+`baca0fff78a89436a439460c0954387d06144318`. Read the
+[release record](reliability-release-2026-09-18.md) for exact plans, hashes and evidence boundaries.
+Do not reapply either saved plan.
+
+Final Linear `9f8b33f3-1f22-4531-bdcc-10c679b23978` and control plane
+`d2f16f8a-ba52-4a34-98e3-4a26ec2a6941` are at 100%, healthy, and agree with Terraform. The
+compatible receiver was independently verified before the sender; the sender plan's existing Linear
+dependency then redeployed the identical receiver bundle before updating the control plane. Both
+targeted plans were inspected before apply. No infrastructure/configuration expansion occurred.
+
+Actual live settings remain publication false / implementation, with unchanged bindings. Private
+configuration and prior evidence are preserved; final counts remain 24 sessions / zero active.
+A3/B's live authenticated provenance projection returns the expected pinned `1f7cbe3a` baseline. B's
+two-page event read is unchanged; the production formatter run locally on those live-read events
+reports 46 calls (44 completed, two errors) and retains the original report. This is not a newly
+published native report. Live existing-activity readback and ID-input schema checks passed.
+
+Linear readback confirms DIV-89 Done for scoped test/release acceptance; DIV-84 and DIV-77 remain In
+Review for live delivery and recovery acceptance. Real workerd restart/alarm and
+provider-response-loss simulations remain local evidence, not proof of live exactly-once delivery.
+No callback replay, new publication, pilot, model-worker execution or sandbox launch occurred. A
+precise two-POST B receiver replay proposal is in the release record for separate approval; its
+first acceptance may add one report to B's existing native session. It would not establish sender
+crash or receiver alarm recovery.
+
+Private release evidence: `/home/orca/.local/state/openinspect/reliability-release-20260918/`.
+Existing worktrees, unrelated automation, and DIV-86's unsent terminal draft were untouched. No
+GitHub Actions claim is used for this manual release.
+
+## Historical checkpoint — review fixes merged, release pending (2026-09-18)
 
 Mason explicitly authorized fixing the Greptile findings and merging. All four findings were
 addressed in the existing worktrees; no workers were launched. Greptile reviewed each final head
