@@ -129,6 +129,34 @@ beforeEach(() => {
 });
 
 describe("durable publication", () => {
+  it("uses the configured comment fallback when Agent API authentication is unavailable", async () => {
+    const s = setup();
+    mocks.client.mockResolvedValue(null);
+    const send = vi.fn().mockResolvedValue(true);
+    await handleCompletionCallback(
+      payload,
+      { ...s.env, LINEAR_API_KEY: "fallback-key" },
+      "trace",
+      send
+    );
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "comment",
+        target: payload.context.issueId,
+        body: expect.stringContaining(report),
+      })
+    );
+    expect(mocks.activity).not.toHaveBeenCalled();
+  });
+  it("keeps delivery pending when neither activity nor comment credentials are available", async () => {
+    const s = setup();
+    mocks.client.mockResolvedValue(null);
+    const send = vi.fn();
+    await expect(
+      handleCompletionCallback(payload, { ...s.env, LINEAR_API_KEY: undefined }, "trace", send)
+    ).rejects.toThrow("Completion comment authentication unavailable");
+    expect(send).not.toHaveBeenCalled();
+  });
   it("retries unavailable completion events instead of publishing an empty success", async () => {
     const s = setup();
     mocks.extract.mockResolvedValueOnce({

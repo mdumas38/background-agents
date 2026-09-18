@@ -183,3 +183,24 @@ it("reconciles comment fallback with its persisted ID and exact issue/body", asy
     vi.unstubAllGlobals();
   }
 });
+
+it("does not switch a frozen activity to a comment after an uncertain send", async () => {
+  mocks.graphql.mockRejectedValue(new Error("network down"));
+  const s = setup();
+  await s.delivery.accept(payload, "a");
+  await s.done();
+  const original = await s.storage.get(completionKey(payload));
+  mocks.client.mockResolvedValue(null);
+  mocks.handle.mockImplementation(async (_p, _e, _t, send: CompletionSender) =>
+    send({ kind: "comment", target: "issue", body: "fallback" })
+  );
+  const calls = mocks.graphql.mock.calls.length;
+  await setup(s.storage).delivery.flush();
+  expect(await s.storage.get(completionKey(payload))).toMatchObject({
+    ...(original as object),
+    attempts: 2,
+    status: "pending",
+    content,
+  });
+  expect(mocks.graphql).toHaveBeenCalledTimes(calls);
+});

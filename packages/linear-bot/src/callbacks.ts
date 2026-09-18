@@ -330,7 +330,9 @@ export async function handleCompletionCallback(
         });
         return;
       }
-      throw new Error("Completion app authentication unavailable");
+      // Authentication failed before an activity send; the configured comment
+      // fallback can still deliver. The durable sender retains any already frozen
+      // destination, so an uncertain activity never switches channels on retry.
     }
 
     // Fallback: post a comment (requires LINEAR_API_KEY)

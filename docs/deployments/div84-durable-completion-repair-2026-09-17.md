@@ -36,5 +36,16 @@ passed; the full control-plane check and broad suites were not repeated.
 
 Release separately: deploy receiver support before the new sender, preserve durable records across
 rollback, verify the explicit acceptance response and alarm behavior, and use a separately
-authorized bounded live replay. No merge, deployment, sandbox or pilot execution is authorized by
-this source change. DIV-84 and DIV-77 remain open for release acceptance.
+authorized bounded live replay. Mason separately authorized fixing review findings and merging.
+Deployment, sandbox and pilot execution still require separate authorization. DIV-84 and DIV-77
+remain open for release acceptance.
+
+## Greptile follow-up — 2026-09-18
+
+Restored the configured comment fallback when Agent API authentication is unavailable before a send.
+Added coverage for missing credentials and preserving a frozen activity destination after an
+uncertain write. A real Miniflare/workerd restart test now verifies persisted payload, UUID, frozen
+body and alarm deadline, then exercises the native alarm to reconcile a committed provider write
+whose response was lost. The 35 affected unit tests and new runtime test passed; changed-file
+lint/formatting, Linear types and bundle passed. External services were simulated; no live replay
+occurred.
