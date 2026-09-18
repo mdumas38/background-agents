@@ -58,6 +58,10 @@ it("publishes only pinned configured baselines through mismatched, conflicting a
     ).toEqual(original);
     storage.sql.exec("UPDATE session_repositories SET current_sha = ?", "d".repeat(40));
     expect(revisionProvenance(repository)).toEqual(original);
+    // Older sessions can have a member row but retain the primary baseline only
+    // in the scalar mirror. Preserve that baseline without applying it to peers.
+    storage.sql.exec("UPDATE session_repositories SET base_sha = NULL WHERE position = 0");
+    expect(revisionProvenance(repository)).toEqual(original);
     storage.sql.exec("UPDATE session_repositories SET base_sha = NULL WHERE position = 1");
     expect(revisionProvenance(repository)).toMatchObject({
       status: "unavailable",

@@ -11,7 +11,7 @@ export function revisionProvenance(
     position: member.position,
     repoOwner: member.repoOwner,
     repoName: member.repoName,
-    baseSha: member.row ? member.row.base_sha : member.isPrimary ? session?.base_sha : null,
+    baseSha: member.row?.base_sha ?? (member.isPrimary ? session?.base_sha : null),
   }));
   const parsed = sessionDiffBaselineRepositorySchema.array().safeParse(repositories);
   if (
