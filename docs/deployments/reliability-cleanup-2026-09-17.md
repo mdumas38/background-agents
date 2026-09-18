@@ -1,5 +1,45 @@
 # Post-B reliability source cleanup
 
+## Current checkpoint — review fixes merged, release pending (2026-09-18)
+
+Mason explicitly authorized fixing the Greptile findings and merging. All four findings were
+addressed in the existing worktrees; no workers were launched. Greptile reviewed each final head
+with 5/5 confidence and no new actionable defects. Its stale alarm-test thread was resolved after
+the updated summary confirmed real runtime coverage. All three PRs were squash-merged:
+
+| PR                                                           | Reviewed head                              | Merge commit                               | Merged UTC           |
+| ------------------------------------------------------------ | ------------------------------------------ | ------------------------------------------ | -------------------- |
+| [#17](https://github.com/mdumas38/background-agents/pull/17) | `e53d444621b7215295f6e2c7c3a50c01658c1f37` | `4dd6fde6f5f446dbde21e8bb0afc35ba18f579fb` | 2026-09-18T02:17:04Z |
+| [#18](https://github.com/mdumas38/background-agents/pull/18) | `67fc40a6ea79dafaf19e2ac6c5e30e0e603a5205` | `c0a4f6b127d6af9b16b8959cc1f6565edac32f25` | 2026-09-18T02:18:42Z |
+| [#19](https://github.com/mdumas38/background-agents/pull/19) | `ad9468d8e2af662d21385ca063d44bfae3a8643f` | `aa87fec879987407c4217f1344b72925f06e9d13` | 2026-09-18T02:21:33Z |
+
+The comment fallback now works when Agent API authentication is unavailable before delivery; a
+frozen activity destination cannot switch channels after an uncertain write. A real
+Miniflare/workerd test persists a pending completion and its alarm, restarts the runtime, and
+executes a native alarm to reconcile a committed write with the same UUID and frozen body. The
+provenance projection retains the legacy primary scalar baseline when the member baseline is null,
+without borrowing that baseline for secondary repositories. The accounting pagination test selects
+responses by cursor and verifies message identity on each request.
+
+Affected validation passed: 35 delivery/publication tests, one new real-runtime recovery test, one
+SQLite provenance test and three accounting tests, changed-file lint/formatting, Linear package
+types, focused control-plane types, and both affected service bundles. Existing unrelated completed
+suites were not repeated. Full control-plane types and broad monorepo suites remain outside this
+bounded validation; external provider behavior was simulated.
+
+Main is `aa87fec879987407c4217f1344b72925f06e9d13`. GitHub Actions readback returned no runs after
+merge; do not report CI or deployment as passed. The enabled Terraform workflow gates deployment on
+repository secrets, and the repository-secret inventory was empty at preflight. No workflow was
+manually dispatched and no deployment was performed by the coordinator.
+
+DIV-84, DIV-89 and DIV-77 remain In Review for release/live acceptance. Release requires a separate
+concrete plan and approval, including receiver-before-sender rollout. Pilot resumption and live
+callback replay require separate authorization; no pilot slots remain. Existing deployment and
+repair checkouts, private evidence, unrelated automation and the DIV-86 unsent terminal draft were
+preserved. No sandbox, model execution or pilot was launched for this cleanup.
+
+## Historical checkpoint — initial cleanup drafts
+
 Mason approved implementation cleanup using workspaces/worktrees. The sole coordinator inspected the
 existing Orca inventory, verified repair workers were done/absent, refreshed `origin/main`, and
 created three child worktrees with setup skipped. No new worker ran. Existing dependencies were
@@ -43,8 +83,8 @@ Checks affected by subsequent edits were rerun; unrelated completed suites were 
 full control-plane typecheck, broad monorepo suites, new workerd integration runs, and live provider
 validation were not run. GitHub CI status is separate from these local results. Final GitHub
 readback found all three PRs draft and mergeable against main, with no attached status checks.
-Pairwise branch-combination checks found no conflicts among the three repair branches;
-no branch or PR was merged.
+Pairwise branch-combination checks found no conflicts among the three repair branches; no branch or
+PR was merged.
 
 Source review is the next step. DIV-84 and DIV-77 remain In Review/open; DIV-89 is In Review for its
 draft. No merge, deployment, live replay, sandbox, model execution or pilot occurred. A/B pilot
