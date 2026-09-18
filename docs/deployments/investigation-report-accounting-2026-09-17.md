@@ -21,3 +21,9 @@ Validation: eight focused tests cover pagination without extra reads, lifecycle/
 missing IDs, B-shaped forty-six-call accounting, incomplete retrieval, verbatim report preservation
 and denial guidance. Changed-file lint/formatting, Linear typecheck and bundle passed. No shared
 package API change, deployment, sandbox or pilot.
+
+## Greptile follow-up — 2026-09-18
+
+The pagination mock now selects pages by the request cursor and asserts message_id on every page
+plus the exact cursor sequence. All three affected accounting tests, Linear types and changed-file
+lint/formatting passed.

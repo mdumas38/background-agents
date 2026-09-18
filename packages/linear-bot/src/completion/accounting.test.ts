@@ -10,12 +10,17 @@ const event = (id: string, type: string, data: Record<string, unknown>) => ({
   createdAt: 1,
 });
 it("counts every page without extra reads and preserves the original report estimate as evidence", async () => {
-  let page = 0;
+  const cursors: Array<string | null> = [];
   const fetch = vi.fn(async (url: string) => {
     if (url.includes("/artifacts")) return Response.json({ artifacts: [] });
-    page++;
+    const requestUrl = new URL(url);
+    expect(requestUrl.searchParams.get("message_id")).toBe("m");
+    const cursor = requestUrl.searchParams.get("cursor");
+    cursors.push(cursor);
+    if (cursors.length === 1) expect(cursor).toBeNull();
+    else expect(cursor).toBe("next");
     return Response.json(
-      page === 1
+      cursor === null
         ? {
             events: [event("run", "tool_call", { callId: "a", status: "running" })],
             hasMore: true,
@@ -37,6 +42,7 @@ it("counts every page without extra reads and preserves the original report esti
   const response = await extractAgentResponse(env, "s", "m");
   expect(response.toolUsage).toMatchObject({ total: 2, completed: 1, errors: 1 });
   expect(fetch).toHaveBeenCalledTimes(3);
+  expect(cursors).toEqual([null, "next"]);
   const rendered = formatAgentResponse(response, "https://web/session/s");
   expect(rendered).toContain("2 calls (1 completed, 1 errors");
   expect(rendered).toContain("I used approximately 30 calls.");
