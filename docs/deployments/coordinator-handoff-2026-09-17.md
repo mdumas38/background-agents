@@ -1,6 +1,46 @@
 # OpenInspect coordinator handoff — cleanup deployed, live acceptance open
 
-## Current checkpoint — live replay/sender recovery passed; receiver defect found (2026-09-18)
+## Current checkpoint — Markdown repair ready for review (2026-09-18)
+
+Mason requested the mismatch repair in a new workspace and a prompt for resetting this coordinator
+session. No additional agent was launched. New Orca child workspace:
+`/home/orca/orca/workspaces/background-agents/div-84-markdown-reconciliation`, branch
+`mdumas38/div-84-markdown-reconciliation`, based on merged main `aa87fec879987407c4217f1344b72925f06e9d13`.
+Repair commit `50e75ecb` is pushed in draft [PR #20](https://github.com/mdumas38/background-agents/pull/20).
+It has not been merged or deployed; no final review or CI success is claimed.
+
+The receiver now compares CommonMark/GFM content trees, ignoring source coordinates and list
+spacing metadata. Exact delivery UUID, destination and activity type checks remain, as does the
+frozen outgoing body. Changed text/code whitespace, links/titles, heading/list structure, task state,
+strikethrough and table alignment are rejected. Other provider rewrites that change the parsed tree
+still require reconciliation. Parser dependencies were already locked; they are now direct Linear
+dependencies. `--conditions=workerd` avoids a DOM-dependent browser export discovered by runtime testing.
+
+Validation passed: 39 focused unit tests; one real Miniflare/workerd restart/native-alarm test with
+normalized provider readback and the same UUID/frozen body; Linear typecheck, changed-file lint and
+formatting, and Worker build. The actual repaired production function also accepted the captured
+4767/4779-character outgoing/provider pair with a simulated lost-create response and no network.
+This remains local evidence, not a live receiver crash test or live exactly-once proof. Broad suites
+were not repeated. Initial runtime runs hit the 512 MiB process guard; isolated runtime passed under
+768 MiB (531756 KiB observed peak), retaining the 1 GiB host memory floor. Unit peak 420648 KiB.
+Dependencies are reused through a node_modules symlink to the preserved deployment checkout.
+
+Next: review PR #20, resolve findings, merge/release through the established coordinator workflow,
+then finish the already-approved bounded live receiver fault test. The previous authorization for
+both B replay and live recovery tests remains in force; do not ask for those same permissions again.
+The original deployment authorization named merged PRs #17–#19; this new source repair is prepared
+for review and has not silently expanded that release. No new pilot, model execution or sandbox is
+authorized. Do not repeat the completed B replay/sender tests without a new reason.
+
+Live versions remain Linear `9f8b33f3-1f22-4531-bdcc-10c679b23978` and control plane
+`d2f16f8a-ba52-4a34-98e3-4a26ec2a6941`; no live writes were made during this source repair.
+Linear updates: DIV-84 comment `f667fdd8-837f-47ab-9c58-845fd01ce408` and PR attachment;
+DIV-77 comment `99e0dafb-33cb-4be0-a7f0-1ba736dc7428`.
+DIV-84/DIV-77 remain In Review and DIV-89 remains Done. Preserve publication false/implementation,
+private configuration/state/evidence, all worktrees, unrelated automation and DIV-86's unsent draft.
+See [the reset prompt](coordinator-reset-prompt-2026-09-18.md) for resuming this same coordinator.
+
+## Historical checkpoint — live replay/sender recovery passed; receiver defect found (2026-09-18)
 
 Mason approved both the B replay and live recovery tests. Read the
 [live acceptance record](reliability-live-acceptance-2026-09-18.md) before continuing. The two
