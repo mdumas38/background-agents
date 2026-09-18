@@ -1,5 +1,6 @@
 import type { LinearCompletionCallback } from "@open-inspect/shared/types/session-api";
 import { z } from "zod";
+import { sameMarkdownContent } from "./markdown";
 import type { Env } from "../types";
 import { handleCompletionCallback } from "../callbacks";
 import { getLinearClient, linearGraphQL } from "../utils/linear-client";
@@ -211,9 +212,9 @@ export async function deliverRecordedCompletion(
     item?.id === record.deliveryId &&
     (content.kind === "activity"
       ? object(item.agentSession)?.id === content.target &&
-        object(item.content)?.body === content.body &&
+        sameMarkdownContent(content.body, object(item.content)?.body) &&
         object(item.content)?.type === content.type
-      : object(item.issue)?.id === content.target && item.body === content.body);
+      : object(item.issue)?.id === content.target && sameMarkdownContent(content.body, item.body));
   if (!matches) throw new Error("Completion delivery unconfirmed or conflicting");
 }
 
