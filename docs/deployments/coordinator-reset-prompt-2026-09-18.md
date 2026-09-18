@@ -1,6 +1,30 @@
 Continue as sole coordinator in:
 /home/orca/orca/workspaces/background-agents/openinspect-reliability-coordinator
 
+Newest checkpoint: approved receiver apply completed and verified. Linear cc28097e-456f-45ae-98c9-2db8544f95e5,
+control plane unchanged d2f16f8a-ba52-4a34-98e3-4a26ec2a6941; Terraform serial 60. Publication false /
+implementation and full settings unchanged. Read markdown-reconciliation-release-2026-09-18.md,
+receiver-recovery-2026-09-18.md and newest handoff first. The isolated live receiver reset/readback
+test passed using existing B UUID/body; no additional report. Temporary Worker/namespace removed.
+Do not reapply or repeat completed tests. New-provider-commit response loss and a production receiver
+DO crash remain untested; no universal exactly-once claim. DIV-84/DIV-77 remain In Review.
+Closeout Linear comments remain unsent: automatic approval review rejected both detailed and minimal
+status-only updates for insufficient explicit disclosure authorization. Ask for approval of the local
+minimal status summary before posting; do not bypass the rejection. No issue state was changed.
+
+Historical prepared checkpoint: Mason approved the merge; PR #20 merged as 163eba55b968f5233ede2e008cd5e913928a4ed4.
+Deployment integration cb2db32d5d02dfc067d3a8cabf33d619c19a3820 and receiver-only plan are prepared,
+not applied. Read markdown-reconciliation-release-2026-09-18.md and newest handoff first.
+Apply approval is pending; bounded live receiver test authorization persists. Fresh preflight matched
+the safe settings/versions and serial 59. Private evidence: markdown-release-20260918/.
+
+Historical review checkpoint: PR #20 at 50e75ecb0ef73114d54f4ada6e135a1520b697ce has completed sole-coordinator
+source review without blocking findings and Greptile review (5/5, successful at 04:41:24 UTC).
+It is open/non-draft/mergeable, not merged/deployed. Read
+docs/deployments/markdown-reconciliation-review-2026-09-18.md and the newest handoff section first.
+Next is exact-revision merge approval, then fresh receiver release preparation/plan inspection.
+The historical review-pending statements below are superseded; test authorizations remain intact.
+
 Read AGENTS.md and these docs/deployments files, using the newest checkpoint first:
 - coordinator-handoff-2026-09-17.md
 - reliability-live-acceptance-2026-09-18.md

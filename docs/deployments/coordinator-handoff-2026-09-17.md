@@ -1,6 +1,91 @@
 # OpenInspect coordinator handoff — cleanup deployed, live acceptance open
 
-## Current checkpoint — Markdown repair ready for review (2026-09-18)
+## Current checkpoint — receiver released; isolated live recovery passed (2026-09-18)
+
+Mason approved the exact prepared receiver plan. Apply and verification completed; do not reapply it.
+Linear is now `cc28097e-456f-45ae-98c9-2db8544f95e5` (04:56:01.439283 UTC), 100% and healthy.
+Control plane remains `d2f16f8a-ba52-4a34-98e3-4a26ec2a6941`, 100% and healthy. Full settings,
+bindings/secrets and private configuration are unchanged; publication false / implementation /
+documented safe model routing. Source is clean `cb2db32d5d02dfc067d3a8cabf33d619c19a3820`;
+Terraform serial 60. Read [the release record](markdown-reconciliation-release-2026-09-18.md).
+
+The already-approved isolated live receiver test passed through shipped receiver/callback/Markdown
+modules: two actual Cloudflare alarms, an instance reset after live Linear readback, two same-UUID
+create attempts/readbacks, and a done/delivered fixture record with unchanged frozen content. It
+reused B's existing `cf355f7f-e1ae-4654-99d9-c1c5baf80339`, added no report, changed no production
+delivery record, and left issue contents and all session statuses/counts/costs unchanged. The
+temporary Worker and namespace were removed after evidence export; production settings/versions
+were rechecked. Zero active sessions/automation runs. No worker, model, sandbox or terminal input.
+
+Read [the live recovery record](receiver-recovery-2026-09-18.md). Explicit limit: this resets an
+isolated receiver after readback of an already committed provider activity. It is not a new provider
+commit followed by lost-create-response proof, nor a crash of the production receiver DO or a
+universal exactly-once guarantee. DIV-84/DIV-77 remain In Review for that stronger acceptance;
+DIV-89's scoped completion is unchanged. Do not repeat completed replay/sender/receiver checks
+without a new reason. The existing bounded recovery authorization remains recorded; no pilot or
+model/sandbox execution is authorized. Preserve all UUIDs/frozen bodies and DIV-86's unsent draft.
+
+Private evidence: `markdown-release-20260918/` and `receiver-recovery-20260918-v2/` under
+`/home/orca/.local/state/openinspect/`. The earlier `receiver-recovery-20260918/` contains an
+undeployed harness candidate, not another live run. Its local fault receipt required a storage sync;
+the corrected local harness passed before the single live test. Do not expose private evidence.
+
+Final audit confirmed Terraform state unchanged during the fixture (serial 60), unchanged private
+configuration hashes and clean deployment source. Comparison normalized only the reordered
+`check_results` list; resource fields, outputs and check contents matched. Release/recovery closeout comments were NOT
+posted to Linear: automatic approval review rejected the detailed update, then also rejected a
+minimized status-only version, citing lack of explicit authorization to disclose non-public recovery
+status to that destination. No tool workaround was used. The prepared minimal comment is local at
+`/tmp/receiver-recovery-public-status.md`; ask Mason to authorize that exact status summary for
+DIV-84/DIV-77 before posting. Last confirmed Linear checkpoint remains the prepared-release comments
+listed below; no status changes were made. Documentation is local, not newly published.
+
+## Historical checkpoint — PR #20 merged; receiver apply decision ready (2026-09-18)
+
+Mason approved the exact reviewed merge. PR #20 merged at 04:45:13 UTC as
+`163eba55b968f5233ede2e008cd5e913928a4ed4`. The preserved deployment checkout integrated it at
+`cb2db32d5d02dfc067d3a8cabf33d619c19a3820`; clean source and private configuration preserved.
+Linear-only build passed. Fresh live preflight confirmed the existing receiver/sender versions,
+publication false / implementation / unchanged default model, 24 sessions and zero active,
+Terraform serial 59. The receiver-only Terraform plan has four inspected changes and no binding,
+secret, migration, sender or unrelated service/configuration change.
+
+Read [the concrete receiver apply decision](markdown-reconciliation-release-2026-09-18.md) for
+source/plan/bundle hashes and verification requirements. Private evidence:
+`/home/orca/.local/state/openinspect/markdown-release-20260918/`. No apply has run; merge approval
+does not cover this new apply. Next: obtain approval for the prepared receiver plan, recheck drift,
+apply and verify, then finish the already-authorized bounded live receiver recovery test without
+asking again for that test authorization. Local/simulated checks do not establish live recovery.
+No worker, model execution, sandbox, repeated completed test or terminal input was launched.
+
+Prepared-release Linear comments: DIV-84 `66dd117c-170f-4adf-b933-d7091506e1c7`; DIV-77
+`4be35763-34e1-4e45-8e77-901db74e1bcd`. Documentation updates and the deployment integration commit
+are local; the PR merge is confirmed on GitHub.
+
+## Historical checkpoint — Markdown repair reviewed; merge approval pending (2026-09-18)
+
+The sole coordinator resumed and reviewed all of PR #20 at
+`50e75ecb0ef73114d54f4ada6e135a1520b697ce`, including surrounding delivery/recovery code. No blocking
+finding or source change. Fresh GitHub readback shows open/non-draft/mergeable; Greptile completed
+successfully at 04:41:24 UTC with 5/5 confidence and no actionable findings on that exact head.
+No broader CI pass or human approval is claimed. Read the
+[source review and concrete merge decision](markdown-reconciliation-review-2026-09-18.md).
+
+Next: obtain approval to merge that exact PR revision, then prepare and inspect a fresh targeted
+receiver release plan and live configuration before apply approval. The previous release approval
+covered #17–#19. The existing authorization for the bounded receiver recovery test persists; do not
+ask for it again. No merge, release, new live test, source change or repeated completed test occurred
+during this review. Local/captured-provider tests remain distinct from pending live receiver
+acceptance. Both repair and deployment checkouts were clean. Existing worktrees were inspected
+without launching workers or sending terminal input; DIV-86's unsent draft is untouched. The
+recorded production versions/configuration and private evidence remain as below; live configuration
+was not revalidated in this source-review step.
+
+Linear review checkpoint comments: DIV-84 `227c74f9-fbe9-468d-a0d6-a985e2b84922`; DIV-77
+`7aafd486-331b-4a75-aad0-8c2d6d2a9bd6`. Both issues were read as In Review and their states were
+left unchanged. Review/reset/handoff updates are local coordinator documents pending the next commit.
+
+## Historical checkpoint — Markdown repair ready for review (2026-09-18)
 
 Mason requested the mismatch repair in a new workspace and a prompt for resetting this coordinator
 session. No additional agent was launched. New Orca child workspace:

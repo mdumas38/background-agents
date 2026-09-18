@@ -1,5 +1,12 @@
 # Reliability live acceptance — 2026-09-18
 
+**Subsequent checkpoint:** PR #20's Markdown repair was reviewed, merged and released under explicit
+approval. The [isolated live receiver recovery test](receiver-recovery-2026-09-18.md) passed and its
+temporary infrastructure was removed. It reused the existing committed UUID and verified reset /
+native-alarm recovery against actual normalized readback; a fresh provider-commit response loss and
+production receiver DO crash remain untested. See the [receiver release](markdown-reconciliation-release-2026-09-18.md)
+for current versions and serial 60. The original blocker and release versions below are historical.
+
 Mason explicitly approved both the bounded B receiver replay and live crash/recovery verification.
 The existing deployment remains the reviewed release: Linear `9f8b33f3-1f22-4531-bdcc-10c679b23978`,
 control plane `d2f16f8a-ba52-4a34-98e3-4a26ec2a6941`, integration
