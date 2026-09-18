@@ -35,6 +35,7 @@ export default { fetch(request, env) { return env.DISPATCH.get(env.DISPATCH.idFr
     write: false,
     format: "esm",
     platform: "browser",
+    conditions: ["workerd"],
     target: "es2022",
     external: ["cloudflare:*", "node:*"],
   });
@@ -98,7 +99,7 @@ export default { fetch(request, env) { return env.DISPATCH.get(env.DISPATCH.idFr
           if (!provider.has(input.id))
             provider.set(input.id, {
               id: input.id,
-              body: input.body,
+              body: input.body.replace(/\]\((https?:[^)]+)\)/g, "](<$1>)"),
               issue: { id: input.issueId },
             });
           // Provider committed, but neither the create response nor readback is available.
@@ -163,4 +164,5 @@ export default { fetch(request, env) { return env.DISPATCH.get(env.DISPATCH.idFr
   expect(writes[0]).toEqual(writes[1]);
   expect(writes[1].id).toBe(before.deliveryId);
   expect(provider.size).toBe(1);
+  expect(provider.get(before.deliveryId)?.body).not.toBe(before.content?.body);
 }, 60_000);
