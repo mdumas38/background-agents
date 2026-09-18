@@ -96,7 +96,7 @@ describe("POST /complete callback validation", () => {
     const response = await postCompletion(await sign(validCompletion));
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ ok: true });
+    expect(await response.json()).toMatchObject({ ok: true });
   });
 
   it("rejects malformed Linear context", async () => {

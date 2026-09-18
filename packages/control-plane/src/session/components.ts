@@ -354,6 +354,7 @@ export function createSessionRuntime(platform: SessionPlatform, env: Env): Sessi
 
   const scheduler = new Scheduler(db, env, backgroundTasks);
   const callbackService = new CallbackNotificationService({
+    scheduleRetry: (deadlineMs) => alarmScheduler.schedule(deadlineMs),
     repository: sessionCoreRepository,
     messageRepository,
     env,
@@ -875,7 +876,11 @@ export function createSessionRuntime(platform: SessionPlatform, env: Env): Sessi
         alarmDeadlines,
         async () => {
           await wsManager.expireAuthorizationLeases(Date.now());
-          await alarmHandler.handle();
+          try {
+            await alarmHandler.handle();
+          } finally {
+            await callbackService.flushCompletions();
+          }
         },
         () => alarmScheduler.rearmPending()
       ),
@@ -912,6 +917,7 @@ export function createSessionRuntime(platform: SessionPlatform, env: Env): Sessi
             await wsManager.expireAuthorizationLeases(Date.now());
             await alarmScheduler.rehydrate();
             await terminalMessageProjection.rearm();
+            await callbackService.rearmCompletions();
           },
           {
             name: "alarm.rehydrate",
