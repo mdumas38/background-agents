@@ -1,6 +1,33 @@
 Continue as sole coordinator in:
 /home/orca/orca/workspaces/background-agents/openinspect-reliability-coordinator
 
+FINAL CHECKPOINT (2026-09-19): bounded Linear pilot complete. Read
+linear-pilot-closeout-2026-09-19.md and newest coordinator handoff first. Mason approved the
+one-response fresh-write recovery test; it passed live through shipped modules in an isolated
+receiver: two creates, one readback, two native alarms, distinct instances, one verification
+response, zero duplicates. Temporary Worker/namespace deleted; production settings/records and
+prior responses unchanged; zero active sessions/runs. Linear readback confirms DIV-84/77/75 Done,
+DIV-80 Canceled as superseded failed smoke, DIV-88/89 Done. DIV-83 remains separate In Review;
+DIV-71/72/76 stay Backlog. Do not reopen completed tests or invent another closure criterion.
+Preserve the distinction from local evidence and the untested production-object crash/universal
+guarantee. Preserve private evidence/configuration and DIV-86's unsent draft. No additional model
+run, worker, publication enablement, deployment change or deferred implementation is implied.
+All earlier pending-approval/acceptance text below is historical and superseded by this checkpoint.
+
+Superseding user direction: finish the existing Linear work against its recorded acceptance;
+do not substitute personal-use health checks or invent a new production-readiness finish line.
+Read the newest handoff section. DIV-77/84 remain In Review; DIV-88/89 are Done. B was an
+independent read-only investigation. Publication off afterward is required pilot cleanup.
+Fresh-write response-loss acceptance is being prepared locally; no live fresh write has occurred.
+
+Newest checkpoint (2026-09-19): Mason narrowed the approved phased-release work to minimum
+personal use so he can set development aside. Read personal-use-handoff-2026-09-19.md and the
+newest handoff section first. Live read-only health/access/routing checks passed; 26 sessions,
+zero active sessions/automation runs. No new task or deployment was performed. Use the existing
+app for one useful bounded task with human output review. Do not expand into a second environment
+or resume deferred reliability development automatically. Stronger recovery acceptance remains
+open; existing evidence, safe routing, private configuration and DIV-86's draft stay preserved.
+
 Newest checkpoint: approved receiver apply completed and verified. Linear cc28097e-456f-45ae-98c9-2db8544f95e5,
 control plane unchanged d2f16f8a-ba52-4a34-98e3-4a26ec2a6941; Terraform serial 60. Publication false /
 implementation and full settings unchanged. Read markdown-reconciliation-release-2026-09-18.md,

@@ -1,4 +1,59 @@
-# OpenInspect coordinator handoff — cleanup deployed, live acceptance open
+# OpenInspect coordinator handoff — bounded Linear pilot complete
+
+## Current checkpoint — Linear closeout verified (2026-09-19)
+
+Mason approved the exact one-response fresh-write test. It passed live: provider committed the
+approved labeled verification response, the isolated receiver reset before delivery code saw the
+acknowledgment, and a second native alarm reconciled the same UUID/body. Two creates, one readback,
+two alarms, distinct instances, one response and zero duplicates. Previous activities, issue data,
+session rows/costs and production versions/settings stayed unchanged. No model/sandbox or issue
+publication. Fixture namespace/Worker removed; provider readback confirmed 404. Safe flags remain
+publication false/implementation, with zero active sessions/automation runs.
+
+Read [the final acceptance scorecard](linear-pilot-closeout-2026-09-19.md). Local simulation,
+isolated live readback recovery, and this fresh-write recovery are distinct evidence. This is not a
+production-object crash test or universal exactly-once guarantee. Do not invent further closure
+gates or reopen completed tests. The actual tested B was a read-only investigator.
+
+Linear readback confirms DIV-84, DIV-77 and predecessor DIV-75 Done; DIV-80 Canceled as a superseded
+failed smoke, not a passed run. DIV-88/89 stay Done. DIV-83 remains separate In Review;
+DIV-71/72/76 stay Backlog. Completion comments: DIV-84 `1bddb628-b679-4304-b56f-3917434a4dc6`,
+DIV-77 `520d535b-55be-4b46-80cb-2b2e6d11abe2`, DIV-75 `38bd0d05-155f-4fa1-9340-2bebe732a2d6`,
+DIV-80 `8d62f9d9-b311-4457-826b-62b79e4d650c`. Each posted once with sanitized evidence.
+
+Private fresh-write receipts and reviewed artifacts are in
+`/home/orca/.local/state/openinspect/receiver-fresh-write-20260919/`. Existing private evidence,
+deployment configuration, source and DIV-86's unsent terminal draft are preserved. No duplicate
+workers or terminal input. These coordinator documents are local; no new GitHub publication is
+claimed. The earlier personal-use suggestion does not replace the Linear acceptance criteria.
+
+## Historical checkpoint — existing Linear acceptance controls completion (2026-09-19)
+
+Mason explicitly corrected the personal-use detour: use and finish the already-created Linear work,
+without creating replacement end states. Live Linear reads confirm DIV-77 owns the enforced
+investigation → published child → independent investigation chain, continuing DIV-75. DIV-88 and
+DIV-89 are Done; DIV-84 and DIV-77 remain In Review for delivery recovery. Publication off and
+implementation mode after the pilot are required restoration, not an unfinished enablement step.
+The tested B was read-only investigation, not implementation. DIV-71/72/76 remain separate backlog;
+DIV-83 is historical diagnosis, not the active pilot gate. No new umbrella or duplicate worker.
+
+The next bounded acceptance case is fresh provider-write acknowledgment loss using shipped receiver
+modules in an isolated object. Preparation is local in /tmp/receiver-fresh-write*; it has not run
+live and would add one explicitly labeled verification activity to existing DIV-88's agent session.
+Prior live receiver evidence reused an already-committed UUID. Preserve that distinction and do not
+close issues based on the personal-use handoff or local harness checks.
+
+## Current checkpoint — minimum personal-use handoff (2026-09-19)
+
+Mason approved phased release, then narrowed the objective to minimum viable steps so he can use
+the installation and set development aside. The completed child workspace assessment is static
+evidence, not a requirement to build another environment. No duplicate worker was launched.
+Read [the personal-use handoff](personal-use-handoff-2026-09-19.md) first. Today's read-only checks
+found the login page available, control plane healthy, Modal successful, account-only admission,
+unchanged safe Linear routing/publication settings, 26 sessions and zero active sessions or
+automation runs. No new model task or deployment was performed. Next is one useful, bounded task
+through the existing app, followed by review of its output; further development is deferred for
+this personal-use scope. Preserve outstanding stronger recovery acceptance and private evidence.
 
 ## Current checkpoint — receiver released; isolated live recovery passed (2026-09-18)
 

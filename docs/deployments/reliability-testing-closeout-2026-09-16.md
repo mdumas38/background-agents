@@ -1,5 +1,15 @@
 # OpenInspect end-to-end testing closeout
 
+## Current result — bounded Linear pilot acceptance complete (2026-09-19)
+
+The approved fresh provider-write response-loss check passed live: one labeled verification
+response, two same-ID creates, one readback, two native alarms and distinct receiver instances;
+no duplicate. Temporary Worker/namespace removed and production settings/idle state verified.
+Read the [consolidated acceptance scorecard](linear-pilot-closeout-2026-09-19.md) first. Earlier
+sections below are historical and preserve the failures, limitations and repairs as they occurred.
+DIV-89's provenance repair is Done; remaining DIV-84 bounded recovery evidence is now complete.
+No universal exactly-once or production-object-crash guarantee is claimed.
+
 ## Current result — A → DIV-88 → B demonstrated; gap repairs remain
 
 Mason selected actual DIV-88 and authorized independent B despite A3's known delivery gap. B
