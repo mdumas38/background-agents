@@ -20,7 +20,9 @@ import {
   createSessionResponseSchema,
   MAX_CHILD_FOLLOW_UP_PROMPT_CHARS,
   linearCompletionCallbackSchema,
+  linearStartCallbackSchema,
   linearToolCallCallbackSchema,
+  managedWorkCallbackIdentitySchema,
   sendPromptRequestSchema,
   sendPromptResponseSchema,
   spawnChildSessionRequestSchema,
@@ -537,6 +539,137 @@ describe("boundary schemas", () => {
         false
       );
       expect(linearToolCallCallbackSchema.safeParse({ ...callback, tool: "" }).success).toBe(false);
+    });
+
+    const managedIdentity = {
+      rootIssueId: "root-issue-1",
+      runId: "run-1",
+      taskId: "task-1",
+      attemptId: "attempt-1",
+    };
+    const managedContext = {
+      ...context,
+      organizationId: "org-1",
+      appUserId: "app-user-1",
+      managedWork: managedIdentity,
+    };
+
+    it("preserves the managed identity through start and completion callbacks", () => {
+      const start = {
+        sessionId: "session-1",
+        messageId: "message-1",
+        timestamp: 123,
+        signature: "signature",
+        context: managedContext,
+      };
+      const completion = {
+        sessionId: "session-1",
+        messageId: "message-1",
+        success: true,
+        timestamp: 123,
+        signature: "signature",
+        context: managedContext,
+      };
+
+      const parsedStart = linearStartCallbackSchema.safeParse(start);
+      const parsedCompletion = linearCompletionCallbackSchema.safeParse(completion);
+
+      expect(parsedStart.success).toBe(true);
+      expect(parsedCompletion.success).toBe(true);
+      if (parsedStart.success)
+        expect(parsedStart.data.context.managedWork).toEqual(managedIdentity);
+      if (parsedCompletion.success) {
+        expect(parsedCompletion.data.context.managedWork).toEqual(managedIdentity);
+      }
+    });
+
+    it("rejects partial, empty, and extra managed identity fields", () => {
+      const { attemptId: _attemptId, ...partial } = managedIdentity;
+      for (const managedWork of [
+        partial,
+        { ...managedIdentity, rootIssueId: "" },
+        { ...managedIdentity, taskId: "   " },
+        { ...managedIdentity, extra: "forged" },
+      ]) {
+        expect(managedWorkCallbackIdentitySchema.safeParse(managedWork).success).toBe(false);
+        expect(
+          linearCompletionCallbackSchema.safeParse({
+            sessionId: "session-1",
+            messageId: "message-1",
+            success: true,
+            timestamp: 123,
+            signature: "signature",
+            context: { ...managedContext, managedWork },
+          }).success
+        ).toBe(false);
+      }
+    });
+
+    it("bounds non-leaf ids at 512 and hierarchical task ids at 16384", () => {
+      expect(
+        managedWorkCallbackIdentitySchema.safeParse({
+          ...managedIdentity,
+          rootIssueId: "r".repeat(512),
+          taskId: "t".repeat(16384),
+        }).success
+      ).toBe(true);
+      expect(
+        managedWorkCallbackIdentitySchema.safeParse({
+          ...managedIdentity,
+          rootIssueId: "r".repeat(513),
+        }).success
+      ).toBe(false);
+      expect(
+        managedWorkCallbackIdentitySchema.safeParse({
+          ...managedIdentity,
+          taskId: "t".repeat(16385),
+        }).success
+      ).toBe(false);
+    });
+
+    it("rejects managed contexts without organizationId and appUserId", () => {
+      const { organizationId: _organizationId, ...withoutOrg } = managedContext;
+      const { appUserId: _appUserId, ...withoutAppUser } = {
+        ...managedContext,
+        organizationId: "org-1",
+      };
+
+      for (const contextWithoutIdentity of [withoutOrg, withoutAppUser]) {
+        expect(
+          linearCompletionCallbackSchema.safeParse({
+            sessionId: "session-1",
+            messageId: "message-1",
+            success: true,
+            timestamp: 123,
+            signature: "signature",
+            context: contextWithoutIdentity,
+          }).success
+        ).toBe(false);
+      }
+      expect(managedContext.organizationId).toBe("org-1");
+      expect(managedContext.appUserId).toBe("app-user-1");
+    });
+
+    it("keeps legacy managed-free contexts valid", () => {
+      expect(
+        linearStartCallbackSchema.safeParse({
+          sessionId: "session-1",
+          messageId: "message-1",
+          timestamp: 123,
+          signature: "signature",
+          context,
+        }).success
+      ).toBe(true);
+      expect(
+        linearCompletionCallbackSchema.safeParse({
+          sessionId: "session-1",
+          messageId: "message-1",
+          success: true,
+          timestamp: 123,
+          signature: "signature",
+          context: { ...context, transitionIssueOnStart: false },
+        }).success
+      ).toBe(true);
     });
   });
 
