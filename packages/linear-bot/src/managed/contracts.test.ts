@@ -5,6 +5,7 @@ import {
   MAX_SPLIT_CHILDREN,
   MANAGED_BLOCKED_REASONS,
   parseManagedOutcome,
+  validateManagedOutcome,
   type ManagedSplitChild,
 } from "./contracts";
 
@@ -233,5 +234,55 @@ describe("parseManagedOutcome outcomes", () => {
       children: [{ ...child("a"), children: [child("b")] }],
     });
     expect(parseManagedOutcome(report(nestedChildren)).ok).toBe(false);
+  });
+});
+
+describe("bounded text whitespace handling", () => {
+  it("rejects whitespace-only values without altering valid evidence", () => {
+    expect(parseManagedOutcome(report(complete({ summary: "   " }))).ok).toBe(false);
+    expect(parseManagedOutcome(report(complete({ evidence: "\t\n  " }))).ok).toBe(false);
+    expect(parseManagedOutcome(report(blocked({ evidence: "  \n " }))).ok).toBe(false);
+    const spaced = parseManagedOutcome(
+      report(
+        split([
+          {
+            ...child("a"),
+            title: "  Trim me not  ",
+            objective: "  Keep inner spacing  ",
+            acceptance: "  Exact check  ",
+          },
+        ])
+      )
+    );
+    expect(spaced.ok).toBe(true);
+    if (!spaced.ok || spaced.outcome.kind !== "split") return;
+    expect(spaced.outcome.children[0].title).toBe("  Trim me not  ");
+    expect(spaced.outcome.children[0].objective).toBe("  Keep inner spacing  ");
+  });
+});
+
+describe("validateManagedOutcome direct validation", () => {
+  it("matches parseManagedOutcome results and rejects dependency cycles", () => {
+    const completeOutcome = {
+      kind: "complete",
+      summary: "Implemented the behavior.",
+      evidence: "npm test passed.",
+    };
+    expect(validateManagedOutcome(completeOutcome)).toEqual(
+      parseManagedOutcome(report(JSON.stringify(completeOutcome)))
+    );
+
+    const cycle = {
+      kind: "split",
+      summary: "Split.",
+      children: [child("a", ["b"]), child("b", ["a"])],
+    };
+    expect(validateManagedOutcome(cycle)).toEqual({
+      ok: false,
+      reason: "Child dependencies contain a cycle.",
+    });
+    expect(validateManagedOutcome(cycle)).toEqual(
+      parseManagedOutcome(report(JSON.stringify(cycle)))
+    );
   });
 });

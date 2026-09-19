@@ -66,7 +66,12 @@ export type ManagedOutcomeParseResult =
   | { ok: true; outcome: ManagedOutcome }
   | { ok: false; reason: string };
 
-const boundedText = (max: number) => z.string().min(1).max(max);
+const boundedText = (max: number) =>
+  z
+    .string()
+    .min(1)
+    .max(max)
+    .refine((value) => value.trim().length > 0, "Value must not be blank.");
 const childKeySchema = z
   .string()
   .min(1)
@@ -187,6 +192,29 @@ function validateDependencies(children: ManagedSplitChild[]): string | undefined
 }
 
 /**
+ * Validate an already-extracted managed-work value (e.g. a parsed JSON object) against the strict
+ * outcome schema and dependency rules. This is the shared validation path used by
+ * {@link parseManagedOutcome} after JSON extraction, and is exposed for callers that hold the raw
+ * value directly.
+ */
+export function validateManagedOutcome(raw: unknown): ManagedOutcomeParseResult {
+  const parsed = managedOutcomeSchema.safeParse(raw);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      reason: `Managed work block is invalid: ${summarizeIssues(parsed.error)}`,
+    };
+  }
+
+  if (parsed.data.kind === "split") {
+    const dependencyError = validateDependencies(parsed.data.children);
+    if (dependencyError) return { ok: false, reason: dependencyError };
+  }
+
+  return { ok: true, outcome: parsed.data };
+}
+
+/**
  * Parse the single managed-work outcome block from a final report.
  *
  * A valid report contains exactly one top-level fenced `openinspect-managed-work` JSON block.
@@ -218,18 +246,5 @@ export function parseManagedOutcome(report: string): ManagedOutcomeParseResult {
     return { ok: false, reason: "Managed work block is not valid JSON." };
   }
 
-  const parsed = managedOutcomeSchema.safeParse(raw);
-  if (!parsed.success) {
-    return {
-      ok: false,
-      reason: `Managed work block is invalid: ${summarizeIssues(parsed.error)}`,
-    };
-  }
-
-  if (parsed.data.kind === "split") {
-    const dependencyError = validateDependencies(parsed.data.children);
-    if (dependencyError) return { ok: false, reason: dependencyError };
-  }
-
-  return { ok: true, outcome: parsed.data };
+  return validateManagedOutcome(raw);
 }
