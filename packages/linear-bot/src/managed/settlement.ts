@@ -145,16 +145,16 @@ export function settleRunAttempt(run: ManagedRun, input: SettleRunAttemptInput):
       `Attempt ${input.attemptId} is bound to session ${attempt.sessionId}, not ${input.sessionId}.`
     );
   }
+  if (attempt.messageId !== undefined && attempt.messageId !== input.messageId) {
+    throw new ManagedSettlementError(
+      "message-conflict",
+      `Attempt ${input.attemptId} already carries message ${attempt.messageId}.`
+    );
+  }
 
   const submitted = normalizedOutcome(input.outcome);
 
   if (attempt.status === "settled") {
-    if (attempt.messageId !== input.messageId) {
-      throw new ManagedSettlementError(
-        "message-conflict",
-        `Attempt ${input.attemptId} already settled with message ${attempt.messageId}.`
-      );
-    }
     if (!sameOutcome(attempt.outcome, submitted)) {
       throw new ManagedSettlementError(
         "outcome-conflict",
