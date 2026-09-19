@@ -8,9 +8,11 @@ receiver-recovery-2026-09-18.md and newest handoff first. The isolated live rece
 test passed using existing B UUID/body; no additional report. Temporary Worker/namespace removed.
 Do not reapply or repeat completed tests. New-provider-commit response loss and a production receiver
 DO crash remain untested; no universal exactly-once claim. DIV-84/DIV-77 remain In Review.
-Closeout Linear comments remain unsent: automatic approval review rejected both detailed and minimal
-status-only updates for insufficient explicit disclosure authorization. Ask for approval of the local
-minimal status summary before posting; do not bypass the rejection. No issue state was changed.
+Mason explicitly approved the exact local minimal status summary after automatic approval review
+rejected earlier disclosure attempts. It was posted once to DIV-84 comment
+`48c5fe2c-d09e-4fc4-b286-b32c6ec81d9a` and DIV-77 comment
+`eba25ea3-ac1d-490e-9a07-a9078ea10758`; both issues remain In Review. No private artifacts,
+internal deployment identifiers or infrastructure state were disclosed, and no issue state changed.
 
 Historical prepared checkpoint: Mason approved the merge; PR #20 merged as 163eba55b968f5233ede2e008cd5e913928a4ed4.
 Deployment integration cb2db32d5d02dfc067d3a8cabf33d619c19a3820 and receiver-only plan are prepared,

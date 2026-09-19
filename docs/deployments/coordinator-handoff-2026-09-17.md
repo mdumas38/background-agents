@@ -32,13 +32,12 @@ the corrected local harness passed before the single live test. Do not expose pr
 
 Final audit confirmed Terraform state unchanged during the fixture (serial 60), unchanged private
 configuration hashes and clean deployment source. Comparison normalized only the reordered
-`check_results` list; resource fields, outputs and check contents matched. Release/recovery closeout comments were NOT
-posted to Linear: automatic approval review rejected the detailed update, then also rejected a
-minimized status-only version, citing lack of explicit authorization to disclose non-public recovery
-status to that destination. No tool workaround was used. The prepared minimal comment is local at
-`/tmp/receiver-recovery-public-status.md`; ask Mason to authorize that exact status summary for
-DIV-84/DIV-77 before posting. Last confirmed Linear checkpoint remains the prepared-release comments
-listed below; no status changes were made. Documentation is local, not newly published.
+`check_results` list; resource fields, outputs and check contents matched. Automatic approval review
+initially rejected detailed and minimized disclosure attempts; Mason then explicitly approved the
+exact minimized status update. It was posted once to [DIV-84](https://linear.app/divinedesign/issue/DIV-84/allow-safe-cancellation-of-pending-linear-origin-prompts#comment-48c5fe2c)
+(`48c5fe2c-d09e-4fc4-b286-b32c6ec81d9a`) and [DIV-77](https://linear.app/divinedesign/issue/DIV-77/validate-the-enforced-investigation-profile-in-the-dev-work-graph#comment-eba25ea3)
+(`eba25ea3-ac1d-490e-9a07-a9078ea10758`). It contains no private artifacts, internal deployment
+identifiers or infrastructure state. Both issues remain In Review; no status changes were made.
 
 ## Historical checkpoint — PR #20 merged; receiver apply decision ready (2026-09-18)
 
