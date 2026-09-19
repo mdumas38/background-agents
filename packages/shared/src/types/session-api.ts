@@ -278,6 +278,11 @@ const createSessionRequestBaseSchema = z.object({
   skillSelection: sessionSkillSelectionSchema.optional(),
   /** Explicit account/API-key choices. Omission resolves provider policy. */
   providerSelections: modelProviderSelectionsSchema.optional(),
+  /**
+   * Optional per-session cost limit in USD. Only ever lowers the configured
+   * sandbox setting — it can never raise or remove an existing limit.
+   */
+  maxCostUsd: z.number().finite().positive().optional(),
 });
 
 export const createSessionRequestSchema = createSessionRequestBaseSchema

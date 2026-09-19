@@ -100,6 +100,35 @@ describe("boundary schemas", () => {
 
       expect(result.success).toBe(false);
     });
+
+    it("parses an optional positive finite maxCostUsd", () => {
+      const result = createSessionRequestSchema.safeParse({
+        title: "Bounded sweep",
+        maxCostUsd: 2.5,
+      });
+
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.maxCostUsd).toBe(2.5);
+    });
+
+    it("omitting maxCostUsd preserves an undefined limit", () => {
+      const result = createSessionRequestSchema.safeParse({ title: "Unbounded sweep" });
+
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.maxCostUsd).toBeUndefined();
+    });
+
+    it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY, "5"] as const)(
+      "rejects invalid maxCostUsd %p",
+      (maxCostUsd) => {
+        const result = createSessionRequestSchema.safeParse({
+          title: "Invalid limit",
+          maxCostUsd,
+        });
+
+        expect(result.success).toBe(false);
+      }
+    );
   });
 
   describe("control-plane response schemas", () => {

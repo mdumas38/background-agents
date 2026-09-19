@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { admit, dispatch } from "../routing/admit";
 import type { ControlPlaneHonoEnv } from "../routing/hono-env";
 import type { RepositoryRef, RepositoryPair } from "@open-inspect/shared/types/repositories";
+import type { SandboxSettings } from "@open-inspect/shared/types/integrations";
 import {
   checkHarnessCompatibility,
   getValidHarnessOrDefault,
@@ -47,6 +48,26 @@ const INVALID_SESSION_REQUEST_BODY_ERROR = "Invalid session request body";
 
 // Defense in depth on top of schema validation — matches git ref charsets.
 const BRANCH_NAME_PATTERN = /^[\w.\-/]+$/;
+
+/**
+ * Fold an optional request-scoped cost limit into the resolved sandbox
+ * settings. A request may only lower a configured limit, never raise or remove
+ * one; omission leaves the settings untouched. The init handler seeds
+ * `max_cost_usd` from `sandboxSettings.maxSessionCostUsd`, so no separate budget
+ * plumbing is needed.
+ */
+function withRequestedMaxSessionCostUsd(
+  sandboxSettings: SandboxSettings,
+  requestedMaxCostUsd: number | undefined
+): SandboxSettings {
+  if (requestedMaxCostUsd === undefined) return sandboxSettings;
+  const configured = sandboxSettings.maxSessionCostUsd;
+  return {
+    ...sandboxSettings,
+    maxSessionCostUsd:
+      configured === undefined ? requestedMaxCostUsd : Math.min(configured, requestedMaxCostUsd),
+  };
+}
 
 async function extractSessionActorProfileClaims(
   request: Request,
@@ -236,6 +257,10 @@ export async function handleCreateSession(
     scopeMembers,
     environmentId
   );
+  const effectiveSandboxSettings = withRequestedMaxSessionCostUsd(
+    sandboxSettings,
+    body.maxCostUsd
+  );
 
   const sessionId = generateId();
   let providerAuth;
@@ -297,7 +322,7 @@ export async function handleCreateSession(
     scmTokenExpiresAt,
     codeServerEnabled,
     vncEnabled,
-    sandboxSettings,
+    sandboxSettings: effectiveSandboxSettings,
     spawnSource,
     managedSkillsManifest,
     providerAuth,

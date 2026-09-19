@@ -16,10 +16,16 @@ import { resolveManagedSkills } from "./session/skill-resolution";
 import { resolveSessionProviderAuth } from "./session/provider-account-resolution";
 import { ProviderAccountSelectionPolicyError } from "./model-provider-accounts/selection-policy";
 import { resolveEnvironmentTarget, resolveSessionRepositories } from "./repos/resolve";
+import { resolveSessionScopedSettings } from "./session/integration-settings-resolution";
 
 vi.mock("./db/session-index", () => ({
   SessionIndexStore: vi.fn(),
 }));
+
+vi.mock("./session/integration-settings-resolution", async (importOriginal) => {
+  const actual = (await importOriginal()) as Record<string, unknown>;
+  return { ...actual, resolveSessionScopedSettings: vi.fn() };
+});
 
 vi.mock("./db/user-store", () => ({
   UserStore: vi.fn(),
@@ -69,6 +75,11 @@ describe("handleCreateSession D1 ordering", () => {
       { provider: "openai", authMode: "api_key", selectionSource: "fallback_api_key" },
       { provider: "xai", authMode: "api_key", selectionSource: "fallback_api_key" },
     ]);
+    vi.mocked(resolveSessionScopedSettings).mockResolvedValue({
+      codeServerEnabled: false,
+      vncEnabled: false,
+      sandboxSettings: {},
+    });
     vi.mocked(resolveRepoOrError).mockResolvedValue({
       repoId: 12345,
       defaultBranch: "main",
@@ -710,5 +721,75 @@ describe("handleCreateSession D1 ordering", () => {
     expect(response.status).toBe(201);
     expect(initFetch).toHaveBeenCalledOnce();
     expect(getIdentitiesForUser).not.toHaveBeenCalled();
+  });
+
+  describe("requested session cost limit", () => {
+    async function createAndCaptureInitSettings(
+      requestBody: Record<string, unknown>,
+      configuredSandboxSettings: Record<string, unknown>
+    ): Promise<Record<string, unknown> | undefined> {
+      vi.mocked(SessionIndexStore).mockImplementation(function () {
+        return { create: vi.fn().mockResolvedValue(undefined) } as never;
+      });
+      vi.mocked(resolveSessionScopedSettings).mockResolvedValue({
+        codeServerEnabled: false,
+        vncEnabled: false,
+        sandboxSettings: configuredSandboxSettings,
+      });
+
+      let initSandboxSettings: Record<string, unknown> | undefined;
+      const initFetch = vi.fn(async (request: Request) => {
+        const body = (await request.json()) as { sandboxSettings?: Record<string, unknown> };
+        initSandboxSettings = body.sandboxSettings;
+        return Response.json({ status: "created" });
+      });
+
+      const response = await createSessionRequestWithBody(createEnv(initFetch), requestBody);
+      expect(response.status).toBe(201);
+      return initSandboxSettings;
+    }
+
+    it("lowers a configured limit to the requested value and keeps other settings", async () => {
+      const settings = await createAndCaptureInitSettings(
+        { title: "Budgeted", maxCostUsd: 3 },
+        { maxSessionCostUsd: 10, cpuCores: 4 }
+      );
+
+      expect(settings).toEqual({ maxSessionCostUsd: 3, cpuCores: 4 });
+    });
+
+    it("keeps the configured limit when the request asks for more", async () => {
+      const settings = await createAndCaptureInitSettings(
+        { title: "Budgeted", maxCostUsd: 25 },
+        { maxSessionCostUsd: 10 }
+      );
+
+      expect(settings).toEqual({ maxSessionCostUsd: 10 });
+    });
+
+    it("applies the requested limit when no configured limit exists", async () => {
+      const settings = await createAndCaptureInitSettings(
+        { title: "Budgeted", maxCostUsd: 5 },
+        { cpuCores: 2 }
+      );
+
+      expect(settings).toEqual({ cpuCores: 2, maxSessionCostUsd: 5 });
+    });
+
+    it("preserves the configured limit when the request omits maxCostUsd", async () => {
+      const settings = await createAndCaptureInitSettings(
+        { title: "Budgeted" },
+        { maxSessionCostUsd: 10, cpuCores: 4 }
+      );
+
+      expect(settings).toEqual({ maxSessionCostUsd: 10, cpuCores: 4 });
+    });
+
+    it("leaves sandbox settings unchanged when neither limit is configured", async () => {
+      const settings = await createAndCaptureInitSettings({ title: "Budgeted" }, { cpuCores: 2 });
+
+      expect(settings).toEqual({ cpuCores: 2 });
+      expect(settings).not.toHaveProperty("maxSessionCostUsd");
+    });
   });
 });
