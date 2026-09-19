@@ -1,8 +1,4 @@
-import {
-  admitTasks,
-  settleAttempt,
-  type AdmissionFailure,
-} from "./admission";
+import { admitTasks, settleAttempt, type AdmissionFailure } from "./admission";
 import {
   validateManagedOutcome,
   type ManagedBlockedOutcome,
@@ -198,9 +194,8 @@ export function settleRunAttempt(run: ManagedRun, input: SettleRunAttemptInput):
 
   const attempts: Record<string, ManagedAttempt> = { ...run.attempts };
   attempts[input.attemptId] = {
-    taskId: attempt.taskId,
+    ...attempt,
     status: "settled",
-    sessionId: attempt.sessionId,
     messageId: input.messageId,
     outcome: submitted,
     costUsd: input.costUsd,

@@ -76,6 +76,7 @@ describe("pumpManagedRun", () => {
       status: "bound",
       sessionId: "session-1",
       messageId: "message-1",
+      claimedAtMs: expect.any(Number),
     });
   });
 
@@ -94,7 +95,11 @@ describe("pumpManagedRun", () => {
     expect(launched).toHaveLength(1);
     const attemptId = launched[0]!;
     const persisted = await loadRun(storage);
-    expect(persisted!.attempts[attemptId]).toEqual({ taskId: "root", status: "uncertain" });
+    expect(persisted!.attempts[attemptId]).toEqual({
+      taskId: "root",
+      status: "uncertain",
+      claimedAtMs: expect.any(Number),
+    });
     expect(persisted!.admission.reservations[attemptId]).toBe(LIMITS.maxWorkerCostUsd);
     expect(persisted!.admission.dispatched).toBe(1);
 
