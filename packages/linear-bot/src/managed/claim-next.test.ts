@@ -93,7 +93,10 @@ describe("claimNextTask", () => {
     const storage = new FakeTransactionalStorage();
     await saveRun(storage, createRun("run-1", ROOT_SPEC, LIMITS));
 
-    const claims = await Promise.all([claimNextTask(storage), claimNextTask(storage)]);
+    const claims = await Promise.all([
+      claimNextTask(storage, 1_700_000_000_000),
+      claimNextTask(storage, 1_700_000_000_000),
+    ]);
     const won = claims.filter((claim) => claim !== undefined);
     expect(won).toHaveLength(1);
     expect(won[0]!.taskId).toBe("root");
@@ -102,6 +105,7 @@ describe("claimNextTask", () => {
     expect(persisted!.attempts[won[0]!.attemptId]).toEqual({
       taskId: "root",
       status: "reserved",
+      claimedAtMs: 1_700_000_000_000,
     });
     expect(persisted!.admission.reservations[won[0]!.attemptId]).toBe(LIMITS.maxWorkerCostUsd);
     expect(persisted!.admission.dispatched).toBe(1);

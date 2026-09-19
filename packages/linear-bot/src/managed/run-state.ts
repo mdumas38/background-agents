@@ -25,6 +25,8 @@ export interface ManagedAttempt {
   messageId?: string;
   outcome?: ManagedOutcome;
   costUsd?: number;
+  /** Durable wall-clock start of the worker attempt, set once when it is first claimed. */
+  claimedAtMs?: number;
 }
 
 export interface ManagedRun {
@@ -36,6 +38,7 @@ export interface ManagedRun {
 
 export type ManagedRunStateErrorCode =
   | "invalid-id"
+  | "invalid-timestamp"
   | "prototype-key"
   | "task-not-claimable"
   | "attempt-settled"
@@ -95,9 +98,15 @@ export function createRun(id: string, spec: TaskSpec, limits: ManagedLimits): Ma
  * Atomically reserve one worker launch and start its task. Reservation and running task are only
  * returned together, so a rejected start cannot consume admission. Replaying the same still-active
  * attempt for the same task is idempotent; a settled attempt or a different task for the same
- * attempt is rejected.
+ * attempt is rejected. The optional `nowMs` records the durable attempt start on first claim and is
+ * never rewritten by a replay.
  */
-export function claimTask(run: ManagedRun, taskId: string, attemptId: string): ManagedRun {
+export function claimTask(
+  run: ManagedRun,
+  taskId: string,
+  attemptId: string,
+  nowMs?: number
+): ManagedRun {
   assertId(taskId, "taskId");
   assertId(attemptId, "attemptId");
 
@@ -132,7 +141,10 @@ export function claimTask(run: ManagedRun, taskId: string, attemptId: string): M
   }
 
   const attempts: Record<string, ManagedAttempt> = { ...run.attempts };
-  attempts[attemptId] = { taskId, status: "reserved" };
+  attempts[attemptId] =
+    nowMs === undefined
+      ? { taskId, status: "reserved" }
+      : { taskId, status: "reserved", claimedAtMs: nowMs };
   return { id: run.id, tree, admission: reserved.state, attempts };
 }
 
