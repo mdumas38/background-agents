@@ -10,9 +10,11 @@ import {
   CompletionDelivery,
   completionKey,
   deliverRecordedCompletion,
+  enqueueCompletion,
   COMPLETION_MAX_ATTEMPTS,
   type CompletionSender,
 } from "./delivery";
+import type { Env } from "../types";
 import { createDispatchStorage, createFakeKV, makeLinearBotEnv } from "../test-helpers";
 const payload: LinearCompletionCallback = {
   sessionId: "session",
@@ -36,6 +38,16 @@ const content = {
   target: "agent",
   type: "response" as const,
   body: "report",
+};
+const managedWork = {
+  rootIssueId: "root-issue",
+  runId: "run",
+  taskId: "task",
+  attemptId: "attempt",
+};
+const managedPayload: LinearCompletionCallback = {
+  ...payload,
+  context: { ...payload.context, managedWork },
 };
 const env = makeLinearBotEnv(createFakeKV().kv);
 function setup(storage = createDispatchStorage().storage) {
@@ -296,4 +308,51 @@ it.each(["id", "target", "body"])("rejects comment readback with conflicting %s"
   } finally {
     vi.unstubAllGlobals();
   }
+});
+
+it("routes managed child callbacks to the root coordinator and legacy to its own issue", async () => {
+  const names: string[] = [];
+  const dispatchEnv = {
+    ...env,
+    LINEAR_DISPATCH: {
+      idFromName: (name: string) => {
+        names.push(name);
+        return name;
+      },
+      get: () => ({ fetch: vi.fn(async () => Response.json({ ok: true })) }),
+    },
+  } as unknown as Env;
+  await enqueueCompletion(managedPayload, dispatchEnv, "a");
+  await enqueueCompletion(payload, dispatchEnv, "b");
+  expect(names).toEqual([JSON.stringify(["org", "root-issue"]), JSON.stringify(["org", "issue"])]);
+});
+
+it("creates and reconciles a managed comment through OAuth without an API key", async () => {
+  mocks.graphql.mockRejectedValueOnce(new Error("response lost")).mockResolvedValueOnce({
+    data: { comment: { id: "comment-id", issue: { id: "root-issue" }, body: "report" } },
+  });
+  await deliverRecordedCompletion(
+    {
+      payload: managedPayload,
+      deliveryId: "comment-id",
+      content: { kind: "comment", target: "root-issue", body: "report" },
+    },
+    { ...env, LINEAR_API_KEY: undefined }
+  );
+  expect(mocks.client).toHaveBeenCalledWith(expect.anything(), "org", "app");
+  expect(mocks.graphql).toHaveBeenCalledTimes(2);
+  expect(mocks.graphql.mock.calls[0][2]).toEqual({
+    input: { id: "comment-id", issueId: "root-issue", body: "report" },
+  });
+});
+
+it("keeps legacy comment delivery on the API key without managed identity", async () => {
+  await expect(
+    deliverRecordedCompletion(
+      { payload, deliveryId: "id", content: { kind: "comment", target: "issue", body: "report" } },
+      { ...env, LINEAR_API_KEY: undefined }
+    )
+  ).rejects.toThrow("Completion authentication unavailable");
+  expect(mocks.client).not.toHaveBeenCalled();
+  expect(mocks.graphql).not.toHaveBeenCalled();
 });
