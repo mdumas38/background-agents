@@ -18,7 +18,7 @@ export class LinearDispatch {
     private readonly state: DurableObjectState,
     private readonly env: Env
   ) {
-    this.completions = new CompletionDelivery(state, env);
+    this.completions = new CompletionDelivery(state, { ...env, SESSION_STORE: state.storage });
   }
 
   async alarm(): Promise<void> {
