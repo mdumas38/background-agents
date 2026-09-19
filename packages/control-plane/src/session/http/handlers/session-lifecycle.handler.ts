@@ -76,6 +76,7 @@ export class SessionLifecycleHandler {
       branchName: session.branch_name,
       baseSha: session.base_sha,
       currentSha: session.current_sha,
+      totalCost: session.total_cost,
       agentSessionId: session.agent_session_id,
       harness: session.harness,
       status: session.status,

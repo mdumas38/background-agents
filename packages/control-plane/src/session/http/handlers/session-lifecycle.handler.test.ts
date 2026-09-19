@@ -167,6 +167,7 @@ describe("SessionLifecycleHandler", () => {
       branchName: "feature/test",
       baseSha: "base-sha",
       currentSha: "head-sha",
+      totalCost: 0,
       harness: "opencode",
       agentSessionId: "oc-1",
       status: "active",
@@ -182,6 +183,28 @@ describe("SessionLifecycleHandler", () => {
         lastHeartbeat: 999,
       },
     });
+  });
+
+  it("projects the exact recorded fractional total cost", async () => {
+    const { handler, getSession, getSandbox } = createHandler();
+    getSession.mockReturnValue(createSession({ total_cost: 1.234567 }));
+    getSandbox.mockReturnValue(createSandbox());
+
+    const response = await handler.getState();
+
+    const body = (await response.json()) as { totalCost: number };
+    expect(body.totalCost).toBe(1.234567);
+  });
+
+  it("projects a recorded total cost of zero", async () => {
+    const { handler, getSession } = createHandler();
+    getSession.mockReturnValue(createSession({ total_cost: 0 }));
+
+    const response = await handler.getState();
+
+    const body = (await response.json()) as { totalCost: number };
+    expect(body.totalCost).toBe(0);
+    expect(Object.keys(body)).toContain("totalCost");
   });
 
   it("returns 404 when updating title for missing session", async () => {
