@@ -2,6 +2,8 @@ import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
 from sandbox_runtime.repository_boot import RepositoryBootResult
 from sandbox_runtime.runtime_config import BootMode, RuntimeConfig
 from sandbox_runtime.supervisor import SandboxSupervisor
@@ -78,6 +80,43 @@ async def test_regular_boot_phase_order(tmp_path, monkeypatch):
         "opencode",
         "bridge",
     ]
+    timings = [
+        call.kwargs
+        for call in supervisor.log.info.call_args_list
+        if call.args == ("boot.stage_completed",)
+    ]
+    assert [record["stage"] for record in timings] == [
+        "browser_start",
+        "skills",
+        "code_server_start",
+        "terminal_start",
+        "harness_start",
+        "bridge_start",
+    ]
+    assert all(record["outcome"] == "succeeded" for record in timings)
+
+
+@pytest.mark.parametrize("service", ["browser_desktop", "code_server", "web_terminal"])
+async def test_nonfatal_service_start_failure_has_failed_timing(tmp_path, monkeypatch, service):
+    supervisor, *_ = _supervisor(tmp_path, [])
+    for key in ("IMAGE_BUILD_MODE", "RESTORED_FROM_SNAPSHOT", "FROM_REPO_IMAGE"):
+        monkeypatch.delenv(key, raising=False)
+    getattr(supervisor, service).start.side_effect = RuntimeError("failure")
+    assert await supervisor.run() is True
+    failed = [
+        call.kwargs
+        for call in supervisor.log.info.call_args_list
+        if call.args == ("boot.stage_completed",) and call.kwargs["outcome"] == "failed"
+    ]
+    assert len(failed) == 1
+    assert (
+        failed[0]["stage"]
+        == {
+            "browser_desktop": "browser_start",
+            "code_server": "code_server_start",
+            "web_terminal": "terminal_start",
+        }[service]
+    )
 
 
 async def test_regular_boot_passes_repository_workspace_to_services(tmp_path, monkeypatch):

@@ -92,6 +92,29 @@ test timing out under concurrent validation; its affected suites then passed all
 isolation. Web typechecking and control-plane/Linear builds passed. Terraform formatting passed;
 mocked Terraform plan tests were not run because this worktree has no installed providers.
 
+## Prepared-startup measurement and source-validity batch
+
+See [prepared-startup.md](prepared-startup.md) for the measurement schema and next decision gate.
+Provider creation and tunnel publication now have separate monotonic stage measurements; runtime
+coverage separates Git operations and source inspection from setup, services, harness, and bridge
+startup. The offline stage audit preserves failures, missing observations, and cold/prepared cohorts
+without adding overlapping durations or inventing cost/savings.
+
+The existing repository-image path skipped setup after moving to a different commit. It now retains
+that skip only when all repositories have unchanged full commit identities and clean tracked source
+before and after sync. Otherwise all setup hooks rerun in order. Image sync/setup failures prevent
+readiness; snapshot restore behavior remains separate. This does not verify ignored dependency
+artifacts or establish a new dependency-cache contract.
+
+No live stage distribution is available from this implementation batch, so it does not choose or
+enable a new cache, broaden image reuse, or claim that the historical readiness delay is recovered.
+Managed workers remain paused. Deployment and bounded matched startup measurements remain separate
+approval gates.
+
+Validation: full runtime suite **1,123 passed, 28 skipped**; provider launch/tunnel regression group
+**73 passed**; offline startup audit **6 passed**. Scoped Ruff, formatting, and diff checks passed.
+These are local tests, not a live cold/prepared performance comparison.
+
 ### Still required before resuming managed workers
 
 1. Review and separately approve deployment/canary of the default-off checkpoint implementation,

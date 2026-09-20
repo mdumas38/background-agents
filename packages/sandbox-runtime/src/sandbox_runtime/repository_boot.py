@@ -162,7 +162,7 @@ class RepositoryBoot:
         self.repositories = list(sync_result.repositories)
         git_sync_success = not sync_result.failures
         if sync_result.failures:
-            if boot_mode in (BootMode.FRESH, BootMode.BUILD):
+            if boot_mode in (BootMode.FRESH, BootMode.BUILD, BootMode.REPO_IMAGE):
                 messages = []
                 if sync_result.timed_out:
                     timed_out_names = ", ".join(
@@ -209,9 +209,35 @@ class RepositoryBoot:
                     "git.sync_complete", head_sha=head_sha, repository_shas=repository_shas
                 )
         setup_success: bool | None = None
-        if self.repositories and boot_mode in (BootMode.FRESH, BootMode.BUILD):
+        reuse_prepared_setup = bool(
+            boot_mode is BootMode.REPO_IMAGE
+            and len(sync_result.outcomes) == len(self.repositories)
+            and all(outcome.source_unchanged for outcome in sync_result.outcomes)
+        )
+        if self.repositories and boot_mode in (BootMode.FRESH, BootMode.BUILD, BootMode.REPO_IMAGE):
             setup_success = True
             for index, repo in enumerate(self.repositories):
+                if boot_mode is BootMode.REPO_IMAGE:
+                    outcome = sync_result.outcomes[index]
+                    self.log.info(
+                        "repository.prepared_setup_decision",
+                        boot_mode=boot_mode.value,
+                        repository_index=index,
+                        outcome="reused" if reuse_prepared_setup else "setup_required",
+                        reason=(
+                            "unchanged_source"
+                            if reuse_prepared_setup
+                            else "repository_set_changed_or_unverified"
+                            if outcome.source_unchanged
+                            else "dirty_or_unverified_tracked_source"
+                            if not outcome.tracked_clean
+                            else "changed_source"
+                            if outcome.before_head_sha and outcome.after_head_sha
+                            else "unverified_source"
+                        ),
+                    )
+                    if reuse_prepared_setup:
+                        continue
                 with measure_boot_stage(
                     self.log, "setup", boot_mode=boot_mode.value, repository_index=index
                 ) as stage:
@@ -219,9 +245,9 @@ class RepositoryBoot:
                 if stage.succeeded:
                     continue
                 setup_success = False
-                if boot_mode is BootMode.BUILD:
+                if boot_mode in (BootMode.BUILD, BootMode.REPO_IMAGE):
                     raise RuntimeError(
-                        f"setup hook failed for {repo.owner}/{repo.name} in build mode"
+                        f"setup hook failed for {repo.owner}/{repo.name} in {boot_mode.value} mode"
                     )
                 self.warnings.record(
                     "setup",

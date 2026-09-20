@@ -1,5 +1,6 @@
 """Behavior matrix for shared fresh, repository-image, and snapshot launches."""
 
+import asyncio
 import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
@@ -33,6 +34,8 @@ async def test_launch_matrix_preserves_common_and_source_specific_behavior(
     monkeypatch, image_source
 ):
     captured: dict = {}
+    stage_log = Mock()
+    monkeypatch.setattr("src.sandbox.manager.log", stage_log)
     base_image = object()
     images = {
         "repo-image-1": object(),
@@ -125,6 +128,23 @@ async def test_launch_matrix_preserves_common_and_source_specific_behavior(
         expected_image = images["repo-image-1"] if image_source == "repository" else base_image
 
     kwargs = captured["kwargs"]
+    stage_records = [
+        call.kwargs
+        for call in stage_log.info.call_args_list
+        if call.args == ("boot.stage_completed",)
+    ]
+    assert [record["stage"] for record in stage_records] == ["provider_create", "tunnel_publish"]
+    for record in stage_records:
+        assert record["outcome"] == "succeeded"
+        assert record["sandbox_id"] == "sandbox-1"
+        assert record["image_source"] == image_source
+        assert (
+            record["boot_mode"]
+            == {"base": "fresh", "repository": "repo_image", "snapshot": "snapshot_restore"}[
+                image_source
+            ]
+        )
+        assert record["duration_seconds"] >= 0
     env = kwargs["env"]
     assert captured["command"] == ("python", "-m", "sandbox_runtime.entrypoint")
     assert kwargs["image"] is expected_image
@@ -196,3 +216,75 @@ async def test_repository_image_create_validates_repo_before_image_lookup(monkey
         )
 
     from_id.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stage", ["provider_create", "tunnel_publish"])
+@pytest.mark.parametrize("cancelled", [False, True])
+async def test_launch_stage_records_monotonic_failure_and_cancellation(
+    monkeypatch, stage, cancelled
+):
+    stage_log = Mock()
+    monkeypatch.setattr("src.sandbox.manager.log", stage_log)
+    ticks = iter([10.0, 12.5, 13.0, 16.0])
+    monkeypatch.setattr(
+        "sandbox_runtime.boot_timing.time", SimpleNamespace(monotonic=lambda: next(ticks))
+    )
+    failure = asyncio.CancelledError() if cancelled else RuntimeError("provider detail")
+    create = AsyncMock(return_value=SimpleNamespace(object_id="object-1"))
+    tunnels = AsyncMock(return_value=(None, None, None, None))
+    if stage == "provider_create":
+        create.side_effect = failure
+    else:
+        tunnels.side_effect = failure
+    monkeypatch.setattr("src.sandbox.manager.modal.Sandbox.create", SimpleNamespace(aio=create))
+    monkeypatch.setattr(SandboxManager, "_resolve_and_setup_tunnels", tunnels)
+    with pytest.raises(type(failure)):
+        await SandboxManager().create_sandbox(
+            SandboxConfig(
+                repo_owner=None,
+                repo_name=None,
+                sandbox_id="timed-sandbox",
+                code_server_enabled=False,
+            )
+        )
+    records = [
+        call.kwargs
+        for call in stage_log.info.call_args_list
+        if call.args == ("boot.stage_completed",)
+    ]
+    assert records[-1] == {
+        "stage": stage,
+        "boot_mode": "fresh",
+        "image_source": "base",
+        "sandbox_id": "timed-sandbox",
+        "repository_index": None,
+        "outcome": "cancelled" if cancelled else "failed",
+        "duration_seconds": 2.5 if stage == "provider_create" else 3.0,
+    }
+    assert "provider detail" not in str(records)
+
+
+@pytest.mark.asyncio
+async def test_missing_required_tunnel_is_timed_as_failure_without_changing_launch(monkeypatch):
+    stage_log = Mock()
+    monkeypatch.setattr("src.sandbox.manager.log", stage_log)
+    monkeypatch.setattr("src.sandbox.manager.modal.Sandbox.create", _fake_create({}))
+    monkeypatch.setattr(
+        SandboxManager,
+        "_resolve_and_setup_tunnels",
+        AsyncMock(return_value=(None, None, None, None)),
+    )
+    handle = await SandboxManager().create_sandbox(
+        SandboxConfig(
+            repo_owner=None, repo_name=None, sandbox_id="missing-tunnel", code_server_enabled=True
+        )
+    )
+    assert handle.code_server_url is None
+    records = [
+        call.kwargs
+        for call in stage_log.info.call_args_list
+        if call.args == ("boot.stage_completed",)
+    ]
+    assert records[-1]["stage"] == "tunnel_publish"
+    assert records[-1]["outcome"] == "failed"

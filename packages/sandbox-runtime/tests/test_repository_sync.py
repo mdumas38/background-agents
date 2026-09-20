@@ -65,6 +65,72 @@ def _pinned_repository(tmp_path: Path, sha: str) -> RepoEntry:
     return RepoEntry(owner="acme", name="app", branch=sha, path=tmp_path / "app")
 
 
+@pytest.mark.asyncio
+async def test_prepared_source_identity_tracks_real_git_before_and_after_sync(tmp_path: Path):
+    bare, pinned_sha, head_sha = await _make_bare_origin(tmp_path)
+    synchronizer = _pinned_synchronizer(bare)
+    repo = _repository(tmp_path)
+    assert await synchronizer._sync_repo(repo, BootMode.FRESH)
+    unchanged = await synchronizer.sync([repo], BootMode.REPO_IMAGE)
+    assert unchanged.outcomes[0].source_unchanged is True
+    assert unchanged.outcomes[0].before_head_sha == head_sha
+    assert unchanged.outcomes[0].after_head_sha == head_sha
+    await _run_git("checkout", "--detach", pinned_sha, cwd=repo.path)
+    changed = await synchronizer.sync([repo], BootMode.REPO_IMAGE)
+    assert changed.outcomes[0].source_unchanged is False
+    assert changed.outcomes[0].before_head_sha == pinned_sha
+    assert changed.outcomes[0].after_head_sha == head_sha
+    records = [
+        call.kwargs
+        for call in synchronizer.log.info.call_args_list
+        if call.args == ("boot.stage_completed",)
+    ]
+    assert {record["stage"] for record in records} >= {"git_clone", "git_fetch", "git_checkout"}
+    assert all(
+        record["repository_index"] == 0
+        for record in records
+        if record["boot_mode"] == BootMode.REPO_IMAGE.value
+    )
+
+
+@pytest.mark.asyncio
+async def test_missing_prepared_checkout_is_not_treated_as_reusable(tmp_path: Path):
+    bare, _pinned_sha, head_sha = await _make_bare_origin(tmp_path)
+    synchronizer = _pinned_synchronizer(bare)
+    result = await synchronizer.sync([_repository(tmp_path)], BootMode.REPO_IMAGE)
+    assert result.outcomes[0].before_head_sha is None
+    assert result.outcomes[0].after_head_sha == head_sha
+    assert result.outcomes[0].source_unchanged is False
+    records = [
+        call.kwargs
+        for call in synchronizer.log.info.call_args_list
+        if call.args == ("boot.stage_completed",)
+    ]
+    inspections = [record for record in records if record["stage"].startswith("git_verify_")]
+    assert [record["stage"] for record in inspections] == ["git_verify_before", "git_verify_after"]
+    assert [record["outcome"] for record in inspections] == ["failed", "succeeded"]
+    assert all(record["repository_index"] == 0 for record in inspections)
+    assert all(record["duration_seconds"] >= 0 for record in inspections)
+    assert result.outcomes[0].status is RepositorySyncStatus.SUCCEEDED
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("staged", [False, True])
+async def test_dirty_prepared_tracked_source_is_not_reused(tmp_path: Path, staged):
+    bare, _pinned_sha, head_sha = await _make_bare_origin(tmp_path)
+    synchronizer = _pinned_synchronizer(bare)
+    repo = _repository(tmp_path)
+    assert await synchronizer._sync_repo(repo, BootMode.FRESH)
+    (repo.path / "file.txt").write_text("dirty source")
+    if staged:
+        await _run_git("add", "file.txt", cwd=repo.path)
+    result = await synchronizer.sync([repo], BootMode.REPO_IMAGE)
+    assert result.outcomes[0].before_head_sha == head_sha
+    assert result.outcomes[0].after_head_sha == head_sha
+    assert result.outcomes[0].tracked_clean is False
+    assert result.outcomes[0].source_unchanged is False
+
+
 @pytest.mark.parametrize(
     ("ref", "expected"),
     [

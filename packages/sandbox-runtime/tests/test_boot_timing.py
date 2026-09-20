@@ -49,6 +49,20 @@ def test_exception_propagates_without_logging_contents(error, outcome):
     assert "secret text" not in str(log.info.call_args)
 
 
+def test_provider_timing_carries_only_explicit_correlation():
+    log = MagicMock()
+    with measure_boot_stage(
+        log,
+        "provider_create",
+        boot_mode="repo_image",
+        image_source="repository",
+        sandbox_id="launch-1",
+    ):
+        pass
+    assert log.info.call_args.kwargs["sandbox_id"] == "launch-1"
+    assert log.info.call_args.kwargs["image_source"] == "repository"
+
+
 @pytest.fixture
 def boot(tmp_path):
     config = RepositoryConfig(
@@ -96,7 +110,7 @@ def stages(boot):
 async def test_only_executed_stages_are_recorded(boot, mode):
     await boot.boot(mode, [])
     expected = ["credentials", "repository_sync"]
-    if mode in (BootMode.FRESH, BootMode.BUILD):
+    if mode in (BootMode.FRESH, BootMode.BUILD, BootMode.REPO_IMAGE):
         expected.append("setup")
     if mode is not BootMode.BUILD:
         expected.extend(["tunnel_readiness", "start"])
