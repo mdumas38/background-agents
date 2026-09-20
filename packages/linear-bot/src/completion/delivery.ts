@@ -75,9 +75,13 @@ export class CompletionDelivery {
           status: "pending",
           attempts: 0,
         } satisfies RecordEntry);
-      // Persist the alarm in the same transaction as acceptance, including after eviction.
-      if (!existing || existing.status === "pending")
-        await storage.setAlarm(Date.now() + COMPLETION_RETRY_MS);
+      // Persist the alarm in the same transaction as acceptance, including after eviction. Never
+      // push an existing wakeup later: a managed worker deadline may already be armed.
+      if (!existing || existing.status === "pending") {
+        const retryAt = Date.now() + COMPLETION_RETRY_MS;
+        const alarm = await storage.getAlarm();
+        await storage.setAlarm(alarm === null ? retryAt : Math.min(alarm, retryAt));
+      }
       return existing?.status ?? "pending";
     });
     if (result === "conflict")
@@ -96,8 +100,13 @@ export class CompletionDelivery {
     const records = await this.state.storage.list<RecordEntry>({ prefix: "completion:" });
     for (const [key, record] of records) {
       if (record.status !== "pending") continue;
-      // Arm before work; a killed isolate or uncertain write resumes with the SAME ID/body.
-      await this.state.storage.setAlarm(Date.now() + COMPLETION_RETRY_MS);
+      // Arm before work; a killed isolate or uncertain write resumes with the SAME ID/body. Keep
+      // an earlier managed deadline armed instead of postponing it with each retry.
+      await this.state.storage.transaction(async (storage) => {
+        const retryAt = Date.now() + COMPLETION_RETRY_MS;
+        const alarm = await storage.getAlarm();
+        await storage.setAlarm(alarm === null ? retryAt : Math.min(alarm, retryAt));
+      });
       record.attempts++;
       await this.state.storage.put(key, record);
       try {
