@@ -208,6 +208,23 @@ describe("initializeSession", () => {
     expect(updateStatusMock).toHaveBeenCalledWith("session-123", "failed");
   });
 
+  it("does not leave a runnable D1 session when init observes a pre-init stop fence", async () => {
+    stubFetchMock.mockResolvedValue(
+      Response.json(
+        { error: "Session initialization was stopped", code: "SESSION_STOPPED" },
+        { status: 409 }
+      )
+    );
+
+    await expect(initializeSession(createEnv(), baseInput, ctx as never)).rejects.toThrow(
+      "Failed to initialize session DO: 409"
+    );
+
+    expect(createMock).toHaveBeenCalledOnce();
+    expect(stubFetchMock).toHaveBeenCalledOnce();
+    expect(updateStatusMock).toHaveBeenCalledWith("session-123", "failed");
+  });
+
   it("marks D1 row as failed when DO init throws a transport error", async () => {
     stubFetchMock.mockRejectedValue(new Error("network failure"));
 
