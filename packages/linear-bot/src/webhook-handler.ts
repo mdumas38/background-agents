@@ -50,8 +50,12 @@ import {
   lookupIssueSession,
   storeIssueSession,
 } from "./kv-store";
+import { handleManagedRootCommand } from "./managed/root-commands";
+import { startManagedWork } from "./managed/enrollment";
 
 const log = createLogger("handler");
+
+const MANAGED_COMMAND_PATTERN = /^\/manage(?:\s|$)/;
 
 const sessionEventsSummaryResponseSchema = z.object({
   events: z.array(
@@ -655,6 +659,47 @@ async function handleNewSession(
     labelModel,
   });
 
+  // An explicit `/manage …` instruction enrolls a managed root. This is scoped
+  // to the session instruction comment only, never the issue description or
+  // provider prompt context, and must not fall back to an ordinary session.
+  const instructionBody = instructionComment?.body;
+  if (instructionBody !== undefined && MANAGED_COMMAND_PATTERN.test(instructionBody.trim())) {
+    try {
+      const managedResponse = await startManagedWork(
+        env,
+        {
+          webhook,
+          issue,
+          issueDetails,
+          target,
+          model,
+          reasoningEffort,
+          actorUserId: sessionActorUserId ?? "",
+          actorDisplayName,
+          actorEmail,
+          instruction: instructionBody,
+        },
+        traceId
+      );
+      await emitAgentActivity(client, agentSessionId, {
+        type: "response",
+        body: managedResponse,
+      });
+    } catch (err) {
+      log.error("agent_session.managed_start_failed", {
+        trace_id: traceId,
+        agent_session_id: agentSessionId,
+        issue_identifier: issue.identifier,
+        error: err instanceof Error ? err : new Error(String(err)),
+      });
+      await emitAgentActivity(client, agentSessionId, {
+        type: "error",
+        body: "Failed to start managed work for this explicit /manage instruction. No coding session was allocated.",
+      });
+    }
+    return;
+  }
+
   const callbackContext = buildLinearCallbackContext({
     webhook,
     issue,
@@ -857,6 +902,30 @@ export async function handleAgentSessionEvent(
     has_comment: Boolean(webhook.agentSession.comment),
     org_id: webhook.organizationId,
   });
+
+  // Managed root command interception. An enrolled root returns status or denial
+  // text here and must never fall through to generic stop/follow-up/new-session
+  // handling. A missing issue keeps the existing no-issue behavior.
+  if (issue) {
+    const managedResponse = await handleManagedRootCommand(webhook, env, traceId);
+    if (managedResponse !== undefined) {
+      const client = await getAgentSessionLinearClient({
+        env,
+        traceId,
+        orgId: webhook.organizationId,
+        agentSessionId,
+        issue,
+        mode: "follow_up",
+        expectedAppUserId: webhook.appUserId,
+      });
+      if (!client) return;
+      await emitAgentActivity(client, agentSessionId, {
+        type: "response",
+        body: managedResponse,
+      });
+      return;
+    }
+  }
 
   // Stop handling
   if (

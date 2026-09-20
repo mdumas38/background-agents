@@ -27,7 +27,7 @@ const NEW_ROOT_INSTRUCTION =
 const RECONCILIATION_NOTE =
   "Manual reconciliation required: no automatic parent coding or retry will run.";
 
-const EXPLICIT_STOP_PATTERN = /(?:^|\s)\/manage\s+stop(?:\s|$)/i;
+const EXPLICIT_STOP_PATTERN = /^\s*\/manage\s+stop(?:\s|$)/i;
 
 function nonBlank(value: string | null | undefined): string | undefined {
   if (typeof value !== "string") return undefined;
@@ -57,9 +57,11 @@ function isExplicitStopCommand(webhook: AgentSessionWebhook): boolean {
  * every other action by the session comment or its creator.
  */
 function resolveActor(webhook: AgentSessionWebhook): string | undefined {
-  if (webhook.action === "prompted") {
-    return nonBlank(webhook.agentActivity?.userId);
-  }
+  // Any explicit activity actor wins, even on stopped/cancelled actions, so a
+  // contradictory foreign actor cannot be hidden by the original creator.
+  const activityActor = nonBlank(webhook.agentActivity?.userId);
+  if (activityActor) return activityActor;
+  if (webhook.action === "prompted") return undefined;
   return nonBlank(webhook.agentSession.comment?.userId) ?? nonBlank(webhook.agentSession.creatorId);
 }
 

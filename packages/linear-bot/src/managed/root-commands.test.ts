@@ -136,6 +136,64 @@ describe("handleManagedRootCommand", () => {
     expect((run as { admission: { stopped: boolean } }).admission.stopped).toBe(false);
   });
 
+  it("does not treat an embedded '/manage stop' phrase as a stop command", async () => {
+    const { env, storage } = await rootEnv(boundRun());
+    const actor = webhook({
+      agentActivity: {
+        id: "activity-1",
+        userId: "user-1",
+        content: { body: "please do not use /manage stop for this one" },
+      },
+    });
+
+    const result = await handleManagedRootCommand(actor, env, "trace-1");
+
+    expect(result).toContain("Managed root DIV-156");
+    expect(result).toContain("Stopped: no.");
+    expect(controlPlaneFetch(env)).not.toHaveBeenCalled();
+    const run = await storage.get("managed:run");
+    expect((run as { admission: { stopped: boolean } }).admission.stopped).toBe(false);
+  });
+
+  it("denies a stopped event whose explicit activity actor is foreign despite the original creator", async () => {
+    const { env, storage } = await rootEnv(boundRun());
+    const contradictory = webhook({
+      action: "stopped",
+      agentSession: {
+        id: "agent-session-1",
+        creatorId: "user-1",
+        comment: { body: "stopped", userId: "user-1" },
+      },
+      agentActivity: { id: "activity-1", userId: "intruder" },
+    });
+
+    const result = await handleManagedRootCommand(contradictory, env, "trace-1");
+
+    expect(result).toContain("restricted to the original run actor");
+    expect(controlPlaneFetch(env)).not.toHaveBeenCalled();
+    const run = await storage.get("managed:run");
+    expect((run as { admission: { stopped: boolean } }).admission.stopped).toBe(false);
+  });
+
+  it("keeps trusting an absent-actor native cancellation on the enrolled session", async () => {
+    const { env, storage } = await rootEnv(boundRun());
+    const nativeStop = webhook({
+      action: "stopped",
+      agentSession: {
+        id: "agent-session-1",
+        creatorId: "user-1",
+        comment: { body: "stopped", userId: "user-1" },
+      },
+    });
+    controlPlaneFetch(env).mockResolvedValue(new Response(null, { status: 204 }));
+
+    const result = await handleManagedRootCommand(nativeStop, env, "trace-1");
+
+    expect(result).toContain("Stopped: yes.");
+    const run = await storage.get("managed:run");
+    expect((run as { admission: { stopped: boolean } }).admission.stopped).toBe(true);
+  });
+
   it("lets the original actor stop the run and reports the stopped status", async () => {
     const { env, storage } = await rootEnv(boundRun());
     const actor = webhook({
