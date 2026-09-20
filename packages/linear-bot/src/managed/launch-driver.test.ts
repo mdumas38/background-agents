@@ -212,3 +212,48 @@ describe("createManagedLaunch admission guards", () => {
     expect(mocks.enqueueManagedPrompt).not.toHaveBeenCalled();
   });
 });
+
+describe("createManagedLaunch post-enqueue stop guard", () => {
+  it("stops the bound message when a concurrent root stop lands during enqueue", async () => {
+    const pending = claim();
+    mocks.loadRun
+      .mockResolvedValueOnce(pending.run)
+      .mockResolvedValueOnce(pending.run)
+      .mockResolvedValueOnce(pending.run)
+      .mockResolvedValueOnce({
+        ...pending.run,
+        admission: { ...pending.run.admission, stopped: true },
+      });
+
+    const order: string[] = [];
+    const bindSession = vi.fn(async () => {
+      order.push("bindSession");
+    });
+    const bindMessage = vi.fn(async () => {
+      order.push("bindMessage");
+    });
+    mocks.createManagedSession.mockImplementation(async () => {
+      order.push("createSession");
+      return "session-1";
+    });
+    mocks.enqueueManagedPrompt.mockImplementation(async () => {
+      order.push("enqueue");
+      return "message-1";
+    });
+    mocks.stopManagedRun.mockImplementation(async () => {
+      order.push("stop");
+    });
+
+    await expect(
+      createManagedLaunch(env(), context(), "trace-1")(pending, bindSession, bindMessage)
+    ).rejects.toThrow("stopped after prompt enqueue");
+
+    expect(order).toEqual(["createSession", "bindSession", "enqueue", "bindMessage", "stop"]);
+    expect(bindMessage).toHaveBeenCalledWith("message-1");
+    expect(mocks.stopManagedRun).toHaveBeenCalledWith(
+      expect.anything(),
+      MANAGED_LAUNCH_STOP_REASON,
+      "trace-1"
+    );
+  });
+});

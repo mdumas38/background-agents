@@ -122,6 +122,15 @@ function boundRun(): ManagedRun {
   return bindAttempt(claimed, "attempt-1", "session-1");
 }
 
+/** Record a prompt message on the stored attempt without disturbing admission. */
+function withBoundMessage(run: ManagedRun, messageId: string): ManagedRun {
+  const attempt = run.attempts["attempt-1"];
+  return {
+    ...run,
+    attempts: { ...run.attempts, "attempt-1": { ...attempt, messageId } },
+  };
+}
+
 describe("stopManagedRun", () => {
   it("persists the stop admission before the network call and never resends or refunds", async () => {
     const storage = new FakeStopStorage();
@@ -153,9 +162,10 @@ describe("stopManagedRun", () => {
     expect(persisted.admission.stopped).toBe(true);
     expect(persisted.admission.reservations["attempt-1"]).toBe(LIMITS.maxWorkerCostUsd);
     expect(persisted.admission.settled).toEqual({});
-    expect(
-      await storage.get<ManagedStopIntent>(`${MANAGED_STOP_INTENT_PREFIX}attempt-1`)
-    ).toEqual({ attemptId: "attempt-1", status: "accepted" });
+    expect(await storage.get<ManagedStopIntent>(`${MANAGED_STOP_INTENT_PREFIX}attempt-1`)).toEqual({
+      attemptId: "attempt-1",
+      status: "accepted",
+    });
 
     await stopManagedRun(env, "operator stop", "trace-1");
 
@@ -163,6 +173,72 @@ describe("stopManagedRun", () => {
     const afterRepeat = (await loadRun(storage))!;
     expect(afterRepeat.admission.reservations["attempt-1"]).toBe(LIMITS.maxWorkerCostUsd);
     expect(afterRepeat.admission.settled).toEqual({});
+  });
+});
+
+describe("stopManagedRun message-scoped intents", () => {
+  it("sends exactly one more stop when the message is bound after an unbound stop", async () => {
+    const storage = new FakeStopStorage();
+    await saveRun(storage, boundRun());
+    await storage.put({ "managed:context": context() });
+    const env = stopEnv(storage);
+    const fetchMock = controlPlaneFetch(env);
+    fetchMock.mockResolvedValue(new Response(null, { status: 204 }));
+
+    await stopManagedRun(env, "operator stop", "trace-1");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(await storage.get<ManagedStopIntent>(`${MANAGED_STOP_INTENT_PREFIX}attempt-1`)).toEqual({
+      attemptId: "attempt-1",
+      status: "accepted",
+    });
+
+    await saveRun(storage, withBoundMessage((await loadRun(storage))!, "message-1"));
+    await stopManagedRun(env, "operator stop", "trace-1");
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(
+      await storage.get<ManagedStopIntent>(`${MANAGED_STOP_INTENT_PREFIX}attempt-1:message-1`)
+    ).toEqual({ attemptId: "attempt-1", messageId: "message-1", status: "accepted" });
+
+    await stopManagedRun(env, "operator stop", "trace-1");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps the bound intent when a late unbound response lands", async () => {
+    const storage = new FakeStopStorage();
+    await saveRun(storage, boundRun());
+    await storage.put({ "managed:context": context() });
+    const env = stopEnv(storage);
+    const fetchMock = controlPlaneFetch(env);
+
+    const resolvers: Array<(response: Response) => void> = [];
+    fetchMock.mockImplementation(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolvers.push(resolve);
+        })
+    );
+
+    const unbound = stopManagedRun(env, "operator stop", "trace-1");
+    await vi.waitFor(() => expect(resolvers).toHaveLength(1));
+
+    await saveRun(storage, withBoundMessage((await loadRun(storage))!, "message-1"));
+    const bound = stopManagedRun(env, "operator stop", "trace-1");
+    await vi.waitFor(() => expect(resolvers).toHaveLength(2));
+
+    resolvers[1](new Response(null, { status: 204 }));
+    await bound;
+    resolvers[0](new Response(null, { status: 204 }));
+    await unbound;
+
+    expect(
+      await storage.get<ManagedStopIntent>(`${MANAGED_STOP_INTENT_PREFIX}attempt-1:message-1`)
+    ).toEqual({ attemptId: "attempt-1", messageId: "message-1", status: "accepted" });
+    expect(await storage.get<ManagedStopIntent>(`${MANAGED_STOP_INTENT_PREFIX}attempt-1`)).toEqual({
+      attemptId: "attempt-1",
+      status: "accepted",
+    });
   });
 });
 
