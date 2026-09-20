@@ -26,6 +26,8 @@ export type ManagedStopIntentStatus = "claimed" | "accepted" | "uncertain";
 
 export interface ManagedStopIntent {
   attemptId: string;
+  /** Message identity once the attempt is prompt-bound; absent for the unbound session phase. */
+  messageId?: string;
   status: ManagedStopIntentStatus;
 }
 
@@ -65,8 +67,15 @@ function boundedStopReason(reason: string): string {
     : trimmed;
 }
 
-function stopIntentKey(attemptId: string): string {
-  return `${MANAGED_STOP_INTENT_PREFIX}${attemptId}`;
+/**
+ * Intent identity is scoped to the attempt and, once a prompt is bound, its message. The unbound
+ * session phase keeps a distinct key, so a stop delivered to an empty session cannot suppress the
+ * one needed for the prompt that was enqueued after it, and a late response can never overwrite the
+ * other phase's intent.
+ */
+function stopIntentKey(attemptId: string, messageId?: string): string {
+  const base = `${MANAGED_STOP_INTENT_PREFIX}${attemptId}`;
+  return messageId === undefined ? base : `${base}:${messageId}`;
 }
 
 /** Root actor asserted on stop requests when the enrolled context carries one. */
@@ -76,27 +85,29 @@ async function rootActor(storage: ManagedRunStorage): Promise<string | undefined
   return actor ? `linear:${actor}` : undefined;
 }
 
-async function loadStopIntents(
-  storage: ManagedRunStorage
-): Promise<Record<string, ManagedStopIntent>> {
+async function loadStopIntentKeys(storage: ManagedRunStorage): Promise<Set<string>> {
   const records = await storage.list<ManagedStopIntent>({ prefix: MANAGED_STOP_INTENT_PREFIX });
-  const intents: Record<string, ManagedStopIntent> = {};
-  for (const [key, intent] of records) {
-    intents[key.slice(MANAGED_STOP_INTENT_PREFIX.length)] = intent;
-  }
-  return intents;
+  return new Set(records.keys());
 }
 
 /**
  * Claim the one-shot stop intent for an attempt inside a transaction. Returns false when an intent
  * already exists (claimed, accepted, or uncertain), so a repeat never resends the request.
  */
-async function claimStopIntent(storage: ManagedStopStorage, attemptId: string): Promise<boolean> {
+async function claimStopIntent(
+  storage: ManagedStopStorage,
+  attemptId: string,
+  messageId?: string
+): Promise<boolean> {
   return storage.transaction(async (tx) => {
-    const key = stopIntentKey(attemptId);
+    const key = stopIntentKey(attemptId, messageId);
     if ((await tx.get<ManagedStopIntent>(key)) !== undefined) return false;
     await tx.put({
-      [key]: { attemptId, status: "claimed" } satisfies ManagedStopIntent,
+      [key]: {
+        attemptId,
+        ...(messageId === undefined ? {} : { messageId }),
+        status: "claimed",
+      } satisfies ManagedStopIntent,
     });
     return true;
   });
@@ -105,10 +116,17 @@ async function claimStopIntent(storage: ManagedStopStorage, attemptId: string): 
 async function recordStopIntent(
   storage: ManagedStopStorage,
   attemptId: string,
-  status: ManagedStopIntentStatus
+  status: ManagedStopIntentStatus,
+  messageId?: string
 ): Promise<void> {
   await storage.transaction(async (tx) => {
-    await tx.put({ [stopIntentKey(attemptId)]: { attemptId, status } satisfies ManagedStopIntent });
+    await tx.put({
+      [stopIntentKey(attemptId, messageId)]: {
+        attemptId,
+        ...(messageId === undefined ? {} : { messageId }),
+        status,
+      } satisfies ManagedStopIntent,
+    });
   });
 }
 
@@ -123,9 +141,10 @@ async function stopAttempt(
   sessionId: string,
   attemptId: string,
   actor: string | undefined,
-  traceId: string | undefined
+  traceId: string | undefined,
+  messageId?: string
 ): Promise<void> {
-  if (!(await claimStopIntent(storage, attemptId))) return;
+  if (!(await claimStopIntent(storage, attemptId, messageId))) return;
 
   let status: ManagedStopIntentStatus = "uncertain";
   try {
@@ -139,7 +158,7 @@ async function stopAttempt(
   } catch {
     status = "uncertain";
   }
-  await recordStopIntent(storage, attemptId, status);
+  await recordStopIntent(storage, attemptId, status, messageId);
 }
 
 /**
@@ -148,7 +167,9 @@ async function stopAttempt(
  * The first transaction stops admission and records the bounded reason exactly once, without
  * releasing reservations or settling anything. The run is then re-loaded so any terminal callback
  * that landed in the meantime is preserved, and each unsettled, session-bound attempt is stopped
- * once under a persisted intent. Reserved attempts without a session are left untouched.
+ * once per phase under a persisted intent: an attempt stopped while still unbound is distinct from
+ * the same attempt after a prompt is bound to it. Reserved attempts without a session are left
+ * untouched.
  */
 export async function stopManagedRun(env: Env, reason: string, traceId?: string): Promise<void> {
   const storage = requireStopStorage(env);
@@ -160,18 +181,28 @@ export async function stopManagedRun(env: Env, reason: string, traceId?: string)
     const existing = await tx.get<ManagedStopRecord>(MANAGED_STOP_REASON_KEY);
     await saveRun(tx, { ...run, admission: stopAdmission(run.admission) });
     if (existing === undefined) {
-      await tx.put({ [MANAGED_STOP_REASON_KEY]: { reason: stopReason } satisfies ManagedStopRecord });
+      await tx.put({
+        [MANAGED_STOP_REASON_KEY]: { reason: stopReason } satisfies ManagedStopRecord,
+      });
     }
   });
 
   const run = await loadRun(storage);
   if (!run) return;
 
-  const [actor, intents] = await Promise.all([rootActor(storage), loadStopIntents(storage)]);
+  const [actor, intentKeys] = await Promise.all([rootActor(storage), loadStopIntentKeys(storage)]);
   for (const [attemptId, attempt] of Object.entries(run.attempts)) {
     if (attempt.status === "settled" || attempt.sessionId === undefined) continue;
-    if (Object.hasOwn(intents, attemptId)) continue;
-    await stopAttempt(env, storage, attempt.sessionId, attemptId, actor, traceId);
+    if (intentKeys.has(stopIntentKey(attemptId, attempt.messageId))) continue;
+    await stopAttempt(
+      env,
+      storage,
+      attempt.sessionId,
+      attemptId,
+      actor,
+      traceId,
+      attempt.messageId
+    );
   }
 }
 

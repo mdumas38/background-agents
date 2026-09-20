@@ -34,7 +34,9 @@ async function requireAdmissibleRun(storage: ManagedRunStorage, claim: ManagedTa
  * or prompt allocation; the issue is registered through the shared registry; the session is created
  * and durably bound before the prompt is enqueued; and the message is bound after enqueue. A stop
  * observed after session binding stops the run and throws before enqueue, so the pump records the
- * uncertain outcome. Nothing here retries or catches.
+ * uncertain outcome. A stop that lands concurrently with enqueue is re-checked after the message is
+ * bound and stops the newly bound message before throwing, so a prompt created after the root stop
+ * cannot outlive it. Nothing here retries or catches.
  */
 export function createManagedLaunch(
   env: Env,
@@ -92,5 +94,14 @@ export function createManagedLaunch(
       traceId
     );
     await bindMessage(messageId);
+
+    const afterEnqueue = await loadRun(storage);
+    if (!afterEnqueue || afterEnqueue.id !== claim.run.id) {
+      throw new Error("Managed launch run disappeared after message bind.");
+    }
+    if (afterEnqueue.admission.stopped) {
+      await stopManagedRun(env, MANAGED_LAUNCH_STOP_REASON, traceId);
+      throw new Error("Managed run stopped after prompt enqueue.");
+    }
   };
 }
