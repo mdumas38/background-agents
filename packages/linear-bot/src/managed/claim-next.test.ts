@@ -1,0 +1,212 @@
+import { describe, expect, it } from "vitest";
+import type { ManagedLimits } from "./admission";
+import { claimNextTask, type ManagedTransactionalStorage } from "./claim-next";
+import { DEFAULT_MANAGED_WORKER_TIMEOUT_MS, type ManagedContext } from "./context-store";
+import { createRun, type ManagedRun } from "./run-state";
+import { loadRun, saveRun, type ManagedRunStorage } from "./store";
+import type { Task } from "./tree";
+
+const ROOT_SPEC = {
+  title: "Root task",
+  objective: "Deliver the root behavior.",
+  acceptance: "Root acceptance check passes.",
+};
+
+const LIMITS: ManagedLimits = {
+  maxTasks: 5,
+  maxDispatches: 5,
+  maxConcurrent: 2,
+  maxReportedCostUsd: 20,
+  maxWorkerCostUsd: 2,
+};
+
+const CAPPED_LIMITS: ManagedLimits = { ...LIMITS, maxConcurrent: 1 };
+
+/** Map-backed storage whose transactions run one at a time, mirroring DurableObjectStorage. */
+class FakeTransactionalStorage implements ManagedTransactionalStorage {
+  puts = 0;
+  private tail: Promise<unknown> = Promise.resolve();
+
+  constructor(readonly store: Map<string, unknown> = new Map()) {}
+
+  async get<T>(key: string): Promise<T | undefined> {
+    return this.store.get(key) as T | undefined;
+  }
+
+  async list<T>(options?: { prefix?: string }): Promise<Map<string, T>> {
+    const prefix = options?.prefix ?? "";
+    const result = new Map<string, T>();
+    for (const [key, value] of this.store) {
+      if (key.startsWith(prefix)) result.set(key, value as T);
+    }
+    return result;
+  }
+
+  async put(entries: Record<string, unknown>): Promise<void> {
+    this.puts += 1;
+    for (const [key, value] of Object.entries(entries)) this.store.set(key, value);
+  }
+
+  transaction<T>(callback: (tx: ManagedRunStorage) => Promise<T>): Promise<T> {
+    const run = this.tail.then(() => callback(this));
+    this.tail = run.then(
+      () => undefined,
+      () => undefined
+    );
+    return run;
+  }
+}
+
+/** Same storage plus the single shared alarm a Durable Object transaction exposes. */
+class FakeAlarmTransactionalStorage extends FakeTransactionalStorage {
+  alarm: number | null = null;
+  setAlarmCalls: number[] = [];
+
+  async getAlarm(): Promise<number | null> {
+    return this.alarm;
+  }
+
+  async setAlarm(deadlineMs: number): Promise<void> {
+    this.alarm = deadlineMs;
+    this.setAlarmCalls.push(deadlineMs);
+  }
+}
+
+const NOW = 1_700_000_000_000;
+
+function context(overrides: Partial<ManagedContext> = {}): ManagedContext {
+  return {
+    runId: "run-1",
+    organizationId: "org-1",
+    appUserId: "app-user-1",
+    rootIssue: { id: "issue-1", identifier: "DIV-146", url: "https://linear.app/issue-1" },
+    teamId: "team-1",
+    projectId: null,
+    repoOwner: "acme",
+    repoName: "backend",
+    model: "anthropic/claude-haiku-4-5",
+    actorUserId: "user-1",
+    workerTimeoutMs: DEFAULT_MANAGED_WORKER_TIMEOUT_MS,
+    ...overrides,
+  };
+}
+
+function childTask(id: string): Task {
+  return {
+    id,
+    parentId: "root",
+    title: `Task ${id}`,
+    objective: "Deliver the child behavior.",
+    acceptance: "Child acceptance check passes.",
+    dependsOn: [],
+    children: [],
+    generation: 0,
+    phase: "work",
+    status: "ready",
+  };
+}
+
+/** Root with two ready siblings, so a second claim has a runnable task but no concurrency room. */
+function twoRunnableRun(): ManagedRun {
+  const base = createRun("run-1", ROOT_SPEC, CAPPED_LIMITS);
+  return {
+    id: base.id,
+    admission: base.admission,
+    attempts: {},
+    tree: {
+      tasks: {
+        root: { ...base.tree.tasks.root, children: ["root/1/a", "root/1/b"], status: "waiting" },
+        "root/1/a": childTask("root/1/a"),
+        "root/1/b": childTask("root/1/b"),
+      },
+    },
+  };
+}
+
+describe("claimNextTask", () => {
+  it("claims exactly one runnable task under concurrent calls and persists the reservation", async () => {
+    const storage = new FakeTransactionalStorage();
+    await saveRun(storage, createRun("run-1", ROOT_SPEC, LIMITS));
+
+    const claims = await Promise.all([
+      claimNextTask(storage, 1_700_000_000_000),
+      claimNextTask(storage, 1_700_000_000_000),
+    ]);
+    const won = claims.filter((claim) => claim !== undefined);
+    expect(won).toHaveLength(1);
+    expect(won[0]!.taskId).toBe("root");
+
+    const persisted = await loadRun(storage);
+    expect(persisted!.attempts[won[0]!.attemptId]).toEqual({
+      taskId: "root",
+      status: "reserved",
+      claimedAtMs: 1_700_000_000_000,
+    });
+    expect(persisted!.admission.reservations[won[0]!.attemptId]).toBe(LIMITS.maxWorkerCostUsd);
+    expect(persisted!.admission.dispatched).toBe(1);
+    expect(persisted!.tree.tasks.root.status).toBe("running");
+  });
+
+  it("returns undefined without writes when a reconstructed caller hits the concurrency cap", async () => {
+    const storage = new FakeTransactionalStorage();
+    await saveRun(storage, twoRunnableRun());
+
+    const first = await claimNextTask(storage);
+    expect(first?.taskId).toBe("root/1/a");
+
+    const reader = new FakeTransactionalStorage(storage.store);
+    const putsBefore = reader.puts;
+    const second = await claimNextTask(reader);
+
+    expect(second).toBeUndefined();
+    expect(reader.puts).toBe(putsBefore);
+
+    const persisted = await loadRun(reader);
+    expect(Object.keys(persisted!.attempts)).toEqual([first!.attemptId]);
+    expect(persisted!.tree.tasks["root/1/a"].status).toBe("running");
+    expect(persisted!.tree.tasks["root/1/b"].status).toBe("ready");
+  });
+
+  it("persists the durable claim and earliest worker deadline in the same transaction", async () => {
+    const storage = new FakeAlarmTransactionalStorage();
+    await saveRun(storage, createRun("run-1", ROOT_SPEC, LIMITS));
+    await storage.put({ "managed:context": context({ workerTimeoutMs: 30_000 }) });
+
+    const claim = await claimNextTask(storage, NOW);
+    expect(claim?.taskId).toBe("root");
+
+    const persisted = await loadRun(storage);
+    expect(persisted!.attempts[claim!.attemptId].claimedAtMs).toBe(NOW);
+    expect(persisted!.tree.tasks.root.status).toBe("running");
+    expect(storage.setAlarmCalls).toEqual([NOW + 30_000]);
+    expect(storage.alarm).toBe(NOW + 30_000);
+  });
+
+  it("retains an earlier completion alarm instead of pushing it later", async () => {
+    const storage = new FakeAlarmTransactionalStorage();
+    storage.alarm = NOW - 5_000;
+    await saveRun(storage, createRun("run-1", ROOT_SPEC, LIMITS));
+    await storage.put({ "managed:context": context({ workerTimeoutMs: 30_000 }) });
+
+    const claim = await claimNextTask(storage, NOW);
+    expect(claim).toBeDefined();
+    expect(storage.setAlarmCalls).toEqual([NOW - 5_000]);
+    expect(storage.alarm).toBe(NOW - 5_000);
+  });
+
+  it("refuses a context-enrolled claim when the transaction cannot arm an alarm", async () => {
+    const storage = new FakeTransactionalStorage();
+    await saveRun(storage, createRun("run-1", ROOT_SPEC, LIMITS));
+    await storage.put({ "managed:context": context() });
+
+    await expect(claimNextTask(storage, NOW)).rejects.toThrow(/alarm-capable/);
+  });
+
+  it("rejects a context enrolled for a different run", async () => {
+    const storage = new FakeAlarmTransactionalStorage();
+    await saveRun(storage, createRun("run-1", ROOT_SPEC, LIMITS));
+    await storage.put({ "managed:context": context({ runId: "run-2" }) });
+
+    await expect(claimNextTask(storage, NOW)).rejects.toThrow(/belongs to run run-2/);
+  });
+});

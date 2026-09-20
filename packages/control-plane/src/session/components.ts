@@ -474,6 +474,10 @@ export function createSessionRuntime(platform: SessionPlatform, env: Env): Sessi
     messageQueue,
     stopExecution: () => executionStop.stop(),
     parseArtifactMetadata: (artifact) => parseArtifactMetadata(artifact, log),
+    hasInitializedSession: () => sessionCoreRepository.getSession() !== null,
+    recordPreInitStopFence: () => {
+      sessionCoreRepository.recordPreInitStopFence(durableObjectId, Date.now());
+    },
   });
   const autofixHandler = new AutofixHandler(messageQueue);
   const budgetService = new SessionBudgetService(

@@ -3,12 +3,13 @@ import type { Logger } from "../../../logger";
 import { SessionInitHandler } from "./session-init.handler";
 import type { ParticipantRepository } from "../../participant-repository";
 import type { SandboxRepository } from "../../sandbox-repository";
-import type { SessionCoreRepository } from "../../session-core-repository";
+import type { SessionCoreRepository, PreInitStopFenceRow } from "../../session-core-repository";
 import { getValidModelOrDefault } from "@open-inspect/shared/models";
 
 function createHandler() {
   const repository = {
     getSession: vi.fn(() => null),
+    getPreInitStopFence: vi.fn<() => PreInitStopFenceRow | null>(() => null),
     upsertSession: vi.fn(),
     replaceSessionRepositories: vi.fn(),
     transaction: vi.fn((callback: () => void) => callback()),
@@ -83,6 +84,73 @@ describe("SessionInitHandler", () => {
     expect(sandboxRepository.createSandbox).not.toHaveBeenCalled();
     expect(repository.createParticipant).not.toHaveBeenCalled();
     expect(encryptScmToken).not.toHaveBeenCalled();
+    expect(scheduleWarmSandbox).not.toHaveBeenCalled();
+  });
+
+  it("refuses initialization when a pre-init stop fence exists", async () => {
+    const { handler, repository, sandboxRepository, encryptScmToken, scheduleWarmSandbox } =
+      createHandler();
+    repository.getPreInitStopFence.mockReturnValue({
+      session_id: "session-do-id",
+      recorded_at: 1000,
+    });
+
+    const response = await handler.init(
+      new Request("http://internal/internal/init", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          sessionName: "session-public-id",
+          repoOwner: "acme",
+          repoName: "repo",
+          repoId: 123,
+          userId: "user-1",
+        }),
+      })
+    );
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: "Session initialization was stopped",
+      code: "SESSION_STOPPED",
+    });
+    expect(repository.getPreInitStopFence).toHaveBeenCalledWith("session-do-id");
+    expect(repository.upsertSession).not.toHaveBeenCalled();
+    expect(repository.replaceSessionRepositories).not.toHaveBeenCalled();
+    expect(sandboxRepository.createSandbox).not.toHaveBeenCalled();
+    expect(repository.createParticipant).not.toHaveBeenCalled();
+    expect(encryptScmToken).not.toHaveBeenCalled();
+    expect(scheduleWarmSandbox).not.toHaveBeenCalled();
+  });
+
+  it("stays refused and creates nothing across repeated fenced inits", async () => {
+    const { handler, repository, sandboxRepository, scheduleWarmSandbox } = createHandler();
+    repository.getPreInitStopFence.mockReturnValue({
+      session_id: "session-do-id",
+      recorded_at: 1000,
+    });
+
+    const request = () =>
+      new Request("http://internal/internal/init", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          sessionName: "session-public-id",
+          repoOwner: null,
+          repoName: null,
+          userId: "user-1",
+        }),
+      });
+
+    const first = await handler.init(request());
+    const second = await handler.init(request());
+
+    expect(first.status).toBe(409);
+    expect(second.status).toBe(409);
+    expect(repository.getPreInitStopFence).toHaveBeenCalledTimes(2);
+    expect(repository.upsertSession).not.toHaveBeenCalled();
+    expect(sandboxRepository.createSandbox).not.toHaveBeenCalled();
+    expect(repository.createParticipant).not.toHaveBeenCalled();
     expect(scheduleWarmSandbox).not.toHaveBeenCalled();
   });
 

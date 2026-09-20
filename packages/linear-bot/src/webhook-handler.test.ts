@@ -20,6 +20,8 @@ import {
   makeLinearBotEnv,
 } from "./test-helpers";
 import { lookupIssueSession, storeIssueSession } from "./kv-store";
+import * as enrollment from "./managed/enrollment";
+import * as rootCommands from "./managed/root-commands";
 
 describe("escapeHtml", () => {
   it("escapes & to &amp;", () => {
@@ -1330,6 +1332,80 @@ describe("handleAgentSessionEvent environment targets", () => {
       String(input).endsWith("/prompt")
     );
     expect(promptCall).toBeUndefined();
+  });
+
+  it("routes an explicit /manage instruction to managed enrollment with the actual actor and resolved target", async () => {
+    const startSpy = vi
+      .spyOn(enrollment, "startManagedWork")
+      .mockResolvedValue("managed run run-1; active");
+    const { kv } = createFakeKV({
+      "oauth:client-credentials:org-1": validToken(),
+      "config:project-repos": JSON.stringify({ "project-1": { environmentId: "env_abc" } }),
+    });
+    const env = makeLinearBotEnv(kv);
+    const fetchMock = stubControlPlane(env);
+    const webhook = makeWebhook();
+    webhook.agentSession.comment = {
+      body: "/manage please build the feature",
+      userId: "human-user-1",
+    };
+
+    await handleAgentSessionEvent(webhook, env, "trace-managed-enroll");
+
+    expect(startSpy).toHaveBeenCalledTimes(1);
+    const [enrolledEnv, input, traceId] = startSpy.mock.calls[0]!;
+    expect(enrolledEnv).toBe(env);
+    expect(traceId).toBe("trace-managed-enroll");
+    expect(input.actorUserId).toBe("human-user-1");
+    expect(input.instruction).toBe("/manage please build the feature");
+    expect(input.model).toBe("anthropic/claude-haiku-4-5");
+    expect(input.target).toMatchObject({ kind: "environment" });
+    expect(createSessionBody(fetchMock)).toBeNull();
+  });
+
+  it("does not activate managed enrollment when /manage only appears in the issue description", async () => {
+    const startSpy = vi
+      .spyOn(enrollment, "startManagedWork")
+      .mockResolvedValue("managed run run-1; active");
+    const { kv } = createFakeKV({
+      "oauth:client-credentials:org-1": validToken(),
+      "config:project-repos": JSON.stringify({ "project-1": { environmentId: "env_abc" } }),
+    });
+    const env = makeLinearBotEnv(kv);
+    const fetchMock = stubControlPlane(env);
+    const webhook = makeWebhook();
+    webhook.agentSession.issue!.description = "/manage build the feature";
+
+    await handleAgentSessionEvent(webhook, env, "trace-description-only");
+
+    expect(startSpy).not.toHaveBeenCalled();
+    expect(createSessionBody(fetchMock)).not.toBeNull();
+  });
+
+  it("intercepts an existing managed root before generic stop reaches the control plane", async () => {
+    const statusSpy = vi
+      .spyOn(rootCommands, "handleManagedRootCommand")
+      .mockResolvedValue("Managed root ENG-42: status text.");
+    const { kv } = createFakeKV({
+      "oauth:client-credentials:org-1": validToken(),
+      "issue:issue-1": JSON.stringify({
+        sessionId: "session-xyz",
+        issueId: "issue-1",
+        issueIdentifier: "ENG-42",
+        model: "anthropic/claude-haiku-4-5",
+        createdAt: Date.now(),
+      }),
+    });
+    const env = makeLinearBotEnv(kv);
+    const fetchMock = stubControlPlane(env);
+    const webhook = makeWebhook();
+    webhook.action = "stopped";
+    webhook.agentSession.comment = { body: "stopped", userId: "human-user-1" };
+
+    await handleAgentSessionEvent(webhook, env, "trace-managed-intercept");
+
+    expect(statusSpy).toHaveBeenCalledWith(webhook, env, "trace-managed-intercept");
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 

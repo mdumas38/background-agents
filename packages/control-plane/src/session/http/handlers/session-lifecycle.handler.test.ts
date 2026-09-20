@@ -73,9 +73,17 @@ function createSandbox(overrides: Partial<SandboxRow> = {}): SandboxRow {
 
 function createHandler() {
   const getSession = vi.fn<() => SessionRow | null>();
+  const getProcessingMessage = vi.fn<() => { id: string } | null>(() => null);
+  const getNextPendingMessage = vi.fn<() => { id: string } | null>(() => null);
+  const getMessageAwaitingStopConfirmation = vi.fn<() => { id: string; deadline: number } | null>(
+    () => null
+  );
   const repository = {
     getPendingOrProcessingCount: vi.fn(() => 0),
     getMessageCount: vi.fn(() => 0),
+    getProcessingMessage,
+    getNextPendingMessage,
+    getMessageAwaitingStopConfirmation,
     getSession,
   };
   const getSandbox = vi.fn<() => SandboxRow | null>();
@@ -127,6 +135,9 @@ function createHandler() {
     repository,
     sandboxRepository,
     getSession,
+    getProcessingMessage,
+    getNextPendingMessage,
+    getMessageAwaitingStopConfirmation,
     getSandbox,
     transition,
     repairIndexStatus,
@@ -167,6 +178,8 @@ describe("SessionLifecycleHandler", () => {
       branchName: "feature/test",
       baseSha: "base-sha",
       currentSha: "head-sha",
+      totalCost: 0,
+      accountingReady: true,
       harness: "opencode",
       agentSessionId: "oc-1",
       status: "active",
@@ -182,6 +195,67 @@ describe("SessionLifecycleHandler", () => {
         lastHeartbeat: 999,
       },
     });
+  });
+
+  it("projects the exact recorded fractional total cost", async () => {
+    const { handler, getSession, getSandbox } = createHandler();
+    getSession.mockReturnValue(createSession({ total_cost: 1.234567 }));
+    getSandbox.mockReturnValue(createSandbox());
+
+    const response = await handler.getState();
+
+    const body = (await response.json()) as { totalCost: number };
+    expect(body.totalCost).toBe(1.234567);
+  });
+
+  it("projects a recorded total cost of zero", async () => {
+    const { handler, getSession } = createHandler();
+    getSession.mockReturnValue(createSession({ total_cost: 0 }));
+
+    const response = await handler.getState();
+
+    const body = (await response.json()) as { totalCost: number };
+    expect(body.totalCost).toBe(0);
+    expect(Object.keys(body)).toContain("totalCost");
+  });
+
+  it("reports accounting not ready while a turn is processing", async () => {
+    const { handler, getSession, getProcessingMessage } = createHandler();
+    getSession.mockReturnValue(createSession({ status: "active" }));
+    getProcessingMessage.mockReturnValue({ id: "message-1" });
+
+    const body = (await handler.getState().json()) as { accountingReady: boolean };
+    expect(body.accountingReady).toBe(false);
+  });
+
+  it("reports accounting not ready while a prompt is pending", async () => {
+    const { handler, getSession, getNextPendingMessage } = createHandler();
+    getSession.mockReturnValue(createSession({ status: "active" }));
+    getNextPendingMessage.mockReturnValue({ id: "message-2" });
+
+    const body = (await handler.getState().json()) as { accountingReady: boolean };
+    expect(body.accountingReady).toBe(false);
+  });
+
+  it("reports accounting not ready while a stop awaits sandbox confirmation", async () => {
+    const { handler, getSession, getMessageAwaitingStopConfirmation } = createHandler();
+    getSession.mockReturnValue(createSession({ status: "active" }));
+    getMessageAwaitingStopConfirmation.mockReturnValue({ id: "message-3", deadline: 1 });
+
+    const body = (await handler.getState().json()) as { accountingReady: boolean };
+    expect(body.accountingReady).toBe(false);
+  });
+
+  it("reports accounting ready and projects cost once no work is outstanding", async () => {
+    const { handler, getSession } = createHandler();
+    getSession.mockReturnValue(createSession({ status: "completed", total_cost: 2.5 }));
+
+    const body = (await handler.getState().json()) as {
+      accountingReady: boolean;
+      totalCost: number;
+    };
+    expect(body.accountingReady).toBe(true);
+    expect(body.totalCost).toBe(2.5);
   });
 
   it("returns 404 when updating title for missing session", async () => {

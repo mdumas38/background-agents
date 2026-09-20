@@ -123,6 +123,17 @@ describe("initializeSession", () => {
     expect(stubFetchMock).not.toHaveBeenCalled();
   });
 
+  it("does not touch an existing session when the D1 unique insert rejects a duplicate", async () => {
+    createMock.mockRejectedValue(new Error("UNIQUE constraint failed: sessions.id"));
+
+    await expect(initializeSession(createEnv(), baseInput, ctx as never)).rejects.toThrow(
+      "UNIQUE constraint failed: sessions.id"
+    );
+    expect(createMock).toHaveBeenCalledOnce();
+    expect(stubFetchMock).not.toHaveBeenCalled();
+    expect(updateStatusMock).not.toHaveBeenCalled();
+  });
+
   it.each([
     ["repoId without repository context", { repoOwner: null, repoName: null, repoId: 42 }],
     ["repository context without repoId", { repoOwner: "acme", repoName: "web-app", repoId: null }],
@@ -194,6 +205,23 @@ describe("initializeSession", () => {
     stubFetchMock.mockResolvedValue(new Response("Internal error", { status: 500 }));
 
     await expect(initializeSession(createEnv(), baseInput, ctx as never)).rejects.toThrow();
+    expect(updateStatusMock).toHaveBeenCalledWith("session-123", "failed");
+  });
+
+  it("does not leave a runnable D1 session when init observes a pre-init stop fence", async () => {
+    stubFetchMock.mockResolvedValue(
+      Response.json(
+        { error: "Session initialization was stopped", code: "SESSION_STOPPED" },
+        { status: 409 }
+      )
+    );
+
+    await expect(initializeSession(createEnv(), baseInput, ctx as never)).rejects.toThrow(
+      "Failed to initialize session DO: 409"
+    );
+
+    expect(createMock).toHaveBeenCalledOnce();
+    expect(stubFetchMock).toHaveBeenCalledOnce();
     expect(updateStatusMock).toHaveBeenCalledWith("session-123", "failed");
   });
 

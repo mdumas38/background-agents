@@ -43,8 +43,11 @@ export async function enqueueCompletion(
 ): Promise<Response> {
   if (!env.LINEAR_DISPATCH)
     return Response.json({ error: "Completion storage unavailable" }, { status: 503 });
+  // Managed callbacks for any descendant must land on the root coordinator, which owns the
+  // run ledger; legacy callbacks keep routing on their own issue.
+  const routeIssueId = payload.context.managedWork?.rootIssueId ?? payload.context.issueId;
   const id = env.LINEAR_DISPATCH.idFromName(
-    JSON.stringify([payload.context.organizationId, payload.context.issueId])
+    JSON.stringify([payload.context.organizationId, routeIssueId])
   );
   return env.LINEAR_DISPATCH.get(id).fetch("https://dispatch.internal/complete", {
     method: "POST",
@@ -72,9 +75,13 @@ export class CompletionDelivery {
           status: "pending",
           attempts: 0,
         } satisfies RecordEntry);
-      // Persist the alarm in the same transaction as acceptance, including after eviction.
-      if (!existing || existing.status === "pending")
-        await storage.setAlarm(Date.now() + COMPLETION_RETRY_MS);
+      // Persist the alarm in the same transaction as acceptance, including after eviction. Never
+      // push an existing wakeup later: a managed worker deadline may already be armed.
+      if (!existing || existing.status === "pending") {
+        const retryAt = Date.now() + COMPLETION_RETRY_MS;
+        const alarm = await storage.getAlarm();
+        await storage.setAlarm(alarm === null ? retryAt : Math.min(alarm, retryAt));
+      }
       return existing?.status ?? "pending";
     });
     if (result === "conflict")
@@ -93,8 +100,13 @@ export class CompletionDelivery {
     const records = await this.state.storage.list<RecordEntry>({ prefix: "completion:" });
     for (const [key, record] of records) {
       if (record.status !== "pending") continue;
-      // Arm before work; a killed isolate or uncertain write resumes with the SAME ID/body.
-      await this.state.storage.setAlarm(Date.now() + COMPLETION_RETRY_MS);
+      // Arm before work; a killed isolate or uncertain write resumes with the SAME ID/body. Keep
+      // an earlier managed deadline armed instead of postponing it with each retry.
+      await this.state.storage.transaction(async (storage) => {
+        const retryAt = Date.now() + COMPLETION_RETRY_MS;
+        const alarm = await storage.getAlarm();
+        await storage.setAlarm(alarm === null ? retryAt : Math.min(alarm, retryAt));
+      });
       record.attempts++;
       await this.state.storage.put(key, record);
       try {
@@ -137,23 +149,25 @@ export async function deliverRecordedCompletion(
 ): Promise<void> {
   const content = record.content!;
   const context = record.payload.context;
-  const client =
-    content.kind === "activity"
-      ? await getLinearClient(env, context.organizationId!, context.appUserId!)
-      : env.LINEAR_API_KEY
-        ? {
-            accessToken: env.LINEAR_API_KEY,
-            organizationId: "",
-            renewAccessToken: async () => env.LINEAR_API_KEY!,
-          }
-        : null;
+  // Managed callbacks always authenticate through the installed app, including comment
+  // fallback; legacy comment delivery keeps the API-key path.
+  const useOAuth = content.kind === "activity" || Boolean(context.managedWork);
+  const client = useOAuth
+    ? await getLinearClient(env, context.organizationId!, context.appUserId!)
+    : env.LINEAR_API_KEY
+      ? {
+          accessToken: env.LINEAR_API_KEY,
+          organizationId: "",
+          renewAccessToken: async () => env.LINEAR_API_KEY!,
+        }
+      : null;
   if (!client) throw new Error("Completion authentication unavailable");
   // Comment API keys use the direct header, unlike OAuth clients.
   const query = async (
     query: string,
     variables: Record<string, unknown>
   ): Promise<Record<string, unknown>> => {
-    if (content.kind === "activity") return linearGraphQL(client, query, variables);
+    if (useOAuth) return linearGraphQL(client, query, variables);
     const response = await fetch("https://api.linear.app/graphql", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: env.LINEAR_API_KEY! },

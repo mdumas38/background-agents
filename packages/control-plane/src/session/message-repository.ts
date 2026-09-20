@@ -341,6 +341,28 @@ export class MessageRepository {
     return rows[0] ?? null;
   }
 
+  /**
+   * Whether any Linear message on this session carries a managed-work
+   * callback identity. Completed messages still count: the session was used
+   * for managed work, so ordinary child delegation must stay inside the root
+   * run ledger. Malformed or legacy contexts are ignored.
+   */
+  hasManagedWorkMessages(): boolean {
+    const result = this.sql.exec(
+      `SELECT callback_context FROM messages WHERE source = 'linear' AND callback_context IS NOT NULL`
+    );
+    const rows = result.toArray() as Array<{ callback_context: string | null }>;
+    return rows.some((row) => {
+      if (typeof row.callback_context !== "string") return false;
+      try {
+        const context: unknown = JSON.parse(row.callback_context);
+        return isRecord(context) && context.source === "linear" && isRecord(context.managedWork);
+      } catch {
+        return false;
+      }
+    });
+  }
+
   createMessage(data: CreateMessageData): void {
     this.sql.exec(
       `INSERT INTO messages (

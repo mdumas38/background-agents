@@ -627,4 +627,48 @@ describe("applyMigrations", () => {
       db.close();
     }
   });
+
+  it("creates the pre-initialization stop fence for fresh DOs", () => {
+    expect(SCHEMA_SQL).toContain("CREATE TABLE IF NOT EXISTS session_preinit_stop_fence");
+    expect(SCHEMA_SQL).toContain("session_id TEXT PRIMARY KEY");
+    expect(SCHEMA_SQL).toContain("recorded_at INTEGER NOT NULL");
+
+    const db = new DatabaseSync(":memory:");
+    const sql = createDatabaseSql(db);
+    try {
+      initSchema(sql);
+      expect(() => initSchema(sql)).not.toThrow();
+      expect(db.prepare("PRAGMA table_info(session_preinit_stop_fence)").all()).toEqual([
+        expect.objectContaining({ name: "session_id", type: "TEXT", pk: 1 }),
+        expect.objectContaining({ name: "recorded_at", type: "INTEGER", notnull: 1 }),
+      ]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("migrates existing DO storage to the pre-initialization stop fence table", () => {
+    const migration = MIGRATIONS.find((entry) => entry.id === 53);
+    expect(migration).toBeDefined();
+    const run = migration?.run;
+    expect(typeof run).toBe("string");
+    if (typeof run !== "string") {
+      throw new Error("Expected migration 53 to be a string");
+    }
+
+    const db = new DatabaseSync(":memory:");
+    const sql = createDatabaseSql(db);
+    try {
+      db.exec("CREATE TABLE session (id TEXT PRIMARY KEY)");
+      sql.exec(run);
+      // Idempotent re-run must not throw and must not drop the table.
+      expect(() => sql.exec(run)).not.toThrow();
+      expect(db.prepare("PRAGMA table_info(session_preinit_stop_fence)").all()).toEqual([
+        expect.objectContaining({ name: "session_id", type: "TEXT", pk: 1 }),
+        expect.objectContaining({ name: "recorded_at", type: "INTEGER", notnull: 1 }),
+      ]);
+    } finally {
+      db.close();
+    }
+  });
 });
