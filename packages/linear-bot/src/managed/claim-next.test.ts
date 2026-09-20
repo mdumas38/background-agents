@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ManagedLimits } from "./admission";
 import { claimNextTask, type ManagedTransactionalStorage } from "./claim-next";
+import { DEFAULT_MANAGED_WORKER_TIMEOUT_MS, type ManagedContext } from "./context-store";
 import { createRun, type ManagedRun } from "./run-state";
 import { loadRun, saveRun, type ManagedRunStorage } from "./store";
 import type { Task } from "./tree";
@@ -54,6 +55,40 @@ class FakeTransactionalStorage implements ManagedTransactionalStorage {
     );
     return run;
   }
+}
+
+/** Same storage plus the single shared alarm a Durable Object transaction exposes. */
+class FakeAlarmTransactionalStorage extends FakeTransactionalStorage {
+  alarm: number | null = null;
+  setAlarmCalls: number[] = [];
+
+  async getAlarm(): Promise<number | null> {
+    return this.alarm;
+  }
+
+  async setAlarm(deadlineMs: number): Promise<void> {
+    this.alarm = deadlineMs;
+    this.setAlarmCalls.push(deadlineMs);
+  }
+}
+
+const NOW = 1_700_000_000_000;
+
+function context(overrides: Partial<ManagedContext> = {}): ManagedContext {
+  return {
+    runId: "run-1",
+    organizationId: "org-1",
+    appUserId: "app-user-1",
+    rootIssue: { id: "issue-1", identifier: "DIV-146", url: "https://linear.app/issue-1" },
+    teamId: "team-1",
+    projectId: null,
+    repoOwner: "acme",
+    repoName: "backend",
+    model: "anthropic/claude-haiku-4-5",
+    actorUserId: "user-1",
+    workerTimeoutMs: DEFAULT_MANAGED_WORKER_TIMEOUT_MS,
+    ...overrides,
+  };
 }
 
 function childTask(id: string): Task {
@@ -130,5 +165,48 @@ describe("claimNextTask", () => {
     expect(Object.keys(persisted!.attempts)).toEqual([first!.attemptId]);
     expect(persisted!.tree.tasks["root/1/a"].status).toBe("running");
     expect(persisted!.tree.tasks["root/1/b"].status).toBe("ready");
+  });
+
+  it("persists the durable claim and earliest worker deadline in the same transaction", async () => {
+    const storage = new FakeAlarmTransactionalStorage();
+    await saveRun(storage, createRun("run-1", ROOT_SPEC, LIMITS));
+    await storage.put({ "managed:context": context({ workerTimeoutMs: 30_000 }) });
+
+    const claim = await claimNextTask(storage, NOW);
+    expect(claim?.taskId).toBe("root");
+
+    const persisted = await loadRun(storage);
+    expect(persisted!.attempts[claim!.attemptId].claimedAtMs).toBe(NOW);
+    expect(persisted!.tree.tasks.root.status).toBe("running");
+    expect(storage.setAlarmCalls).toEqual([NOW + 30_000]);
+    expect(storage.alarm).toBe(NOW + 30_000);
+  });
+
+  it("retains an earlier completion alarm instead of pushing it later", async () => {
+    const storage = new FakeAlarmTransactionalStorage();
+    storage.alarm = NOW - 5_000;
+    await saveRun(storage, createRun("run-1", ROOT_SPEC, LIMITS));
+    await storage.put({ "managed:context": context({ workerTimeoutMs: 30_000 }) });
+
+    const claim = await claimNextTask(storage, NOW);
+    expect(claim).toBeDefined();
+    expect(storage.setAlarmCalls).toEqual([NOW - 5_000]);
+    expect(storage.alarm).toBe(NOW - 5_000);
+  });
+
+  it("refuses a context-enrolled claim when the transaction cannot arm an alarm", async () => {
+    const storage = new FakeTransactionalStorage();
+    await saveRun(storage, createRun("run-1", ROOT_SPEC, LIMITS));
+    await storage.put({ "managed:context": context() });
+
+    await expect(claimNextTask(storage, NOW)).rejects.toThrow(/alarm-capable/);
+  });
+
+  it("rejects a context enrolled for a different run", async () => {
+    const storage = new FakeAlarmTransactionalStorage();
+    await saveRun(storage, createRun("run-1", ROOT_SPEC, LIMITS));
+    await storage.put({ "managed:context": context({ runId: "run-2" }) });
+
+    await expect(claimNextTask(storage, NOW)).rejects.toThrow(/belongs to run run-2/);
   });
 });
