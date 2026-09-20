@@ -723,6 +723,153 @@ describe("handleCreateSession D1 ordering", () => {
     expect(getIdentitiesForUser).not.toHaveBeenCalled();
   });
 
+  describe("managedSessionId", () => {
+    const MANAGED_SESSION_ID = "3f2a1b2c-4d5e-4f70-8192-a3b4c5d6e7f8";
+
+    const managedContextFields = {
+      request_id: "test-request",
+      trace_id: "test-trace",
+      authorization: {
+        userId: "user-1",
+        suspendedAt: null,
+        role: { id: "role-1", key: "member", name: "Member" },
+        permissions: ["sessions.create", "repositories.use", "environments.use"],
+      },
+      metrics: {
+        sqlQueries: [],
+        spans: {},
+        time: async <T>(_name: string, fn: () => Promise<T>) => fn(),
+        summarize: () => ({}),
+      },
+    };
+
+    async function createSessionWithPrincipal(
+      initFetch: (request: Request) => Promise<Response>,
+      principal: unknown,
+      body: Record<string, unknown>
+    ): Promise<Response> {
+      const testEnv: Record<string, unknown> = createEnv(initFetch);
+      return handleCreateSession(
+        new Request("https://test.local/sessions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            repoOwner: "acme",
+            repoName: "widgets",
+            title: "Managed",
+            ...body,
+          }),
+        }),
+        testEnv as never,
+        {},
+        {
+          ...managedContextFields,
+          principal,
+          db: testEnv["DB"] as never,
+          executionCtx: TEST_BACKGROUND_TASK_CONTEXT,
+        } as never
+      );
+    }
+
+    const linearBotPrincipal = {
+      kind: "service",
+      service: "linear-bot",
+      actor: {
+        provider: "linear",
+        providerUserId: "linear-user-1",
+        canonicalUserId: "user-1",
+        participantUserId: "linear:linear-user-1",
+      },
+    };
+
+    it("threads a verified linear actor's preallocated UUID into D1, DO init, and the response", async () => {
+      const create = vi.fn().mockResolvedValue(undefined);
+      vi.mocked(SessionIndexStore).mockImplementation(function () {
+        return { create } as never;
+      });
+      const initFetch = vi.fn<(request: Request) => Promise<Response>>(async () =>
+        Response.json({ status: "created" })
+      );
+
+      const response = await createSessionWithPrincipal(initFetch, linearBotPrincipal, {
+        managedSessionId: MANAGED_SESSION_ID,
+      });
+
+      expect(response.status).toBe(201);
+      await expect(response.json()).resolves.toEqual({
+        sessionId: MANAGED_SESSION_ID,
+        status: "created",
+      });
+      expect(create).toHaveBeenCalledWith(expect.objectContaining({ id: MANAGED_SESSION_ID }));
+      const initBody = (await (initFetch.mock.calls[0][0] as Request).json()) as Record<
+        string,
+        unknown
+      >;
+      expect(initBody.sessionName).toBe(MANAGED_SESSION_ID);
+    });
+
+    it("still generates an id when a verified linear actor omits managedSessionId", async () => {
+      const create = vi.fn().mockResolvedValue(undefined);
+      vi.mocked(SessionIndexStore).mockImplementation(function () {
+        return { create } as never;
+      });
+      const initFetch = vi.fn<(request: Request) => Promise<Response>>(async () =>
+        Response.json({ status: "created" })
+      );
+
+      const response = await createSessionWithPrincipal(initFetch, linearBotPrincipal, {});
+
+      expect(response.status).toBe(201);
+      const generated = create.mock.calls[0][0].id as string;
+      expect(generated).toMatch(/^[0-9a-f]{32}$/);
+      expect(generated).not.toBe(MANAGED_SESSION_ID);
+      await expect(response.json()).resolves.toEqual({ sessionId: generated, status: "created" });
+      const initBody = (await (initFetch.mock.calls[0][0] as Request).json()) as Record<
+        string,
+        unknown
+      >;
+      expect(initBody.sessionName).toBe(generated);
+    });
+
+    it.each([
+      {
+        label: "human",
+        principal: { kind: "user", userId: "user-1" },
+      },
+      {
+        label: "slack-bot",
+        principal: {
+          kind: "service",
+          service: "slack-bot",
+          actor: {
+            provider: "slack",
+            providerUserId: "U0123",
+            canonicalUserId: "user-1",
+            participantUserId: "slack:U0123",
+          },
+        },
+      },
+      {
+        label: "actorless linear-bot",
+        principal: { kind: "service", service: "linear-bot", actor: null },
+      },
+    ])("rejects a supplied UUID from $label before D1 create or DO init", async ({ principal }) => {
+      const create = vi.fn().mockResolvedValue(undefined);
+      vi.mocked(SessionIndexStore).mockImplementation(function () {
+        return { create } as never;
+      });
+      const initFetch = vi.fn(async () => Response.json({ status: "created" }));
+
+      const response = await createSessionWithPrincipal(initFetch, principal, {
+        managedSessionId: MANAGED_SESSION_ID,
+      });
+
+      expect(response.status).toBe(403);
+      expect(create).not.toHaveBeenCalled();
+      expect(initFetch).not.toHaveBeenCalled();
+    });
+  });
+
   describe("requested session cost limit", () => {
     async function createAndCaptureInitSettings(
       requestBody: Record<string, unknown>,
