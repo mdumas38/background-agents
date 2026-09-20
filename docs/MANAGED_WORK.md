@@ -137,8 +137,33 @@ retry or reconciliation API yet. An operator must establish the real remote outc
 durable records or starting replacement work. Do not "fix" unknown work by deleting the ledger or
 clearing a reservation.
 
+## Session identity and creation recovery
+
+Managed creation no longer depends on a surviving HTTP response to know which session it owns:
+
+- The launch driver generates the session UUID and durably binds it **before** calling create, so
+  the identity exists locally ahead of any remote IO.
+- The control plane accepts `managedSessionId` only from a verified `linear-bot` principal carrying
+  a verified Linear actor. It uses that exact UUID; every other caller is rejected if it supplies
+  the field.
+- A unique `sessions.id` insert in D1 refuses a duplicate **before** any session init, so a repeated
+  managed id fails closed rather than initializing an existing session.
+- The adapter verifies that the create response carries the requested id.
+
+Because the id is known up front, a lost response or a terminated launch driver no longer loses the
+session identity, and stop/deadline handling can address the known id. This is **not** automatic
+recovery:
+
+- There is no automatic create or prompt replay, and reservations are not refunded.
+- A failure before provider allocation can leave the UUID bound with no remote session behind it. A
+  stop that returns 404 in that state is an uncertain outcome; it requires the manual reconciliation
+  above rather than an automatic retry.
+
 ## Rollout and limitations
 
+- Deploy the updated `shared` and `control-plane` **before** the updated `linear-bot`. The linear
+  bot sends `managedSessionId`, which older control planes reject, so the control plane must accept
+  the field first; no deployment is performed by this change.
 - Rollout requires matching `shared`, `control-plane`, `linear-bot`, and `sandbox-runtime` code.
   There is no new Durable Object binding or D1 migration.
 - The code in this change does **not** claim to be deployed.
