@@ -9,8 +9,9 @@ import {
   stopManagedRun,
   type ManagedStopIntent,
   type ManagedStopStorage,
+  type ManagedStopTransaction,
 } from "./stop";
-import { loadRun, saveRun, type ManagedRunStorage } from "./store";
+import { loadRun, saveRun } from "./store";
 import type { Env } from "../types";
 import { createFakeKV, makeLinearBotEnv } from "../test-helpers";
 
@@ -51,7 +52,10 @@ function context(overrides: Partial<ManagedContext> = {}): ManagedContext {
 class FakeStopStorage implements ManagedStopStorage {
   alarm: number | null = null;
   setAlarmCalls: number[] = [];
+  /** Runs when the alarm is read outside a transaction, to model a concurrent completion accept. */
+  onUnserializedAlarmRead?: () => Promise<void>;
   private tail: Promise<unknown> = Promise.resolve();
+  private transactionDepth = 0;
 
   constructor(readonly store: Map<string, unknown> = new Map()) {}
 
@@ -73,7 +77,11 @@ class FakeStopStorage implements ManagedStopStorage {
   }
 
   async getAlarm(): Promise<number | null> {
-    return this.alarm;
+    const observed = this.alarm;
+    if (this.transactionDepth === 0 && this.onUnserializedAlarmRead) {
+      await this.onUnserializedAlarmRead();
+    }
+    return observed;
   }
 
   async setAlarm(deadlineMs: number): Promise<void> {
@@ -81,8 +89,15 @@ class FakeStopStorage implements ManagedStopStorage {
     this.setAlarmCalls.push(deadlineMs);
   }
 
-  transaction<T>(callback: (tx: ManagedRunStorage) => Promise<T>): Promise<T> {
-    const run = this.tail.then(() => callback(this));
+  transaction<T>(callback: (tx: ManagedStopTransaction) => Promise<T>): Promise<T> {
+    const run = this.tail.then(async () => {
+      this.transactionDepth += 1;
+      try {
+        return await callback(this);
+      } finally {
+        this.transactionDepth -= 1;
+      }
+    });
     this.tail = run.then(
       () => undefined,
       () => undefined
@@ -198,5 +213,42 @@ describe("armManagedDeadline", () => {
 
     await armManagedDeadline(env);
     expect(storage.setAlarmCalls).toEqual([NOW - 50, NOW - 50]);
+  });
+
+  it("cannot delay an earlier completion alarm that lands between the read and write", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+
+    const storage = new FakeStopStorage();
+    const base = createRun("run-1", ROOT_SPEC, LIMITS);
+    const run: ManagedRun = {
+      id: base.id,
+      admission: base.admission,
+      tree: base.tree,
+      attempts: {
+        "attempt-a": {
+          taskId: "root",
+          status: "bound",
+          sessionId: "session-a",
+          claimedAtMs: NOW - 200,
+        },
+      },
+    };
+    await saveRun(storage, run);
+    await storage.put({ "managed:context": context({ workerTimeoutMs: 1_000 }) });
+    const env = stopEnv(storage);
+
+    const completionAlarm = NOW - 50;
+    // A completion accept persists its earlier alarm in its own transaction, sharing the storage
+    // tail with arm. If arm reads the alarm outside that transaction it observes a stale value and
+    // overwrites the completion wake-up; inside the transaction it keeps the earlier alarm.
+    const completion = storage.transaction(async (tx) => {
+      await tx.setAlarm(completionAlarm);
+    });
+    storage.onUnserializedAlarmRead = () => completion;
+
+    await Promise.all([completion, armManagedDeadline(env)]);
+
+    expect(storage.alarm).toBe(completionAlarm);
   });
 });

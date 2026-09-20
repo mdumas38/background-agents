@@ -1,7 +1,6 @@
 import type { Env } from "../types";
 import { signedControlPlaneFetch } from "../internal-auth";
 import { stopAdmission } from "./admission";
-import type { ManagedTransactionalStorage } from "./claim-next";
 import { loadManagedContext } from "./context-store";
 import type { ManagedRun } from "./run-state";
 import { loadRun, saveRun, type ManagedRunStorage } from "./store";
@@ -34,10 +33,19 @@ interface ManagedStopRecord {
   reason: string;
 }
 
-/** DurableObjectStorage surface the stop adapter needs, including the shared alarm. */
-export interface ManagedStopStorage extends ManagedTransactionalStorage {
+/**
+ * Alarm-capable storage view matching the native Durable Object transaction surface. A transaction
+ * exposes the same `getAlarm`/`setAlarm` methods as `DurableObjectStorage`, so an alarm read and
+ * write can share one atomic unit.
+ */
+export interface ManagedStopTransaction extends ManagedRunStorage {
   getAlarm(): Promise<number | null>;
   setAlarm(deadlineMs: number): Promise<void>;
+}
+
+/** DurableObjectStorage surface the stop adapter needs, including the shared alarm. */
+export interface ManagedStopStorage extends ManagedStopTransaction {
+  transaction<T>(callback: (tx: ManagedStopTransaction) => Promise<T>): Promise<T>;
 }
 
 function requireStopStorage(env: Env): ManagedStopStorage {
@@ -188,21 +196,25 @@ function hasTimedOutAttempt(run: ManagedRun, workerTimeoutMs: number, nowMs: num
 }
 
 /**
- * Arm the shared alarm for the earliest unsettled worker deadline. A stopped run has no deadline,
- * an existing alarm is never pushed later (completion retries keep their earlier wake-up), and the
- * alarm is always in the future so the current invocation can finish.
+ * Arm the shared alarm for the earliest unsettled worker deadline. The run, context, and existing
+ * alarm are read and the minimum is written inside one durable storage transaction, so a concurrent
+ * completion accept that arms an earlier alarm can never be observed stale and overwritten. A
+ * stopped run has no deadline, an existing alarm is never pushed later, and the alarm is always in
+ * the future so the current invocation can finish.
  */
 export async function armManagedDeadline(env: Env): Promise<void> {
   const storage = requireStopStorage(env);
-  const [context, run] = await Promise.all([loadManagedContext(storage), loadRun(storage)]);
-  if (!context || !run || run.admission.stopped) return;
+  await storage.transaction(async (tx) => {
+    const [context, run] = await Promise.all([loadManagedContext(tx), loadRun(tx)]);
+    if (!context || !run || run.admission.stopped) return;
 
-  const deadline = earliestDeadline(run, context.workerTimeoutMs);
-  if (deadline === undefined) return;
+    const deadline = earliestDeadline(run, context.workerTimeoutMs);
+    if (deadline === undefined) return;
 
-  const next = Math.max(Date.now() + 1, deadline);
-  const existing = await storage.getAlarm();
-  await storage.setAlarm(existing === null ? next : Math.min(existing, next));
+    const next = Math.max(Date.now() + 1, deadline);
+    const existing = await tx.getAlarm();
+    await tx.setAlarm(existing === null ? next : Math.min(existing, next));
+  });
 }
 
 /**
