@@ -67,9 +67,19 @@ export class SessionLifecycleHandler {
 
     const sandbox = this.sandboxRepository.getSandbox();
 
+    // Cost is only settled once no work is outstanding. A processing turn, a
+    // queued prompt, or a stop awaiting sandbox confirmation all mean the
+    // recorded total can still move, so a managed coordinator must keep its
+    // reservation rather than read a premature figure.
+    const accountingReady =
+      this.messageRepository.getProcessingMessage() === null &&
+      this.messageRepository.getNextPendingMessage() === null &&
+      this.messageRepository.getMessageAwaitingStopConfirmation() === null;
+
     return Response.json({
       id: resolvePublicSessionId(session, this.durableObjectId),
       title: session.title,
+      accountingReady,
       repoOwner: session.repo_owner,
       repoName: session.repo_name,
       baseBranch: session.base_branch,

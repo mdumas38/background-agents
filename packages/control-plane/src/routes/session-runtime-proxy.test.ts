@@ -263,6 +263,7 @@ describe("session runtime proxy routes", () => {
         title: "private title",
         agentSessionId: "agent-1",
         totalCost: 1.25,
+        accountingReady: true,
         sandbox: { id: "sandbox-1" },
       });
     });
@@ -277,11 +278,13 @@ describe("session runtime proxy routes", () => {
     expect(new URL(requests[0].url).pathname).toBe(SessionInternalPaths.state);
 
     for (const invalid of [
-      { id: "session-1" },
-      { id: "session-1", totalCost: -0.01 },
-      { id: "session-1", totalCost: Number.NaN },
-      { id: "session-1", totalCost: Number.POSITIVE_INFINITY },
-      { id: "session-1", totalCost: "1.25" },
+      { id: "session-1", accountingReady: true },
+      { id: "session-1", totalCost: -0.01, accountingReady: true },
+      { id: "session-1", totalCost: Number.NaN, accountingReady: true },
+      { id: "session-1", totalCost: Number.POSITIVE_INFINITY, accountingReady: true },
+      { id: "session-1", totalCost: "1.25", accountingReady: true },
+      { id: "session-1", totalCost: 1.25 },
+      { id: "session-1", totalCost: 1.25, accountingReady: "true" },
     ]) {
       const invalidFetch = vi.fn(async () => Response.json(invalid));
       const invalidResponse = await dispatch(
@@ -290,6 +293,21 @@ describe("session runtime proxy routes", () => {
       );
       expect(invalidResponse.status).toBe(502);
     }
+  });
+
+  it("holds the reservation with a safe 409 while the worker has not settled", async () => {
+    authenticateAs({ kind: "service", service: "linear-bot", actor: null });
+    const fetch = vi.fn(async () =>
+      Response.json({ id: "session-1", totalCost: 1.25, accountingReady: false })
+    );
+
+    const response = await dispatch(
+      new Request("https://test.local/sessions/session-1/managed-accounting"),
+      createEnv(fetch)
+    );
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({ error: "Worker accounting is not ready" });
   });
 
   it("denies every non-linear-bot caller before reaching the runtime", async () => {
