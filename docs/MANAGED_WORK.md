@@ -161,8 +161,10 @@ recovery:
 
 ## Rollout and limitations
 
-- Deploy the updated `shared` and `control-plane` **before** the updated `linear-bot`. The linear
-  bot sends `managedSessionId`, which older control planes reject, so the control plane must accept
+- Deploy the updated `shared` and `control-plane` **before** the updated `linear-bot`. An older
+  control plane silently ignores the unknown `managedSessionId` field (its schema strips unknown
+  keys) and generates a different id; the new linear bot rejects the mismatched response but cannot
+  recover that different remote identity from its prebound ledger, so the control plane must accept
   the field first; no deployment is performed by this change.
 - Rollout requires matching `shared`, `control-plane`, `linear-bot`, and `sandbox-runtime` code.
   There is no new Durable Object binding or D1 migration.
