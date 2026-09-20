@@ -5,7 +5,7 @@ import { createFakeKV, makeLinearBotEnv } from "../test-helpers";
 const baseSha = "a".repeat(40);
 
 function envWith(body: unknown, status = 200) {
-  const fetch = vi.fn(async () => Response.json(body, { status }));
+  const fetch = vi.fn<Fetcher["fetch"]>(async () => Response.json(body, { status }));
   return {
     fetch,
     env: makeLinearBotEnv(createFakeKV().kv, {

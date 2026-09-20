@@ -115,7 +115,7 @@ describe("ensureManagedTaskIssue", () => {
 
   it("keeps a failed create intent uncertain and never invokes create again", async () => {
     const storage = new FakeTransactionalStorage();
-    const create = vi.fn(async (): Promise<ManagedIssueRef> => {
+    const create = vi.fn<(input: ManagedChildIssueInput) => Promise<ManagedIssueRef>>(async () => {
       throw new Error("linear unavailable");
     });
     const childId = "root/1/child";
