@@ -110,11 +110,16 @@ export class CompletionDelivery {
   private async run(): Promise<void> {
     const records = await this.state.storage.list<RecordEntry>({ prefix: "completion:" });
     for (const [key, record] of records) {
-      if (record.status !== "pending") continue;
+      if (record.status === "done") continue;
+      const retryMs =
+        record.status === "needs_reconciliation"
+          ? COMPLETION_RECONCILIATION_RETRY_MS
+          : COMPLETION_RETRY_MS;
       // Arm before work; a killed isolate or uncertain write resumes with the SAME ID/body. Keep
-      // an earlier managed deadline armed instead of postponing it with each retry.
+      // an earlier managed deadline armed instead of postponing it with each retry. Exhausted
+      // deliveries re-enter through the same idempotent delivery/readback path at a lower rate.
       await this.state.storage.transaction(async (storage) => {
-        const retryAt = Date.now() + COMPLETION_RETRY_MS;
+        const retryAt = Date.now() + retryMs;
         const alarm = await storage.getAlarm();
         await storage.setAlarm(alarm === null ? retryAt : Math.min(alarm, retryAt));
       });
@@ -148,20 +153,6 @@ export class CompletionDelivery {
         });
       }
       await this.state.storage.put(key, record);
-    }
-    // A terminal receipt must not remove the coordinator's final wake-up while its
-    // externally-visible delivery remains unresolved. Reconciliation uses the same
-    // immutable delivery id and readback safeguards as ordinary delivery; it never
-    // treats the receipt itself as settlement.
-    const needsReconciliation = [...records.values()].some(
-      (record) => record.status === "needs_reconciliation"
-    );
-    if (needsReconciliation) {
-      await this.state.storage.transaction(async (storage) => {
-        const retryAt = Date.now() + COMPLETION_RECONCILIATION_RETRY_MS;
-        const alarm = await storage.getAlarm();
-        await storage.setAlarm(alarm === null ? retryAt : Math.min(alarm, retryAt));
-      });
     }
     // Leave the armed wakeup: a concurrent accept may have added work after list().
   }

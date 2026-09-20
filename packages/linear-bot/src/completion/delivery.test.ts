@@ -146,11 +146,15 @@ it("retains exhausted and conflicting delivery for reconciliation without claimi
     attempts: COMPLETION_MAX_ATTEMPTS,
   });
   const calls = mocks.graphql.mock.calls.length;
+  mocks.graphql.mockImplementation(async (_c, _q, vars) => ({
+    data: { agentActivityCreate: { success: true, agentActivity: { id: vars.input.id } } },
+  }));
   // Native alarms clear before their handler invokes the next reconciliation pass.
   vi.spyOn(s.storage, "getAlarm").mockResolvedValueOnce(null);
   const earliestReconciliation = Date.now() + COMPLETION_RECONCILIATION_RETRY_MS;
   await setup(s.storage).delivery.flush();
-  expect(mocks.graphql).toHaveBeenCalledTimes(calls);
+  expect(mocks.graphql.mock.calls.length).toBeGreaterThan(calls);
+  expect(await s.storage.get(completionKey(payload))).toMatchObject({ status: "done" });
   const alarm = await s.storage.getAlarm();
   expect(alarm).toBeGreaterThanOrEqual(earliestReconciliation);
   expect(alarm).toBeLessThanOrEqual(Date.now() + COMPLETION_RECONCILIATION_RETRY_MS);
