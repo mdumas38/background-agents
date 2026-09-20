@@ -10,7 +10,8 @@ in `packages/linear-bot/src/managed/`.
 
 Managed work is opt-in only. The trigger is the exact command `/manage <objective>` supplied as the
 **leading explicit instruction** on a native Linear agent session. An issue description or
-`promptContext` alone never opts in, and ordinary issue creation stays inert until it is enrolled.
+`promptContext` alone never opts in. Only managed enrollment is gated this way; ordinary
+(non-managed) issue handling is unchanged and still applies as before enrollment.
 
 - Only `implementation` mode and a single `repository` target are accepted. Read-only mode and
   environment targets are rejected.
@@ -30,8 +31,9 @@ Once a root is enrolled, inbound events for that root are handled by `root-comma
 
 - `/manage status` returns bounded status text; ordinary follow-ups are status-only.
 - `/manage stop` (or a native stopped/cancelled signal) stops the run once.
-- Only the **original actor** may read status or stop. A native stop with no actor, or by the
-  original actor, is also trusted; any other actor receives a safe denial.
+- Status may be read by the **original actor** or by the matching stored native agent session. A
+  stop is accepted from the **original actor**, or from the matching native session when no other,
+  contradictory actor is present; any other actor receives a safe denial.
 - A status reply reports task/attempt counts, stopped flag, reported vs. reserved cost, limits, and
   known session links. It notes when manual reconciliation is required.
 - One immutable run exists per root. A new objective needs a new root issue; it cannot reuse the
@@ -50,8 +52,9 @@ dependency keys to those IDs.
   again, so the tree is recursive. The root always splits broad work; it may only size the objective
   in its first turn.
 - A running parent that splits becomes `waiting`; the runtime never polls and no live model is
-  billed while it waits. Completed siblings wake only when all direct children complete, at which
-  point the parent becomes `ready` in `review`.
+  billed while it waits. A waiting **parent** becomes `ready` in `review` only after all of its
+  direct children complete. Siblings become runnable as soon as their declared dependencies
+  complete.
 - A review attempt integrates and checks the direct children's pushed commits. It never takes over
   as the implementing parent; if corrections are needed it returns another split of small correction
   tasks.
