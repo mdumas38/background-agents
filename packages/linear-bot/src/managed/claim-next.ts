@@ -1,5 +1,6 @@
 import { ManagedAdmissionError } from "./admission";
 import { loadManagedContext } from "./context-store";
+import { freezeAttemptPolicy } from "./execution-policy";
 import { runnableTasks } from "./lifecycle";
 import { ManagedRunStateError, claimTask, type ManagedRun } from "./run-state";
 import { loadRun, saveRun, type ManagedRunStorage } from "./store";
@@ -81,8 +82,6 @@ export async function claimNextTask(
       throw error;
     }
 
-    await saveRun(tx, claimed);
-
     if (context) {
       if (!Number.isFinite(context.workerTimeoutMs) || context.workerTimeoutMs <= 0) {
         throw new Error("Managed context workerTimeoutMs must be a finite positive number.");
@@ -92,9 +91,22 @@ export async function claimNextTask(
       }
       const alarm = requireAlarmStorage(tx);
       const deadline = nowMs + context.workerTimeoutMs;
+      if (context.executionPolicy) {
+        claimed.attempts[attemptId] = {
+          ...claimed.attempts[attemptId],
+          executionPolicy: freezeAttemptPolicy(
+            context.executionPolicy,
+            nowMs,
+            next.phase === "review" || next.parentId === null ? "parent-review" : "routine-leaf",
+            context.baseSha
+          ),
+        };
+      }
       const existing = await alarm.getAlarm();
       await alarm.setAlarm(existing === null ? deadline : Math.min(existing, deadline));
     }
+
+    await saveRun(tx, claimed);
 
     return { run: claimed, taskId: next.id, attemptId };
   });

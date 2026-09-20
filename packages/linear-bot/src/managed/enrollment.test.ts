@@ -55,6 +55,7 @@ import { DEFAULT_MANAGED_LIMITS, DEFAULT_MANAGED_WORKER_TIMEOUT_MS } from "./con
 import type { ManagedContext } from "./context-store";
 import type { ManagedEnrollmentInput } from "./enrollment-input";
 import { startManagedWork } from "./enrollment";
+import { createExecutionPolicy } from "./execution-policy";
 import { createRun } from "./run-state";
 import type { TaskSpec } from "./tree";
 
@@ -110,10 +111,28 @@ beforeEach(() => {
 });
 
 describe("startManagedWork", () => {
+  it("preflights a new versioned policy using the same attempt snapshot contract as claims", async () => {
+    const model = "openrouter/deepseek/deepseek-v4.1-flash";
+    const executionPolicy = createExecutionPolicy({
+      model,
+      reasoningEffort: "low",
+      workerTimeoutMs: DEFAULT_MANAGED_WORKER_TIMEOUT_MS,
+    });
+    const frozen = context({ model, reasoningEffort: "low", executionPolicy });
+    mocks.buildManagedEnrollment.mockReturnValue({ context: frozen, spec: spec() });
+    await startManagedWork(env(), INPUT, "trace-1");
+    const [, claim] = mocks.buildManagedLaunchRequest.mock.calls[0];
+    expect(claim.run.attempts[claim.attemptId].executionPolicy).toMatchObject({
+      ...executionPolicy,
+      taskClass: "parent-review",
+      hardDeadlineMs: expect.any(Number),
+      finalizeAtMs: expect.any(Number),
+    });
+  });
   it("prevalidates the complete root request before enrolling or pumping", async () => {
     const status = await startManagedWork(env(), INPUT, "trace-1");
 
-    expect(mocks.buildManagedEnrollment).toHaveBeenCalledWith(INPUT, "implementation");
+    expect(mocks.buildManagedEnrollment).toHaveBeenCalledWith(INPUT, "implementation", true);
     const validate = mocks.buildManagedLaunchRequest.mock.invocationCallOrder[0];
     const enroll = mocks.enrollManagedRun.mock.invocationCallOrder[0];
     const pump = mocks.pumpManagedRun.mock.invocationCallOrder[0];
@@ -147,6 +166,7 @@ describe("startManagedWork", () => {
     const status = await startManagedWork(env(), INPUT, "trace-1");
 
     expect(mocks.buildManagedLaunchRequest).not.toHaveBeenCalled();
+    expect(mocks.buildManagedEnrollment).toHaveBeenCalledWith(INPUT, "implementation", false);
     expect(mocks.createManagedLaunch).toHaveBeenCalledWith(expect.anything(), stored, "trace-1");
     expect(mocks.pumpManagedRun).toHaveBeenCalledWith(expect.anything(), "launch");
     expect(status).toContain("managed run stored-run");

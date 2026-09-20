@@ -6,6 +6,8 @@ import {
   type ManagedLimits,
 } from "./admission";
 import type { ManagedOutcome } from "./contracts";
+import type { ManagedAttemptPolicy } from "./execution-policy";
+import type { TerminalEvidence } from "./execution-evidence";
 import { startTask } from "./lifecycle";
 import { createTree, type TaskSpec, type Tree } from "./tree";
 
@@ -27,6 +29,10 @@ export interface ManagedAttempt {
   costUsd?: number;
   /** Durable wall-clock start of the worker attempt, set once when it is first claimed. */
   claimedAtMs?: number;
+  executionPolicy?: ManagedAttemptPolicy;
+  terminalEvidence?: TerminalEvidence;
+  /** Trusted callback receipt only; does not settle cost, review, or free admission. */
+  completionReceipt?: { messageId: string; success: boolean };
 }
 
 export interface ManagedRun {

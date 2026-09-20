@@ -11,8 +11,31 @@ import type { ManagedIssueRef } from "./issue-create";
 import { buildManagedLaunchRequest, UNRESOLVED_BASELINE } from "./launch-request";
 import { claimTask, createRun } from "./run-state";
 import { expandTask, ROOT_TASK_ID, type Task, type TaskSpec, type Tree } from "./tree";
+import { createExecutionPolicy } from "./execution-policy";
 
 const SHA = "a".repeat(40);
+
+it("dispatches the frozen resolved model/effort and deadline guidance", () => {
+  const claim = rootClaim();
+  const policy = createExecutionPolicy({
+    model: "openrouter/deepseek/deepseek-v4.1-flash",
+    reasoningEffort: "low",
+    workerTimeoutMs: 600_000,
+  });
+  claim.run.attempts[claim.attemptId].executionPolicy = {
+    ...policy,
+    taskClass: "parent-review",
+    baselineSha: SHA,
+    hardDeadlineMs: 1_700_000_600_000,
+    finalizeAtMs: 1_700_000_510_000,
+  };
+  const request = buildManagedLaunchRequest(context({ executionPolicy: policy }), claim, ISSUE);
+  expect(request.session.model).toBe(policy.resolvedModel);
+  expect(request.session.reasoningEffort).toBe("low");
+  expect(request.prompt.content).toContain("2023-11-14T22:23:20.000Z");
+  expect(request.prompt.content).toContain("2023-11-14T22:21:50.000Z");
+  expect(request.prompt.content).toContain("Do not rerun a passing suite");
+});
 
 const SPEC: TaskSpec = {
   title: "Deliver the root",

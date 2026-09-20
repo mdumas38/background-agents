@@ -4,6 +4,7 @@ import type { ManagedIssueRef } from "./issue-create";
 import { createRun, type ManagedRun } from "./run-state";
 import { loadRun, saveRun, type ManagedRunStorage } from "./store";
 import type { TaskSpec } from "./tree";
+import { assertExecutionPolicy, type ManagedExecutionPolicy } from "./execution-policy";
 
 /**
  * Frozen enrollment policy for one managed root run. Once written the context is immutable: a
@@ -27,6 +28,8 @@ export interface ManagedContext {
   actorEmail?: string;
   baseSha?: string;
   workerTimeoutMs: number;
+  /** Absent on legacy roots; never backfilled during replay. */
+  executionPolicy?: ManagedExecutionPolicy;
 }
 
 export const DEFAULT_MANAGED_WORKER_TIMEOUT_MS = 600_000;
@@ -74,6 +77,16 @@ function validateContext(context: ManagedContext): void {
     throw new Error("Managed context workerTimeoutMs must be a finite positive number.");
   }
   if (context.baseSha !== undefined) assertBaselineSha(context.baseSha);
+  if (context.executionPolicy) {
+    assertExecutionPolicy(context.executionPolicy);
+    if (
+      context.executionPolicy.requestedModel !== context.model ||
+      context.executionPolicy.requestedReasoningEffort !== context.reasoningEffort ||
+      context.executionPolicy.workerTimeoutMs !== context.workerTimeoutMs
+    ) {
+      throw new Error("Managed execution policy does not match enrollment.");
+    }
+  }
 }
 
 /**

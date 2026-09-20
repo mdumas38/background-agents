@@ -5,6 +5,7 @@ import type {
 } from "@open-inspect/shared/types/session-api";
 import type { ManagedCompleteOutcome, ManagedOutcome, ManagedSplitOutcome } from "../contracts";
 import type { ManagedRun } from "../run-state";
+import { createExecutionPolicy } from "../execution-policy";
 
 export interface FixtureState {
   run: ManagedRun;
@@ -86,6 +87,12 @@ export async function exerciseManagedWorkflow(
     model: "openrouter/deepseek/deepseek-v4.1-flash",
     actorUserId: "human",
     workerTimeoutMs: 600000,
+    executionPolicy: createExecutionPolicy({
+      model: "openrouter/deepseek/deepseek-v4.1-flash",
+      reasoningEffort: "low",
+      workerTimeoutMs: 600000,
+    }),
+    reasoningEffort: "low",
   };
 
   const send = async (path: string, body?: unknown): Promise<FixtureState> => {
@@ -95,6 +102,11 @@ export async function exerciseManagedWorkflow(
   };
 
   let state = await send("/start", { context, spec: SPEC });
+  const rootPolicy = Object.values(state.run.attempts)[0].executionPolicy;
+  expect(rootPolicy).toMatchObject({
+    resolvedReasoningEffort: "low",
+    finalizationMode: "prompt-guidance",
+  });
 
   const finish = async (
     taskId: string,
@@ -125,6 +137,9 @@ export async function exerciseManagedWorkflow(
 
   await restart();
   state = await send("/state");
+  expect(
+    Object.values(state.run.attempts).find((attempt) => attempt.taskId === "root")!.executionPolicy
+  ).toEqual(rootPolicy);
 
   state = await send("/complete", { payload: aCallback, outcome: COMPLETE, costUsd: 99 });
   expect(state.resultReads).toBe(before.resultReads);

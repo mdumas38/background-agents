@@ -14,6 +14,7 @@ import {
 import { loadRun, saveRun } from "./store";
 import type { Env } from "../types";
 import { createFakeKV, makeLinearBotEnv } from "../test-helpers";
+import { settleRunAttempt } from "./settlement";
 
 const ROOT_SPEC = {
   title: "Root task",
@@ -132,6 +133,57 @@ function withBoundMessage(run: ManagedRun, messageId: string): ManagedRun {
 }
 
 describe("stopManagedRun", () => {
+  it("does not stop a root when completion settled before the atomic deadline decision", async () => {
+    const storage = new FakeStopStorage();
+    const completed = settleRunAttempt(boundRun(), {
+      attemptId: "attempt-1",
+      taskId: "root",
+      sessionId: "session-1",
+      messageId: "message-1",
+      outcome: { kind: "complete", summary: "Done", evidence: "Tests passed" },
+      costUsd: 0.1,
+    });
+    await saveRun(storage, completed);
+    await storage.put({ "managed:context": context() });
+    const env = stopEnv(storage);
+    await stopManagedRun(env, "deadline", undefined, NOW + DEFAULT_MANAGED_WORKER_TIMEOUT_MS);
+    expect((await loadRun(storage))!.admission.stopped).toBe(false);
+    expect(await storage.get(MANAGED_STOP_REASON_KEY)).toBeUndefined();
+    expect(controlPlaneFetch(env)).not.toHaveBeenCalled();
+  });
+
+  it("rechecks settled attempts when claiming stop intent after the outer snapshot", async () => {
+    const storage = new FakeStopStorage();
+    await saveRun(storage, boundRun());
+    await storage.put({ "managed:context": context() });
+    const originalList = storage.list.bind(storage);
+    let completed = false;
+    vi.spyOn(storage, "list").mockImplementation(async (options) => {
+      if (options?.prefix === MANAGED_STOP_INTENT_PREFIX && !completed) {
+        completed = true;
+        const run = (await loadRun(storage))!;
+        await saveRun(
+          storage,
+          settleRunAttempt(run, {
+            attemptId: "attempt-1",
+            taskId: "root",
+            sessionId: "session-1",
+            messageId: "message-1",
+            outcome: { kind: "complete", summary: "Done", evidence: "Tests passed" },
+            costUsd: 0.1,
+          })
+        );
+      }
+      return originalList(options);
+    });
+    const env = stopEnv(storage);
+    await stopManagedRun(env, "deadline");
+    expect(controlPlaneFetch(env)).not.toHaveBeenCalled();
+    expect((await loadRun(storage))!.attempts["attempt-1"].terminalEvidence).toEqual({
+      stopTrigger: "deadline",
+      executionOutcome: "unknown",
+    });
+  });
   it("persists the stop admission before the network call and never resends or refunds", async () => {
     const storage = new FakeStopStorage();
     await saveRun(storage, boundRun());

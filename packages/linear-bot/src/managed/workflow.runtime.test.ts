@@ -1,4 +1,4 @@
-import { afterEach, it } from "vitest";
+import { afterEach, expect, it } from "vitest";
 import { SERVICE_SIGNATURE_HEADER } from "@open-inspect/shared/service-auth";
 import { build } from "esbuild";
 import { Miniflare } from "miniflare";
@@ -16,6 +16,7 @@ import {
   MANAGED_FIXTURE_CREATE_FAILURE_BINDING,
   MANAGED_FIXTURE_CREATE_FAILURE_RESPONSE_LOST,
 } from "./__fixtures__/runtime-adapters";
+import { createExecutionPolicy } from "./execution-policy";
 
 const adapterPath = fileURLToPath(new URL("./__fixtures__/runtime-adapters.ts", import.meta.url));
 const managedDir = fileURLToPath(new URL(".", import.meta.url));
@@ -168,3 +169,71 @@ it("targets the bound session after a lost create response and durable restart",
 
   await exerciseCreationRestart(call, restart, stopRequests);
 }, 60_000);
+
+it.each([false, true])(
+  "reconciles accepted completion across Workerd eviction (already stopped=%s)",
+  async (alreadyStopped) => {
+    const script = await loadScript();
+    persistence = await mkdtemp(join(tmpdir(), "managed-receipt-runtime-"));
+    const stopRequests: CapturedStopRequest[] = [];
+    const start = makeStart(script, stopRequests);
+    runtime = start();
+    const call = async (path: string, body?: unknown): Promise<FixtureState> => {
+      const response = await runtime!.dispatchFetch(`https://test${path}`, {
+        method: body === undefined ? "GET" : "POST",
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      });
+      if (!response.ok) throw new Error(await response.text());
+      return response.json() as Promise<FixtureState>;
+    };
+    const model = "openrouter/deepseek/deepseek-v4.1-flash";
+    const state = await call("/start", {
+      context: {
+        runId: "receipt-run",
+        organizationId: "org",
+        appUserId: "app",
+        rootIssue: { id: "issue", identifier: "TEST-1", url: "https://linear.test/issue" },
+        teamId: "team",
+        projectId: null,
+        repoOwner: "acme",
+        repoName: "repo",
+        model,
+        actorUserId: "human",
+        workerTimeoutMs: 600_000,
+        executionPolicy: createExecutionPolicy({ model, workerTimeoutMs: 600_000 }),
+      },
+      spec: { title: "Root", objective: "Receipt regression", acceptance: "No spurious stop" },
+    });
+    const prompt = state.prompts[0];
+    const attemptId = prompt.context.managedWork!.attemptId;
+    const attempt = state.run.attempts[attemptId];
+    const deadlineCheckAtMs = attempt.executionPolicy!.hardDeadlineMs;
+    if (alreadyStopped) await call("/stop", { reason: "deadline", deadlineCheckAtMs });
+    const accepted = await call("/accept-inbox-only", {
+      sessionId: prompt.sessionId,
+      messageId: prompt.messageId,
+      context: prompt.context,
+      success: true,
+      timestamp: 1,
+      signature: "fixture",
+    });
+    expect(accepted.run.attempts[attemptId].completionReceipt).toBeUndefined();
+    await runtime!.dispose();
+    runtime = start();
+    const recovered = await call("/stop", { reason: "deadline", deadlineCheckAtMs });
+    expect(recovered.run.admission.stopped).toBe(alreadyStopped);
+    expect(recovered.run.admission.reservations).toEqual(state.run.admission.reservations);
+    expect(recovered.run.attempts[attemptId].status).toBe(attempt.status);
+    expect(recovered.run.attempts[attemptId].completionReceipt).toEqual({
+      messageId: prompt.messageId,
+      success: true,
+    });
+    expect(recovered.run.attempts[attemptId].terminalEvidence).toEqual({
+      stopTrigger: alreadyStopped ? "deadline" : null,
+      executionOutcome: "succeeded",
+    });
+    expect(stopRequests).toHaveLength(alreadyStopped ? 1 : 0);
+    expect(recovered.resultReads).toBe(0);
+  },
+  60_000
+);

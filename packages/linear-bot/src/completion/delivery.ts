@@ -4,6 +4,11 @@ import { sameMarkdownContent } from "./markdown";
 import type { Env } from "../types";
 import { handleCompletionCallback } from "../callbacks";
 import { getLinearClient, linearGraphQL } from "../utils/linear-client";
+import { completionKey } from "./key";
+import { applyManagedCompletionReceipt } from "../managed/completion-receipt";
+import { loadManagedContext } from "../managed/context-store";
+import { loadRun, saveRun } from "../managed/store";
+export { completionKey } from "./key";
 
 export type CompletionContent = {
   kind: "activity" | "comment";
@@ -23,9 +28,6 @@ interface RecordEntry {
 }
 export const COMPLETION_RETRY_MS = 60_000;
 export const COMPLETION_MAX_ATTEMPTS = 12;
-export function completionKey(payload: LinearCompletionCallback): string {
-  return `completion:${JSON.stringify([payload.sessionId, payload.messageId])}`;
-}
 function identity(payload: LinearCompletionCallback): string {
   // Timestamps/signatures change on transport retry; all causal fields must agree.
   return JSON.stringify([
@@ -75,6 +77,13 @@ export class CompletionDelivery {
           status: "pending",
           attempts: 0,
         } satisfies RecordEntry);
+      if (payload.context.managedWork) {
+        const [context, run] = await Promise.all([loadManagedContext(storage), loadRun(storage)]);
+        if (context && run) {
+          const received = await applyManagedCompletionReceipt(storage, run, context, payload);
+          if (received !== run) await saveRun(storage, received);
+        }
+      }
       // Persist the alarm in the same transaction as acceptance, including after eviction. Never
       // push an existing wakeup later: a managed worker deadline may already be armed.
       if (!existing || existing.status === "pending") {
