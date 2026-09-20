@@ -252,3 +252,8 @@ Set Terraform `linear_bot_task_mode = "read-only"` for investigation prompts, or
 (the default) for coding tasks. This is an operator-controlled prompt policy, not a permission
 sandbox. Completion replies retain up to 10,000 characters of findings and always link the full
 session.
+
+## Managed work
+
+An explicit `/manage <objective>` instruction can run a broad objective as a recursive tree of small
+tasks with durable parents. See [the managed work guide](../../docs/MANAGED_WORK.md).
