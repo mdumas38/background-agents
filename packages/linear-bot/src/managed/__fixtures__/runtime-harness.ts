@@ -34,6 +34,10 @@ export class ManagedFixture {
     this.managedEnv = { ...env, SESSION_STORE: state.storage };
   }
 
+  async alarm(): Promise<void> {
+    // Scenario completes every task via explicit callbacks before the claim deadline fires.
+  }
+
   async fetch(request: Request): Promise<Response> {
     const { pathname } = new URL(request.url);
 
