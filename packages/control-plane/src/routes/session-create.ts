@@ -257,10 +257,7 @@ export async function handleCreateSession(
     scopeMembers,
     environmentId
   );
-  const effectiveSandboxSettings = withRequestedMaxSessionCostUsd(
-    sandboxSettings,
-    body.maxCostUsd
-  );
+  const effectiveSandboxSettings = withRequestedMaxSessionCostUsd(sandboxSettings, body.maxCostUsd);
 
   const sessionId = generateId();
   let providerAuth;
