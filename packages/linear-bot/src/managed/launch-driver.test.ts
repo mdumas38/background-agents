@@ -112,21 +112,23 @@ beforeEach(() => {
 });
 
 describe("createManagedLaunch effect order", () => {
-  it("allocates the issue, then binds the session before enqueue and the message after", async () => {
+  it("binds the session identity before creating it, then enqueues and binds the message", async () => {
     const pending = claim();
     mocks.loadRun.mockResolvedValue(pending.run);
     const order: string[] = [];
-    mocks.createManagedSession.mockImplementation(async () => {
+    let boundSessionId: string | undefined;
+    mocks.createManagedSession.mockImplementation(async (_env, input) => {
       order.push("createSession");
-      return "session-1";
+      return input.managedSessionId;
     });
     mocks.enqueueManagedPrompt.mockImplementation(async () => {
       order.push("enqueue");
       return "message-1";
     });
 
-    const bindSession = vi.fn(async () => {
+    const bindSession = vi.fn(async (sessionId: string) => {
       order.push("bindSession");
+      boundSessionId = sessionId;
     });
     const bindMessage = vi.fn(async () => {
       order.push("bindMessage");
@@ -134,7 +136,8 @@ describe("createManagedLaunch effect order", () => {
 
     await createManagedLaunch(env(), context(), "trace-1")(pending, bindSession, bindMessage);
 
-    expect(order).toEqual(["createSession", "bindSession", "enqueue", "bindMessage"]);
+    expect(order).toEqual(["bindSession", "createSession", "enqueue", "bindMessage"]);
+    expect(boundSessionId).toEqual(expect.any(String));
     expect(mocks.ensureManagedTaskIssue.mock.calls[0][1]).toEqual({
       runId: "run-1",
       rootIssue: ISSUE,
@@ -143,18 +146,18 @@ describe("createManagedLaunch effect order", () => {
     });
     expect(mocks.createManagedSession).toHaveBeenCalledWith(
       expect.anything(),
-      REQUEST.session,
+      { ...REQUEST.session, managedSessionId: boundSessionId },
       "user-1",
       "trace-1"
     );
     expect(mocks.enqueueManagedPrompt).toHaveBeenCalledWith(
       expect.anything(),
-      "session-1",
+      boundSessionId,
       REQUEST.prompt,
       "user-1",
       "trace-1"
     );
-    expect(bindSession).toHaveBeenCalledWith("session-1");
+    expect(bindSession).toHaveBeenCalledWith(boundSessionId);
     expect(bindMessage).toHaveBeenCalledWith("message-1");
   });
 });
@@ -192,18 +195,23 @@ describe("createManagedLaunch admission guards", () => {
     mocks.loadRun
       .mockResolvedValueOnce(pending.run)
       .mockResolvedValueOnce(pending.run)
+      .mockResolvedValueOnce(pending.run)
       .mockResolvedValueOnce({
         ...pending.run,
         admission: { ...pending.run.admission, stopped: true },
       });
     mocks.ensureManagedTaskIssue.mockResolvedValue(ISSUE);
     mocks.buildManagedLaunchRequest.mockReturnValue(REQUEST);
-    mocks.createManagedSession.mockResolvedValue("session-1");
-    const postBind = vi.fn();
+    mocks.createManagedSession.mockImplementation(async (_env, input) => input.managedSessionId);
+    let boundSessionId: string | undefined;
+    const postBind = vi.fn(async (sessionId: string) => {
+      boundSessionId = sessionId;
+    });
     await expect(
       createManagedLaunch(env(), context(), "trace-1")(pending, postBind, vi.fn())
     ).rejects.toThrow("stopped during launch");
-    expect(postBind).toHaveBeenCalledWith("session-1");
+    expect(boundSessionId).toEqual(expect.any(String));
+    expect(postBind).toHaveBeenCalledWith(boundSessionId);
     expect(mocks.stopManagedRun).toHaveBeenCalledWith(
       expect.anything(),
       MANAGED_LAUNCH_STOP_REASON,
@@ -220,21 +228,24 @@ describe("createManagedLaunch post-enqueue stop guard", () => {
       .mockResolvedValueOnce(pending.run)
       .mockResolvedValueOnce(pending.run)
       .mockResolvedValueOnce(pending.run)
+      .mockResolvedValueOnce(pending.run)
       .mockResolvedValueOnce({
         ...pending.run,
         admission: { ...pending.run.admission, stopped: true },
       });
 
     const order: string[] = [];
-    const bindSession = vi.fn(async () => {
+    let boundSessionId: string | undefined;
+    const bindSession = vi.fn(async (sessionId: string) => {
       order.push("bindSession");
+      boundSessionId = sessionId;
     });
     const bindMessage = vi.fn(async () => {
       order.push("bindMessage");
     });
-    mocks.createManagedSession.mockImplementation(async () => {
+    mocks.createManagedSession.mockImplementation(async (_env, input) => {
       order.push("createSession");
-      return "session-1";
+      return input.managedSessionId;
     });
     mocks.enqueueManagedPrompt.mockImplementation(async () => {
       order.push("enqueue");
@@ -248,12 +259,73 @@ describe("createManagedLaunch post-enqueue stop guard", () => {
       createManagedLaunch(env(), context(), "trace-1")(pending, bindSession, bindMessage)
     ).rejects.toThrow("stopped after prompt enqueue");
 
-    expect(order).toEqual(["createSession", "bindSession", "enqueue", "bindMessage", "stop"]);
+    expect(order).toEqual(["bindSession", "createSession", "enqueue", "bindMessage", "stop"]);
+    expect(boundSessionId).toEqual(expect.any(String));
     expect(bindMessage).toHaveBeenCalledWith("message-1");
     expect(mocks.stopManagedRun).toHaveBeenCalledWith(
       expect.anything(),
       MANAGED_LAUNCH_STOP_REASON,
       "trace-1"
     );
+  });
+});
+
+describe("createManagedLaunch prebind ordering", () => {
+  it("does not create or enqueue when binding the session identity fails", async () => {
+    const pending = claim();
+    mocks.loadRun.mockResolvedValue(pending.run);
+    const bindSession = vi.fn().mockRejectedValue(new Error("SESSION_STORE unavailable"));
+
+    await expect(
+      createManagedLaunch(env(), context(), "trace-1")(pending, bindSession, vi.fn())
+    ).rejects.toThrow("SESSION_STORE unavailable");
+
+    expect(bindSession).toHaveBeenCalledTimes(1);
+    expect(mocks.createManagedSession).not.toHaveBeenCalled();
+    expect(mocks.enqueueManagedPrompt).not.toHaveBeenCalled();
+  });
+
+  it("does not create or enqueue when the run is stopped after the prebind", async () => {
+    const pending = claim();
+    mocks.loadRun
+      .mockResolvedValueOnce(pending.run)
+      .mockResolvedValueOnce(pending.run)
+      .mockResolvedValueOnce({
+        ...pending.run,
+        admission: { ...pending.run.admission, stopped: true },
+      });
+    const bindSession = vi.fn();
+
+    await expect(
+      createManagedLaunch(env(), context(), "trace-1")(pending, bindSession, vi.fn())
+    ).rejects.toThrow("no longer admissible");
+
+    expect(bindSession).toHaveBeenCalledTimes(1);
+    expect(mocks.createManagedSession).not.toHaveBeenCalled();
+    expect(mocks.enqueueManagedPrompt).not.toHaveBeenCalled();
+  });
+
+  it("preserves the bound identity and skips enqueue when session creation throws", async () => {
+    const pending = claim();
+    mocks.loadRun.mockResolvedValue(pending.run);
+    let boundSessionId: string | undefined;
+    const bindSession = vi.fn(async (sessionId: string) => {
+      boundSessionId = sessionId;
+    });
+    mocks.createManagedSession.mockRejectedValue(new Error("remote create failed"));
+
+    await expect(
+      createManagedLaunch(env(), context(), "trace-1")(pending, bindSession, vi.fn())
+    ).rejects.toThrow("remote create failed");
+
+    expect(boundSessionId).toEqual(expect.any(String));
+    expect(bindSession).toHaveBeenCalledWith(boundSessionId);
+    expect(mocks.createManagedSession).toHaveBeenCalledWith(
+      expect.anything(),
+      { ...REQUEST.session, managedSessionId: boundSessionId },
+      "user-1",
+      "trace-1"
+    );
+    expect(mocks.enqueueManagedPrompt).not.toHaveBeenCalled();
   });
 });
