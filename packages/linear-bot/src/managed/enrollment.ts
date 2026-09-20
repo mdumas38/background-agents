@@ -9,6 +9,7 @@ import { claimTask, createRun, type ManagedRun } from "./run-state";
 import { armManagedDeadline } from "./stop";
 import { loadRun } from "./store";
 import { ROOT_TASK_ID } from "./tree";
+import { freezeAttemptPolicy } from "./execution-policy";
 
 function requireStorage(env: Env): ManagedTransactionalStorage {
   const store = env.SESSION_STORE;
@@ -52,9 +53,16 @@ export async function startManagedWork(
   traceId: string
 ): Promise<string> {
   const storage = requireStorage(env);
-  const { context, spec } = buildManagedEnrollment(input, env.LINEAR_TASK_MODE);
-
   const existing = await loadManagedContext(storage);
+  const { context, spec } = buildManagedEnrollment(input, env.LINEAR_TASK_MODE, !existing);
+  if (!existing && env.MANAGED_CHECKPOINT_ENABLED === "true") {
+    if (env.MANAGED_CHECKPOINT_CAPABILITY !== "checkpoint-v1") {
+      throw new Error("Unsupported managed checkpoint capability.");
+    }
+    if (!context.executionPolicy)
+      throw new Error("Checkpoint finalization requires frozen policy.");
+    context.executionPolicy.finalizationMode = env.MANAGED_CHECKPOINT_CAPABILITY;
+  }
   if (!existing) {
     const attemptId = crypto.randomUUID();
     const candidate = claimTask(
@@ -62,6 +70,14 @@ export async function startManagedWork(
       ROOT_TASK_ID,
       attemptId
     );
+    if (context.executionPolicy) {
+      candidate.attempts[attemptId].executionPolicy = freezeAttemptPolicy(
+        context.executionPolicy,
+        Date.now(),
+        "parent-review",
+        context.baseSha
+      );
+    }
     buildManagedLaunchRequest(
       context,
       { run: candidate, taskId: ROOT_TASK_ID, attemptId },

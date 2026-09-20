@@ -1,6 +1,7 @@
 import type { ManagedTransactionalStorage } from "./claim-next";
 import type { ManagedChildIssueInput, ManagedIssueRef } from "./issue-create";
 import type { Task } from "./tree";
+import type { ManagedRunStorage } from "./store";
 
 /** Identity of the managed run and Linear root issue that owns a task's issue registration. */
 export interface ManagedIssueContext {
@@ -37,6 +38,20 @@ async function issueKey(taskId: string): Promise<string> {
     ""
   );
   return `managed:issue:${hex}`;
+}
+
+/** Read an existing identity without claiming or creating an external issue. */
+export async function readManagedTaskIssue(
+  storage: ManagedRunStorage,
+  context: ManagedIssueContext,
+  task: Task
+): Promise<ManagedIssueRef | undefined> {
+  if (task.parentId === null) return context.rootIssue;
+  const record = await storage.get<ManagedIssueRecord>(await issueKey(task.id));
+  if (record?.runId !== context.runId || record.taskId !== task.id || record.status !== "created") {
+    return undefined;
+  }
+  return record.result;
 }
 
 function freezeChildInput(

@@ -57,6 +57,12 @@ class TestPostPrompt:
 
 
 class TestRequestStop:
+    @pytest.mark.parametrize("status_code", [401, 404, 500])
+    async def test_rejected_abort_is_not_confirmed(self, status_code):
+        http_client = AsyncMock()
+        http_client.post.return_value = MockResponse(status_code)
+        assert await make_client(http_client).request_stop(SESSION_ID, reason="command") is False
+
     async def test_posts_abort_and_reports_success(self):
         http_client = AsyncMock()
         http_client.post.return_value = MockResponse(200)

@@ -147,10 +147,13 @@ class OpenCodeClient:
             return False
 
         try:
-            await self._client().post(
+            response = await self._client().post(
                 f"{self._base_url}/session/{opencode_session_id}/abort",
                 timeout=self._request_timeout_seconds,
             )
+            if response.status_code not in (200, 204):
+                self._log.warn("bridge.stop_rejected", status_code=response.status_code)
+                return False
             self._log.info("bridge.stop_requested", reason=reason)
             return True
         except Exception as e:

@@ -39,6 +39,12 @@ if TYPE_CHECKING:
 MAX_PENDING_PART_EVENTS: Final = 2000
 CONTEXT_OVERFLOW_ERROR_NAME: Final = "ContextOverflowError"
 
+# Explicit reasoning variants forwarded as the OpenCode request "variant" field
+# for provider/model pairs that are not covered by the provider-wide set below.
+# An effort outside this set is rejected instead of being silently dropped.
+OPENROUTER_DEEPSEEK_MODEL: Final = "openrouter/deepseek/deepseek-v4.1-flash"
+OPENROUTER_DEEPSEEK_EFFORTS: Final = frozenset({"low", "high", "max"})
+
 OPENCODE_DEFAULT_TITLE_RE: Final = re.compile(
     r"^(new session|child session) - " r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$",
     re.IGNORECASE,
@@ -846,8 +852,18 @@ class OpenCodePromptStream:
                 "modelID": model_id,
             }
 
-            if reasoning_effort and provider_id in {"anthropic", "openai", "xai"}:
-                request_body["variant"] = reasoning_effort
+            if reasoning_effort:
+                full_model_id = f"{provider_id}/{model_id}"
+                if full_model_id == OPENROUTER_DEEPSEEK_MODEL:
+                    if reasoning_effort not in OPENROUTER_DEEPSEEK_EFFORTS:
+                        raise ValueError(
+                            f"Unsupported reasoning effort {reasoning_effort!r} for "
+                            f"{OPENROUTER_DEEPSEEK_MODEL}; expected one of "
+                            f"{sorted(OPENROUTER_DEEPSEEK_EFFORTS)}."
+                        )
+                    request_body["variant"] = reasoning_effort
+                elif provider_id in {"anthropic", "openai", "xai"}:
+                    request_body["variant"] = reasoning_effort
 
             request_body["model"] = model_spec
 

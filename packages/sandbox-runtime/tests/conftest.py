@@ -1,10 +1,12 @@
 """Shared test fixtures and utilities for sandbox-runtime tests."""
 
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import httpx
 import pytest
 
+import sandbox_runtime
 from sandbox_runtime.harness import EventSink, HarnessPrompt, PromptLimits, TurnOutcome
 from sandbox_runtime.harness.opencode import OpencodeHarness
 from sandbox_runtime.harness.opencode_client import OpenCodeClient
@@ -13,6 +15,17 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Callable
 
     from sandbox_runtime.bridge import AgentBridge
+
+
+def pytest_sessionstart(session):
+    """Fail closed if a plugin pre-imported an installed runtime before path setup."""
+    expected = Path(__file__).resolve().parents[1] / "src" / "sandbox_runtime"
+    actual = Path(sandbox_runtime.__file__).resolve().parent
+    if actual != expected:
+        raise pytest.UsageError(
+            f"Repository tests require runtime source at {expected}; imported {actual}. "
+            "Run pytest in a fresh process without plugins that pre-import sandbox_runtime."
+        )
 
 
 @pytest.fixture(autouse=True)

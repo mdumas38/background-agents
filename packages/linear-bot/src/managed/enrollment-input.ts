@@ -7,6 +7,7 @@ import type {
 import type { SessionTarget } from "../target-resolution";
 import { DEFAULT_MANAGED_WORKER_TIMEOUT_MS, type ManagedContext } from "./context-store";
 import type { TaskSpec } from "./tree";
+import { createExecutionPolicy } from "./execution-policy";
 
 /**
  * Frozen, caller-supplied enrollment input for one explicit managed root run. The trusted webhook
@@ -70,7 +71,8 @@ function repositoryTarget(target: SessionTarget): { owner: string; name: string 
  */
 export function buildManagedEnrollment(
   input: ManagedEnrollmentInput,
-  mode: Env["LINEAR_TASK_MODE"]
+  mode: Env["LINEAR_TASK_MODE"],
+  freezePolicy = true
 ): { context: ManagedContext; spec: TaskSpec } {
   if (mode === "read-only") {
     throw new Error("Managed enrollment requires implementation mode.");
@@ -115,6 +117,15 @@ export function buildManagedEnrollment(
     actorDisplayName: input.actorDisplayName,
     actorEmail: input.actorEmail,
     workerTimeoutMs: DEFAULT_MANAGED_WORKER_TIMEOUT_MS,
+    ...(freezePolicy
+      ? {
+          executionPolicy: createExecutionPolicy({
+            model: input.model,
+            reasoningEffort: input.reasoningEffort,
+            workerTimeoutMs: DEFAULT_MANAGED_WORKER_TIMEOUT_MS,
+          }),
+        }
+      : {}),
   };
 
   const spec: TaskSpec = {

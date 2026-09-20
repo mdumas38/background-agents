@@ -2,8 +2,16 @@ import type { Env } from "../types";
 import { signedControlPlaneFetch } from "../internal-auth";
 import { stopAdmission } from "./admission";
 import { loadManagedContext } from "./context-store";
-import type { ManagedRun } from "./run-state";
+import type { ManagedAttempt, ManagedRun } from "./run-state";
 import { loadRun, saveRun, type ManagedRunStorage } from "./store";
+import { reconcileManagedCompletionReceipts } from "./completion-receipt";
+
+function hasCompletionReceipt(attempt: ManagedAttempt): boolean {
+  return (
+    attempt.completionReceipt !== undefined &&
+    (attempt.messageId === undefined || attempt.completionReceipt.messageId === attempt.messageId)
+  );
+}
 
 /**
  * Durable stop and deadline adapter for managed work.
@@ -21,6 +29,119 @@ export const MANAGED_STOP_INTENT_PREFIX = "managed:stop-attempt:";
 /** Fixed reason recorded when the earliest worker deadline elapses. */
 export const MANAGED_DEADLINE_STOP_REASON = "deadline";
 export const MAX_MANAGED_STOP_REASON_LENGTH = 200;
+export const MANAGED_FINALIZATION_INTENT_PREFIX = "managed:finalization:";
+const CHECKPOINT_REQUEST_TIMEOUT_MS = 5_000;
+
+export interface ManagedFinalizationIntent {
+  attemptId: string;
+  requestId: string;
+  messageId?: string;
+  hardDeadlineMs: number;
+  status: "claimed" | "sent" | "uncertain" | "unbound" | "unsupported";
+}
+
+/** No model turn: claim once, preserve the hard deadline, then ask the runtime to capture work. */
+export async function finalizeManagedAttempts(
+  env: Env,
+  nowMs = Date.now(),
+  traceId?: string
+): Promise<void> {
+  const storage = requireStopStorage(env);
+  const pending = await storage.transaction(async (tx) => {
+    const context = await loadManagedContext(tx);
+    let run = await loadRun(tx);
+    if (!context || !run || run.admission.stopped) return [];
+    run = await reconcileManagedCompletionReceipts(tx, run, context);
+    await saveRun(tx, run);
+    const claimed: Array<{ sessionId: string; intent: ManagedFinalizationIntent }> = [];
+    for (const [attemptId, attempt] of Object.entries(run.attempts)) {
+      const policy = attempt.executionPolicy;
+      if (
+        attempt.status === "settled" ||
+        hasCompletionReceipt(attempt) ||
+        policy?.finalizationMode !== "checkpoint-v1" ||
+        policy.finalizeAtMs > nowMs ||
+        policy.hardDeadlineMs <= nowMs
+      )
+        continue;
+      const key = MANAGED_FINALIZATION_INTENT_PREFIX + attemptId;
+      if (await tx.get(key)) continue;
+      const intent: ManagedFinalizationIntent = {
+        attemptId,
+        messageId: attempt.messageId,
+        requestId: `managed-finalize:${attemptId}:${attempt.messageId ?? "unbound"}`,
+        hardDeadlineMs: policy.hardDeadlineMs,
+        status: attempt.messageId && attempt.sessionId ? "claimed" : "unbound",
+      };
+      await tx.put({ [key]: intent });
+      if (intent.status === "claimed") claimed.push({ sessionId: attempt.sessionId!, intent });
+    }
+    // Persist the replacement wake-up BEFORE IO: restart or failed delivery cannot lose the watchdog.
+    let deadline = earliestDeadline(run, context.workerTimeoutMs);
+    if (deadline !== undefined) {
+      for (const [attemptId, attempt] of Object.entries(run.attempts)) {
+        if (attempt.status === "settled" || hasCompletionReceipt(attempt)) continue;
+        if (
+          attempt.executionPolicy?.finalizationMode === "checkpoint-v1" &&
+          !(await tx.get(MANAGED_FINALIZATION_INTENT_PREFIX + attemptId))
+        ) {
+          deadline = Math.min(deadline, attempt.executionPolicy.finalizeAtMs);
+        }
+      }
+      const existing = await tx.getAlarm();
+      await tx.setAlarm(existing === null ? deadline : Math.min(existing, deadline));
+    }
+    return claimed;
+  });
+  const actor = await rootActor(storage);
+  for (const { sessionId, intent } of pending) {
+    if (intent.hardDeadlineMs <= Date.now()) {
+      await storage.put({
+        [MANAGED_FINALIZATION_INTENT_PREFIX + intent.attemptId]: { ...intent, status: "uncertain" },
+      });
+      continue;
+    }
+    let status: ManagedFinalizationIntent["status"] = "uncertain";
+    try {
+      const response = await signedControlPlaneFetch(
+        env,
+        {
+          method: "POST",
+          url: `https://internal/sessions/${encodeURIComponent(sessionId)}/checkpoint`,
+          ...(actor ? { actor } : {}),
+          traceId,
+          body: JSON.stringify({
+            messageId: intent.messageId,
+            requestId: intent.requestId,
+            hardDeadlineMs: intent.hardDeadlineMs,
+          }),
+        },
+        {
+          headers: { "Content-Type": "application/json" },
+          signal: AbortSignal.timeout(
+            Math.max(1, Math.min(CHECKPOINT_REQUEST_TIMEOUT_MS, intent.hardDeadlineMs - Date.now()))
+          ),
+        }
+      );
+      if (response.ok) {
+        // Older transports return an empty success body; explicit negative acknowledgements
+        // from the checkpoint endpoint must not be promoted to successful dispatch.
+        const acknowledgement: unknown = await response.json().catch(() => undefined);
+        const disposition =
+          acknowledgement && typeof acknowledgement === "object" && "status" in acknowledgement
+            ? acknowledgement.status
+            : undefined;
+        status =
+          disposition === "delivery_unknown" || disposition === "skipped" ? "uncertain" : "sent";
+      } else if (response.status === 501) status = "unsupported";
+    } catch {
+      /* Unknown delivery is deliberately never retried. */
+    }
+    await storage.put({
+      [MANAGED_FINALIZATION_INTENT_PREFIX + intent.attemptId]: { ...intent, status },
+    });
+  }
+}
 
 export type ManagedStopIntentStatus = "claimed" | "accepted" | "uncertain";
 
@@ -100,6 +221,22 @@ async function claimStopIntent(
   messageId?: string
 ): Promise<boolean> {
   return storage.transaction(async (tx) => {
+    // The outer list is only a snapshot: completion may settle while an earlier stop is in IO.
+    let run = await loadRun(tx);
+    const context = await loadManagedContext(tx);
+    if (run && context) {
+      const reconciled = await reconcileManagedCompletionReceipts(tx, run, context);
+      if (reconciled !== run) await saveRun(tx, reconciled);
+      run = reconciled;
+    }
+    const attempt = run?.attempts[attemptId];
+    if (
+      !attempt ||
+      attempt.status === "settled" ||
+      hasCompletionReceipt(attempt) ||
+      attempt.messageId !== messageId
+    )
+      return false;
     const key = stopIntentKey(attemptId, messageId);
     if ((await tx.get<ManagedStopIntent>(key)) !== undefined) return false;
     await tx.put({
@@ -171,28 +308,72 @@ async function stopAttempt(
  * the same attempt after a prompt is bound to it. Reserved attempts without a session are left
  * untouched.
  */
-export async function stopManagedRun(env: Env, reason: string, traceId?: string): Promise<void> {
+export async function stopManagedRun(
+  env: Env,
+  reason: string,
+  traceId?: string,
+  deadlineCheckAtMs?: number
+): Promise<void> {
   const storage = requireStopStorage(env);
   const stopReason = boundedStopReason(reason);
 
-  await storage.transaction(async (tx) => {
-    const run = await loadRun(tx);
+  const shouldStop = await storage.transaction(async (tx) => {
+    let run = await loadRun(tx);
     if (!run) throw new Error("Managed run is not stored.");
+    const context = await loadManagedContext(tx);
+    if (context) {
+      const reconciled = await reconcileManagedCompletionReceipts(tx, run, context);
+      if (reconciled !== run) await saveRun(tx, reconciled);
+      run = reconciled;
+    }
+    // Recheck completion and persist admission stop in the SAME transaction. The alarm's earlier
+    // read must not stop a root whose last overdue attempt has since durably completed.
+    if (deadlineCheckAtMs !== undefined) {
+      if (
+        !context ||
+        run.admission.stopped ||
+        !hasTimedOutAttempt(run, context.workerTimeoutMs, deadlineCheckAtMs)
+      )
+        return false;
+    }
     const existing = await tx.get<ManagedStopRecord>(MANAGED_STOP_REASON_KEY);
-    await saveRun(tx, { ...run, admission: stopAdmission(run.admission) });
+    const trigger =
+      (existing?.reason ?? stopReason) === MANAGED_DEADLINE_STOP_REASON ? "deadline" : "operator";
+    const attempts = Object.fromEntries(
+      Object.entries(run.attempts).map(([id, attempt]) => [
+        id,
+        attempt.status === "settled" || hasCompletionReceipt(attempt)
+          ? attempt
+          : {
+              ...attempt,
+              terminalEvidence: {
+                stopTrigger: attempt.terminalEvidence?.stopTrigger ?? trigger,
+                executionOutcome: attempt.terminalEvidence?.executionOutcome ?? "unknown",
+              },
+            },
+      ])
+    );
+    await saveRun(tx, { ...run, attempts, admission: stopAdmission(run.admission) });
     if (existing === undefined) {
       await tx.put({
         [MANAGED_STOP_REASON_KEY]: { reason: stopReason } satisfies ManagedStopRecord,
       });
     }
+    return true;
   });
+  if (!shouldStop) return;
 
   const run = await loadRun(storage);
   if (!run) return;
 
   const [actor, intentKeys] = await Promise.all([rootActor(storage), loadStopIntentKeys(storage)]);
   for (const [attemptId, attempt] of Object.entries(run.attempts)) {
-    if (attempt.status === "settled" || attempt.sessionId === undefined) continue;
+    if (
+      attempt.status === "settled" ||
+      hasCompletionReceipt(attempt) ||
+      attempt.sessionId === undefined
+    )
+      continue;
     if (intentKeys.has(stopIntentKey(attemptId, attempt.messageId))) continue;
     await stopAttempt(
       env,
@@ -210,9 +391,10 @@ export async function stopManagedRun(env: Env, reason: string, traceId?: string)
 function earliestDeadline(run: ManagedRun, workerTimeoutMs: number): number | undefined {
   let earliest: number | undefined;
   for (const attempt of Object.values(run.attempts)) {
-    if (attempt.status === "settled") continue;
+    if (attempt.status === "settled" || hasCompletionReceipt(attempt)) continue;
     if (attempt.claimedAtMs === undefined || !Number.isFinite(attempt.claimedAtMs)) continue;
-    const deadline = attempt.claimedAtMs + workerTimeoutMs;
+    const deadline =
+      attempt.executionPolicy?.hardDeadlineMs ?? attempt.claimedAtMs + workerTimeoutMs;
     if (earliest === undefined || deadline < earliest) earliest = deadline;
   }
   return earliest;
@@ -220,9 +402,11 @@ function earliestDeadline(run: ManagedRun, workerTimeoutMs: number): number | un
 
 function hasTimedOutAttempt(run: ManagedRun, workerTimeoutMs: number, nowMs: number): boolean {
   return Object.values(run.attempts).some((attempt) => {
-    if (attempt.status === "settled") return false;
+    if (attempt.status === "settled" || hasCompletionReceipt(attempt)) return false;
     if (attempt.claimedAtMs === undefined || !Number.isFinite(attempt.claimedAtMs)) return false;
-    return attempt.claimedAtMs + workerTimeoutMs <= nowMs;
+    return (
+      (attempt.executionPolicy?.hardDeadlineMs ?? attempt.claimedAtMs + workerTimeoutMs) <= nowMs
+    );
   });
 }
 
@@ -239,8 +423,17 @@ export async function armManagedDeadline(env: Env): Promise<void> {
     const [context, run] = await Promise.all([loadManagedContext(tx), loadRun(tx)]);
     if (!context || !run || run.admission.stopped) return;
 
-    const deadline = earliestDeadline(run, context.workerTimeoutMs);
+    let deadline = earliestDeadline(run, context.workerTimeoutMs);
     if (deadline === undefined) return;
+    for (const [attemptId, attempt] of Object.entries(run.attempts)) {
+      if (attempt.status === "settled" || hasCompletionReceipt(attempt)) continue;
+      if (
+        attempt.executionPolicy?.finalizationMode === "checkpoint-v1" &&
+        !(await tx.get(MANAGED_FINALIZATION_INTENT_PREFIX + attemptId))
+      ) {
+        deadline = Math.min(deadline, attempt.executionPolicy.finalizeAtMs);
+      }
+    }
 
     const next = Math.max(Date.now() + 1, deadline);
     const existing = await tx.getAlarm();
@@ -259,8 +452,15 @@ export async function checkManagedDeadline(env: Env, traceId?: string): Promise<
   if (!context || !run || run.admission.stopped) return;
 
   if (hasTimedOutAttempt(run, context.workerTimeoutMs, Date.now())) {
-    await stopManagedRun(env, MANAGED_DEADLINE_STOP_REASON, traceId);
+    await stopManagedRun(env, MANAGED_DEADLINE_STOP_REASON, traceId, Date.now());
+    await armManagedDeadline(env);
     return;
+  }
+  await finalizeManagedAttempts(env, Date.now(), traceId);
+  // Delivery consumed time, so do not merely re-arm a deadline that elapsed during IO.
+  const current = await loadRun(storage);
+  if (current && hasTimedOutAttempt(current, context.workerTimeoutMs, Date.now())) {
+    await stopManagedRun(env, MANAGED_DEADLINE_STOP_REASON, traceId, Date.now());
   }
   await armManagedDeadline(env);
 }

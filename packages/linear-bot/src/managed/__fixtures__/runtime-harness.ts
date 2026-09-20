@@ -5,9 +5,15 @@ import type { ManagedOutcome } from "../contracts";
 import { enrollManagedRun, type ManagedContext } from "../context-store";
 import { createManagedLaunch } from "../launch-driver";
 import { pumpManagedRun } from "../pump";
-import { stopManagedRun } from "../stop";
+import {
+  stopManagedRun,
+  finalizeManagedAttempts,
+  MANAGED_FINALIZATION_INTENT_PREFIX,
+} from "../stop";
 import { loadRun } from "../store";
 import type { TaskSpec } from "../tree";
+import { linearCompletionCallbackSchema } from "@open-inspect/shared/types/session-api";
+import { completionKey } from "../../completion/key";
 
 async function snapshot(storage: DurableObjectStorage): Promise<Response> {
   const [run, prompts, issues, resultReads, sessions] = await Promise.all([
@@ -18,6 +24,10 @@ async function snapshot(storage: DurableObjectStorage): Promise<Response> {
     storage.list<{ sessionId: string }>({ prefix: "fixture:session:" }),
   ]);
   return Response.json({
+    alarm: await storage.getAlarm(),
+    finalizations: Array.from(
+      (await storage.list({ prefix: MANAGED_FINALIZATION_INTENT_PREFIX })).values()
+    ),
     run,
     prompts: Array.from(prompts.values()),
     issueCount: issues.size,
@@ -42,6 +52,13 @@ export class ManagedFixture {
 
   async fetch(request: Request): Promise<Response> {
     const { pathname } = new URL(request.url);
+    if (request.method === "POST" && pathname === "/finalize") {
+      const { nowMs } = (await request.json()) as { nowMs: number };
+      // Native alarm entry clears its scheduled wake-up before calling the adapter.
+      await this.storage.deleteAlarm();
+      await finalizeManagedAttempts(this.managedEnv, nowMs);
+      return snapshot(this.storage);
+    }
 
     if (request.method === "POST" && pathname === "/start") {
       const { context, spec } = (await request.json()) as {
@@ -64,12 +81,32 @@ export class ManagedFixture {
       return snapshot(this.storage);
     }
 
+    if (request.method === "POST" && pathname === "/accept-inbox-only") {
+      // Model a previously accepted inbox record followed by eviction before processing.
+      // Deliberately omit the new receipt hook to exercise recovery of legacy durable inboxes.
+      const payload = linearCompletionCallbackSchema.parse(await request.json());
+      await this.storage.put(completionKey(payload), {
+        payload,
+        traceId: "fixture",
+        deliveryId: "fixture",
+        status: "pending",
+        attempts: 0,
+      });
+      return snapshot(this.storage);
+    }
+
     if (request.method === "POST" && pathname === "/stop") {
       const body = (await request.json().catch(() => ({}))) as {
         reason?: string;
         traceId?: string;
+        deadlineCheckAtMs?: number;
       };
-      await stopManagedRun(this.managedEnv, body.reason ?? "fixture-stop", body.traceId);
+      await stopManagedRun(
+        this.managedEnv,
+        body.reason ?? "fixture-stop",
+        body.traceId,
+        body.deadlineCheckAtMs
+      );
       return snapshot(this.storage);
     }
 

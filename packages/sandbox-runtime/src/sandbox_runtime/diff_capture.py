@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     from .repo_config import RepoEntry
 
 DEFAULT_REFRESH_TIMEOUT_SECONDS = 60.0
+DEFAULT_CHECKPOINT_TIMEOUT_SECONDS = 30.0
 
 
 class BundleCollector(Protocol):
@@ -86,6 +87,24 @@ class ControlPlaneDiffClient:
             timeout=self._timeout_seconds,
         )
         return self._outcome(response)
+
+    async def upload_checkpoint(self, bundle: SessionDiffBundle, request_id: str) -> str:
+        """Publish through the existing authenticated diff transport and pin it."""
+        response = await self._client().put(
+            self._diff_url,
+            params={"checkpointRequestId": request_id},
+            headers={
+                "Authorization": f"Bearer {self._auth_token}",
+                "Content-Type": "application/json",
+            },
+            content=encode_bundle(bundle),
+            timeout=self._timeout_seconds,
+        )
+        response.raise_for_status()
+        revision_id = response.json().get("revisionId")
+        if not isinstance(revision_id, str) or not revision_id:
+            raise DiffCaptureError("Checkpoint upload did not return a revision")
+        return revision_id
 
     async def report_failure(self, message: str) -> DiffUploadOutcome:
         response = await self._client().post(
@@ -153,6 +172,59 @@ class SessionDiffRefreshWorker:
         self._task: asyncio.Task[None] | None = None
         self._unsupported = False
         self._closed = False
+
+    async def capture_checkpoint(
+        self, *, message_id: str, request_id: str, timeout_seconds: float
+    ) -> dict[str, str]:
+        """Capture a bounded, explicitly unverified snapshot without waiting for idle.
+
+        Finalization must work while a provider is hung. The checkout may still
+        be changing, so even an accepted upload is recovery evidence, never a
+        claim that a turn succeeded or that its files form a stable commit.
+        """
+        if self._unsupported or self._closed:
+            return {"status": "failed", "error": "Session diff transport is unavailable"}
+        try:
+            async with asyncio.timeout(min(timeout_seconds, DEFAULT_CHECKPOINT_TIMEOUT_SECONDS)):
+                repositories = load_repo_manifest(self.manifest_path)
+                if not repositories:
+                    raise DiffCaptureError("No repositories are available for checkpoint capture")
+                bundle = await self.collector(
+                    repositories,
+                    trigger_message_id=message_id,
+                    captured_at=int(time.time() * 1_000),
+                    limits=self.limits,
+                )
+                if all(repo["status"] != "ready" for repo in bundle["repositories"]):
+                    raise DiffCaptureError("All repositories failed checkpoint capture")
+                revision_id = await self.client.upload_checkpoint(bundle, request_id)
+                partial = any(
+                    repo["status"] != "ready"
+                    or repo.get("truncated", False)
+                    or any(file["renderState"] != "renderable" for file in repo.get("files", []))
+                    for repo in bundle["repositories"]
+                )
+                return {
+                    "status": "partial" if partial else "captured",
+                    "revisionId": revision_id,
+                    **(
+                        {"error": "Some changed files could not be captured fully"}
+                        if partial
+                        else {}
+                    ),
+                }
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:
+            message = (
+                "Checkpoint capture timed out"
+                if isinstance(error, TimeoutError)
+                else "Checkpoint collection or upload failed"
+            )
+            self.log.warn("session_diff.checkpoint_failed", error=message)
+            # The caller sends an ack-aware failure event. Do not add a second
+            # unbounded HTTP failure report after the capture budget expires.
+            return {"status": "failed", "error": message}
 
     def prompt_started(self) -> None:
         """Invalidate overlapping collections and hold refreshes until idle."""

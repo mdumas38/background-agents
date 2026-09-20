@@ -29,6 +29,14 @@ const ATTACHMENTS_TABLE_SQL = `CREATE TABLE IF NOT EXISTS attachments (
   created_at INTEGER NOT NULL
 )`;
 
+const SESSION_CHECKPOINT_DIFF_TABLE_SQL = `CREATE TABLE IF NOT EXISTS session_checkpoint_diff (
+  singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+  revision_id TEXT NOT NULL,
+  message_id TEXT NOT NULL,
+  request_id TEXT NOT NULL,
+  bundle_json TEXT NOT NULL
+);`;
+
 const SESSION_DIFF_TABLE_SQL = `CREATE TABLE IF NOT EXISTS session_diff (
   singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
   revision_id TEXT,
@@ -222,8 +230,9 @@ CREATE TABLE IF NOT EXISTS sandbox (
 -- overlaid with the session scalar branch/sha columns at read time.
 ${SESSION_REPOSITORIES_TABLE_SQL};
 
--- Latest durable checkout diff bundle. Source patches live only in this bounded row.
+-- Latest checkout diff plus one independently retained, bounded recovery checkpoint.
 ${SESSION_DIFF_TABLE_SQL}
+${SESSION_CHECKPOINT_DIFF_TABLE_SQL}
 
 -- Runtime alarm recovery source for hosts that can be adopted by another process.
 ${SESSION_ALARM_STATE_TABLE_SQL}
@@ -723,6 +732,11 @@ export const MIGRATIONS: readonly SchemaMigration[] = [
     id: 53,
     description: "Persist pre-initialization stop fences",
     run: PREINIT_STOP_FENCE_TABLE_SQL,
+  },
+  {
+    id: 54,
+    description: "Retain the bounded finalization checkpoint diff",
+    run: SESSION_CHECKPOINT_DIFF_TABLE_SQL,
   },
 ];
 

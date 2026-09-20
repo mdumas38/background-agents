@@ -112,7 +112,15 @@ export async function handleDiffUpload(
   if (body instanceof Response) return body;
   const parsed = sessionDiffUploadSchema.safeParse(body);
   if (!parsed.success) return error("Invalid session diff bundle", 400);
-  const response = await runtimeJson(ctx, sessionId, SessionInternalPaths.diffStore, parsed.data);
+  const checkpointRequestId = new URL(request.url).searchParams.get("checkpointRequestId");
+  if (checkpointRequestId !== null && (!checkpointRequestId || checkpointRequestId.length > 200))
+    return error("Invalid checkpoint request identity", 400);
+  const response = await runtimeJson(
+    ctx,
+    sessionId,
+    SessionInternalPaths.diffStore,
+    checkpointRequestId ? { ...parsed.data, checkpointRequestId } : parsed.data
+  );
   return new Response(response.body, { status: response.status, headers: response.headers });
 }
 

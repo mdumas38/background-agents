@@ -61,6 +61,13 @@ export async function settleManagedCompletion(
   }
   const task = run.tree.tasks[managed.taskId];
   const attempt = run.attempts[managed.attemptId];
+  if (
+    attempt.completionReceipt &&
+    (attempt.completionReceipt.messageId !== payload.messageId ||
+      attempt.completionReceipt.success !== payload.success)
+  ) {
+    throw new Error(MANAGED_COMPLETION_IDENTITY_ERROR);
+  }
 
   const issue = await ensureManagedTaskIssue(
     storage,
@@ -107,6 +114,13 @@ export async function settleManagedCompletion(
   const settled = await updateManagedRun(storage, (current) => {
     assertManagedCompletionIdentity(context, current, payload, issue);
     const existing = current.attempts[managed.attemptId];
+    if (
+      existing.completionReceipt &&
+      (existing.completionReceipt.messageId !== payload.messageId ||
+        existing.completionReceipt.success !== payload.success)
+    ) {
+      throw new Error(MANAGED_COMPLETION_IDENTITY_ERROR);
+    }
     if (existing.status === "settled") {
       if (!existing.outcome || existing.costUsd === undefined) {
         throw new Error(MANAGED_COMPLETION_FROZEN_ERROR);
@@ -120,7 +134,7 @@ export async function settleManagedCompletion(
         costUsd: existing.costUsd,
       });
     }
-    return settleRunAttempt(current, {
+    const result = settleRunAttempt(current, {
       attemptId: managed.attemptId,
       taskId: managed.taskId,
       sessionId: payload.sessionId,
@@ -128,6 +142,14 @@ export async function settleManagedCompletion(
       outcome,
       costUsd,
     });
+    result.attempts[managed.attemptId] = {
+      ...result.attempts[managed.attemptId],
+      terminalEvidence: {
+        stopTrigger: existing.terminalEvidence?.stopTrigger ?? null,
+        executionOutcome: payload.success ? "succeeded" : "failed",
+      },
+    };
+    return result;
   });
 
   return { context, run: settled, taskId: managed.taskId };

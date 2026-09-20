@@ -23,6 +23,7 @@
 
 import { resolveAppName } from "@open-inspect/shared/app-name";
 import { DEFAULT_MODEL } from "@open-inspect/shared/models";
+import { CheckpointService } from "./checkpoint-service";
 import { generateId, hashToken, encryptToken } from "../auth/crypto";
 import { resolveSandboxBackendName } from "../sandbox/provider-name";
 import { createSandboxProviderFromEnv } from "../sandbox/provider-factory";
@@ -387,13 +388,16 @@ export function createSessionRuntime(platform: SessionPlatform, env: Env): Sessi
     now: () => Date.now(),
   });
 
-  const diffService = new SessionDiffService(
-    new SessionDiffStore(sql),
-    sessionCoreRepository,
+  const diffStore = new SessionDiffStore(sql);
+  const checkpoints = new CheckpointService(
+    eventRepository,
+    messageRepository,
+    sandboxRepository,
     messenger,
-    log
+    diffStore
   );
-  const diffsHandler = new SessionDiffsHandler(diffService);
+  const diffService = new SessionDiffService(diffStore, sessionCoreRepository, messenger, log);
+  const diffsHandler = new SessionDiffsHandler(diffService, checkpoints);
   const eventStream = new SessionEventStream(eventRepository);
 
   // Tier 5 — the lifecycle manager.
@@ -548,7 +552,8 @@ export function createSessionRuntime(platform: SessionPlatform, env: Env): Sessi
     artifactEventHandler,
     executionEventHandler,
     runtimeEventHandler,
-    pushService
+    pushService,
+    checkpoints
   );
 
   const alarmHandler = createAlarmHandler({
@@ -784,6 +789,8 @@ export function createSessionRuntime(platform: SessionPlatform, env: Env): Sessi
     prompt: (request, _url, requestLog) => messagesHandler.enqueuePrompt(request, requestLog),
     autofix: (request, _url, requestLog) => autofixHandler.handle(request, requestLog),
     stop: () => messagesHandler.stop(),
+    checkpoint: (request) => checkpoints.handle(request),
+    checkpointStatus: () => checkpoints.status(),
     sandboxEvent: (request) => sandboxHandler.sandboxEvent(request),
     sandboxError: (request) => sandboxHandler.sandboxError(request),
     createMediaArtifact: (request) => sandboxHandler.createMediaArtifact(request),

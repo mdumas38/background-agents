@@ -12,6 +12,7 @@ import {
   deliverRecordedCompletion,
   enqueueCompletion,
   COMPLETION_MAX_ATTEMPTS,
+  COMPLETION_RECONCILIATION_RETRY_MS,
   type CompletionSender,
 } from "./delivery";
 import type { Env } from "../types";
@@ -145,8 +146,31 @@ it("retains exhausted and conflicting delivery for reconciliation without claimi
     attempts: COMPLETION_MAX_ATTEMPTS,
   });
   const calls = mocks.graphql.mock.calls.length;
+  // A shared alarm can fire before this record's reconciliation window.
+  vi.spyOn(s.storage, "getAlarm").mockResolvedValueOnce(null);
   await setup(s.storage).delivery.flush();
   expect(mocks.graphql).toHaveBeenCalledTimes(calls);
+  expect(await s.storage.get(completionKey(payload))).toMatchObject({
+    nextReconciliationAttemptAtMs: expect.any(Number),
+  });
+
+  mocks.graphql.mockImplementation(async (_c, _q, vars) => ({
+    data: { agentActivityCreate: { success: true, agentActivity: { id: vars.input.id } } },
+  }));
+  const exhausted = await s.storage.get<Record<string, unknown>>(completionKey(payload));
+  await s.storage.put(completionKey(payload), {
+    ...exhausted!,
+    nextReconciliationAttemptAtMs: 0,
+  });
+  // Native alarms clear before the record becomes eligible for reconciliation.
+  vi.spyOn(s.storage, "getAlarm").mockResolvedValueOnce(null);
+  const earliestReconciliation = Date.now() + COMPLETION_RECONCILIATION_RETRY_MS;
+  await setup(s.storage).delivery.flush();
+  expect(mocks.graphql.mock.calls.length).toBeGreaterThan(calls);
+  expect(await s.storage.get(completionKey(payload))).toMatchObject({ status: "done" });
+  const alarm = await s.storage.getAlarm();
+  expect(alarm).toBeGreaterThanOrEqual(earliestReconciliation);
+  expect(alarm).toBeLessThanOrEqual(Date.now() + COMPLETION_RECONCILIATION_RETRY_MS);
 });
 it("does not acknowledge an acceptance whose durable alarm could not be written", async () => {
   const s = setup();

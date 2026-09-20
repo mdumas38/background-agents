@@ -311,6 +311,48 @@ class TestBuildPromptRequestBody:
         assert body["variant"] == "medium"
         assert body["model"] == {"providerID": "xai", "modelID": "grok-4.6"}
 
+    @pytest.mark.parametrize("effort", ["low", "high", "max"])
+    def test_openrouter_deepseek_forwards_explicit_effort(self, bridge: AgentBridge, effort: str):
+        body = bridge.harness.prompt_stream._build_prompt_request_body(
+            "Hello",
+            "openrouter/deepseek/deepseek-v4.1-flash",
+            reasoning_effort=effort,
+        )
+
+        assert body["variant"] == effort
+        assert body["model"] == {
+            "providerID": "openrouter",
+            "modelID": "deepseek/deepseek-v4.1-flash",
+        }
+
+    @pytest.mark.parametrize("effort", ["medium", "none", "xhigh", "ultra"])
+    def test_openrouter_deepseek_rejects_unsupported_effort(self, bridge: AgentBridge, effort: str):
+        with pytest.raises(ValueError):
+            bridge.harness.prompt_stream._build_prompt_request_body(
+                "Hello",
+                "openrouter/deepseek/deepseek-v4.1-flash",
+                reasoning_effort=effort,
+            )
+
+    def test_openrouter_deepseek_without_effort_omits_variant(self, bridge: AgentBridge):
+        body = bridge.harness.prompt_stream._build_prompt_request_body(
+            "Hello", "openrouter/deepseek/deepseek-v4.1-flash"
+        )
+
+        assert "variant" not in body
+        assert body["model"] == {
+            "providerID": "openrouter",
+            "modelID": "deepseek/deepseek-v4.1-flash",
+        }
+
+    def test_other_openrouter_model_ignores_effort(self, bridge: AgentBridge):
+        body = bridge.harness.prompt_stream._build_prompt_request_body(
+            "Hello", "openrouter/other/model", reasoning_effort="high"
+        )
+
+        assert "variant" not in body
+        assert body["model"] == {"providerID": "openrouter", "modelID": "other/model"}
+
 
 class TestOpenCodeIdentifier:
     """Tests for OpenCode-compatible ascending ID generation."""

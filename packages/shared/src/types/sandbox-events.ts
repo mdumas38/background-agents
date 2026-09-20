@@ -1,10 +1,20 @@
 import { z } from "zod";
 import { harnessIdSchema } from "../harnesses";
-import { sessionDiffBaselineRepositorySchema } from "./session-diffs";
+import { SESSION_DIFF_ID_PATTERN, sessionDiffBaselineRepositorySchema } from "./session-diffs";
 import { resolvedSessionAttachmentsSchema } from "./session-attachments";
 import { githubAutofixOriginSchema } from "./github-autofix";
 
 const recordSchema = z.record(z.string(), z.unknown());
+
+/** Capability is advertised by the authenticated runtime, not inferred from image age. */
+export const SANDBOX_CHECKPOINT_CAPABILITY = "checkpoint-v1";
+export const checkpointStatusSchema = z.enum(["captured", "partial", "failed", "skipped"]);
+export const sandboxCheckpointRequestSchema = z.strictObject({
+  messageId: z.string().trim().min(1).max(200),
+  requestId: z.string().trim().min(1).max(200),
+  hardDeadlineMs: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+});
+export type SandboxCheckpointRequest = z.infer<typeof sandboxCheckpointRequestSchema>;
 const gitSyncStatusSchema = z.enum(["pending", "in_progress", "completed", "failed"]);
 export type GitSyncStatus = z.infer<typeof gitSyncStatusSchema>;
 
@@ -62,6 +72,7 @@ export const sandboxEventSchema = z.discriminatedUnion("type", [
     // SANDBOX_VERSION of the image this sandbox booted from. Stamped onto any
     // snapshot it produces so a later restore can be gated on it.
     runtimeVersion: z.string().optional(),
+    capabilities: z.array(z.string().min(1).max(64)).max(16).optional(),
     repositories: z.array(sessionDiffBaselineRepositorySchema).optional(),
   }),
   messageSandboxEventBaseSchema.extend({
@@ -121,6 +132,15 @@ export const sandboxEventSchema = z.discriminatedUnion("type", [
     error: z.string().optional(),
     /** Final cumulative reported cost of the turn. */
     messageCostUsd: z.number().nonnegative().optional(),
+  }),
+  messageSandboxEventBaseSchema.extend({
+    // Recovery evidence only. This event must never settle execution or mark review accepted.
+    type: z.literal("checkpoint_complete"),
+    requestId: z.string().min(1).max(200),
+    status: checkpointStatusSchema,
+    revisionId: z.string().regex(SESSION_DIFF_ID_PATTERN).optional(),
+    error: z.string().max(500).optional(),
+    capturedAtMs: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
   }),
   messageSandboxEventBaseSchema.extend({
     type: z.literal("context_compacted"),

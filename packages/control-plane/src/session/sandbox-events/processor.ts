@@ -8,6 +8,7 @@ import type { SandboxEventContext } from "./context";
 import type { SandboxExecutionEventHandler } from "./execution.handler";
 import type { SandboxRuntimeEventHandler } from "./runtime.handler";
 import type { SandboxStreamingEventHandler } from "./streaming.handler";
+import type { CheckpointService } from "../checkpoint-service";
 
 type SandboxEventWithAck = SandboxEvent & { ackId?: string };
 
@@ -18,6 +19,7 @@ const CRITICAL_EVENT_TYPES: ReadonlySet<string> = new Set([
   "snapshot_ready",
   "push_complete",
   "push_error",
+  "checkpoint_complete",
 ]);
 
 /**
@@ -36,7 +38,8 @@ export class SessionSandboxEventProcessor {
     private readonly artifacts: SandboxArtifactEventHandler,
     private readonly execution: SandboxExecutionEventHandler,
     private readonly runtime: SandboxRuntimeEventHandler,
-    private readonly pushService: SandboxPushService
+    private readonly pushService: SandboxPushService,
+    private readonly checkpoints?: CheckpointService
   ) {}
 
   async processSandboxEvent(event: SandboxEventWithAck): Promise<void> {
@@ -64,6 +67,9 @@ export class SessionSandboxEventProcessor {
 
   private async dispatch(event: SandboxEvent, context: SandboxEventContext): Promise<void> {
     switch (event.type) {
+      case "checkpoint_complete":
+        this.checkpoints?.receive(event);
+        return;
       case "heartbeat":
         this.runtime.handleHeartbeat(context);
         return;

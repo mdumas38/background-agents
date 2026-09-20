@@ -66,6 +66,18 @@ function boundRun(): ManagedRun {
 }
 
 describe("managed attempt store", () => {
+  it("does not bind a different message after a trusted early completion receipt", async () => {
+    const storage = new FakeTransactionalStorage();
+    const run = boundRun();
+    run.attempts["attempt-1"].completionReceipt = { messageId: "message-1", success: true };
+    await saveRun(storage, run);
+    await expect(bindManagedMessage(storage, "attempt-1", "message-2")).rejects.toThrow(
+      "completion receipt"
+    );
+    expect(
+      (await bindManagedMessage(storage, "attempt-1", "message-1")).attempts["attempt-1"].messageId
+    ).toBe("message-1");
+  });
   it("persists a transactional update and handles bind, replay, and conflict", async () => {
     const storage = new FakeTransactionalStorage();
     await saveRun(storage, boundRun());

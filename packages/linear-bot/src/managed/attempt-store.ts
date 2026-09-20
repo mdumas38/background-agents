@@ -51,6 +51,12 @@ export async function bindManagedMessage(
       throw new ManagedRunStateError("unknown-attempt", `Attempt ${attemptId} is not known.`);
     }
     const attempt = run.attempts[attemptId];
+    if (attempt.completionReceipt && attempt.completionReceipt.messageId !== messageId) {
+      throw new ManagedRunStateError(
+        "attempt-conflict",
+        "Message conflicts with trusted completion receipt."
+      );
+    }
     if (attempt.sessionId === undefined) {
       throw new ManagedRunStateError(
         "attempt-not-bindable",

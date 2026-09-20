@@ -11,11 +11,7 @@ import {
   type LinearCallbackContext,
 } from "@open-inspect/shared/types/session-api";
 import { z } from "zod";
-import {
-  FOLLOW_UP_INSTRUCTIONS,
-  PUBLISHED_TASK_HEADING,
-  publicationEnabled,
-} from "./follow-ups/proposals";
+import { FOLLOW_UP_INSTRUCTIONS, publicationEnabled } from "./follow-ups/proposals";
 import type {
   Env,
   LinearIssueDetails,
@@ -52,6 +48,7 @@ import {
 } from "./kv-store";
 import { handleManagedRootCommand } from "./managed/root-commands";
 import { startManagedWork } from "./managed/enrollment";
+import { FOCUSED_DELIVERY_GUIDANCE, referenceCanonicalContext } from "./task-context";
 
 const log = createLogger("handler");
 
@@ -966,8 +963,17 @@ export function buildInitialPrompt(params: {
 }): string {
   const { webhook, issue, issueDetails, instructionComment, clarificationReply } = params;
   const useProviderContext = webhook.promptContext && !params.omitOptionalContext;
+  const description = issueDetails?.description ?? issue.description;
+  const canonicalFields = [
+    { source: "linear_issue_description", content: description },
+    { source: "linear_agent_instruction", content: instructionComment?.body },
+    { source: "linear_repository_clarification", content: clarificationReply?.body },
+  ];
   let prompt = useProviderContext
-    ? buildPromptContextPrompt(webhook.promptContext!, params.mode)
+    ? buildPromptContextPrompt(
+        referenceCanonicalContext(webhook.promptContext!, canonicalFields),
+        params.mode
+      )
     : buildPrompt(
         issue,
         issueDetails && params.omitOptionalContext
@@ -986,8 +992,7 @@ export function buildInitialPrompt(params: {
       if (content)
         prompt += `\n\n${buildUntrustedUserContentBlock({ source, author: "unknown", content })}`;
     }
-    const description = issueDetails?.description ?? issue.description;
-    if (description?.startsWith(PUBLISHED_TASK_HEADING)) {
+    if (description) {
       prompt += `\n\n## Complete durable task description\n\n${buildUntrustedUserContentBlock({ source: "linear_issue_description", author: "unknown", content: description })}`;
     }
   }
@@ -998,6 +1003,7 @@ export function buildInitialPrompt(params: {
   if (params.additionalInstructions)
     prompt += `\n\n## Additional Instructions\n\n${params.additionalInstructions}`;
   if (params.publishFollowUps) prompt += `\n\n${FOLLOW_UP_INSTRUCTIONS}`;
+  if (params.mode !== "read-only") prompt += `\n\n${FOCUSED_DELIVERY_GUIDANCE}`;
   return prompt;
 }
 
@@ -1053,13 +1059,20 @@ export function buildPrompt(
     // Include recent comments for context
     if (issueDetails.comments.length > 0) {
       parts.push("", "---", "**Recent comments:**");
+      const seen = new Map([
+        [description, "linear_issue_description"],
+        [comment?.body, "linear_agent_instruction"],
+        [clarificationReply?.body, "linear_repository_clarification"],
+      ]);
       for (const c of issueDetails.comments.slice(-5)) {
+        const duplicateSource = seen.get(c.body);
+        seen.set(c.body, duplicateSource ?? "earlier linear_issue_comment");
         const author = c.user?.name || "Unknown";
         parts.push(
           buildUntrustedUserContentBlock({
             source: "linear_issue_comment",
             author,
-            content: c.body,
+            content: duplicateSource ? `[Same content as ${duplicateSource}.]` : c.body,
           })
         );
       }

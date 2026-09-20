@@ -16,6 +16,9 @@ export interface Env {
   SESSION_STORE?: DurableObjectStorage;
   LINEAR_TASK_MODE?: "read-only" | "implementation";
   LINEAR_FOLLOW_UP_PUBLICATION?: string;
+  /** Explicit deployment opt-in; requires a runtime advertising checkpoint-v1. */
+  MANAGED_CHECKPOINT_CAPABILITY?: "checkpoint-v1";
+  MANAGED_CHECKPOINT_ENABLED?: string;
 
   // Service binding to control plane
   CONTROL_PLANE: ControlPlaneFetcher;

@@ -124,15 +124,26 @@ export class SessionDiffService {
    * Validate and atomically publish a sandbox-produced bundle as the latest
    * revision, returning its revision id.
    */
-  publishBundle(input: unknown): string {
+  publishBundle(input: unknown, checkpointRequestId?: string): string {
     const parsed = sessionDiffUploadSchema.safeParse(input);
     if (!parsed.success) {
       throw new InvalidDiffBundleError();
     }
     this.assertRepositorySetMatches(parsed.data);
 
+    if (checkpointRequestId) {
+      if (!parsed.data.triggerMessageId) throw new InvalidDiffBundleError();
+      const pinned = this.store.getCheckpointManifest(
+        parsed.data.triggerMessageId,
+        checkpointRequestId
+      );
+      if (pinned) return pinned.revisionId;
+    }
+
     const revisionId = this.generateRevisionId();
     const now = this.now();
+    // No await between pin and normal publication. Recovery copy survives refreshes.
+    if (checkpointRequestId) this.store.pinCheckpoint(parsed.data, revisionId, checkpointRequestId);
     this.store.replaceBundle(parsed.data, revisionId, now);
     this.broadcastState(now);
     return revisionId;
