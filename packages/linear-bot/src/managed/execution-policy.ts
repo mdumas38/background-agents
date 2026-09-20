@@ -19,8 +19,7 @@ export interface ManagedExecutionPolicy {
   resolvedReasoningEffort?: string;
   workerTimeoutMs: number;
   finalizationLeadMs: number;
-  /** Runtime checkpoint transport is deliberately not enabled by this policy. */
-  finalizationMode: "prompt-guidance";
+  finalizationMode: "prompt-guidance" | "checkpoint-v1";
 }
 
 export interface ManagedAttemptPolicy extends ManagedExecutionPolicy {
@@ -58,6 +57,8 @@ export function createExecutionPolicy(input: {
   model: string;
   reasoningEffort?: string;
   workerTimeoutMs: number;
+  /** Explicit trusted deployment opt-in; the control plane also verifies runtime support. */
+  checkpointCapability?: "checkpoint-v1";
 }): ManagedExecutionPolicy {
   if (!isValidModel(input.model)) throw new Error("Unsupported managed model.");
   if (
@@ -79,7 +80,7 @@ export function createExecutionPolicy(input: {
     resolvedReasoningEffort: input.reasoningEffort ?? getDefaultReasoningEffort(input.model),
     workerTimeoutMs: input.workerTimeoutMs,
     finalizationLeadMs: Math.min(DEFAULT_FINALIZATION_LEAD_MS, input.workerTimeoutMs),
-    finalizationMode: "prompt-guidance",
+    finalizationMode: input.checkpointCapability ?? "prompt-guidance",
   };
 }
 
@@ -101,7 +102,7 @@ export function assertExecutionPolicy(policy: ManagedExecutionPolicy): void {
     !Number.isSafeInteger(policy.finalizationLeadMs) ||
     policy.finalizationLeadMs < 0 ||
     policy.finalizationLeadMs > policy.workerTimeoutMs ||
-    policy.finalizationMode !== "prompt-guidance"
+    !["prompt-guidance", "checkpoint-v1"].includes(policy.finalizationMode)
   )
     throw new Error("Invalid managed execution policy.");
 }

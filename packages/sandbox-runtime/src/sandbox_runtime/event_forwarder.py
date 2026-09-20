@@ -24,6 +24,7 @@ CRITICAL_EVENT_TYPES: Final[frozenset[str]] = frozenset(
         "snapshot_ready",
         "push_complete",
         "push_error",
+        "checkpoint_complete",
     }
 )
 MAX_EVENT_BUFFER_SIZE: Final = 1000

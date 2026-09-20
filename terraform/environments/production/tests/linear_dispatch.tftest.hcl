@@ -62,6 +62,38 @@ run "default_task_mode" {
     error_message = "Existing coding launches must keep implementation mode."
   }
 }
+
+run "checkpoint_defaults_off" {
+  command = plan
+  assert {
+    condition = (
+      module.linear_bot_worker[0].plain_text_bindings["MANAGED_CHECKPOINT_ENABLED"] == "false" &&
+      module.linear_bot_worker[0].plain_text_bindings["MANAGED_CHECKPOINT_CAPABILITY"] == ""
+    )
+    error_message = "Checkpoint finalization must remain off until compatible deployment is verified."
+  }
+}
+
+run "checkpoint_explicit_opt_in" {
+  command = plan
+  variables {
+    linear_bot_managed_checkpoint_enabled    = true
+    linear_bot_managed_checkpoint_capability = "checkpoint-v1"
+  }
+  assert {
+    condition = (
+      module.linear_bot_worker[0].plain_text_bindings["MANAGED_CHECKPOINT_ENABLED"] == "true" &&
+      module.linear_bot_worker[0].plain_text_bindings["MANAGED_CHECKPOINT_CAPABILITY"] == "checkpoint-v1"
+    )
+    error_message = "Both trusted opt-in settings must reach the Linear worker."
+  }
+}
+
+run "checkpoint_invalid_capability" {
+  command = plan
+  variables { linear_bot_managed_checkpoint_capability = "unsupported" }
+  expect_failures = [var.linear_bot_managed_checkpoint_capability]
+}
 run "read_only_task_mode" {
   command = plan
   variables {

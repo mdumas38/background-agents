@@ -111,6 +111,29 @@ beforeEach(() => {
 });
 
 describe("startManagedWork", () => {
+  it("requires both deployment opt-in and supported checkpoint capability", async () => {
+    const configured = { ...env(), MANAGED_CHECKPOINT_ENABLED: "true" };
+    await expect(startManagedWork(configured, INPUT, "trace")).rejects.toThrow(
+      "Unsupported managed checkpoint capability"
+    );
+    expect(mocks.enrollManagedRun).not.toHaveBeenCalled();
+    const policy = createExecutionPolicy({
+      model: "openrouter/deepseek/deepseek-v4.1-flash",
+      workerTimeoutMs: DEFAULT_MANAGED_WORKER_TIMEOUT_MS,
+    });
+    mocks.buildManagedEnrollment.mockReturnValue({
+      context: context({ model: policy.requestedModel, executionPolicy: policy }),
+      spec: spec(),
+    });
+    await startManagedWork(
+      { ...configured, MANAGED_CHECKPOINT_CAPABILITY: "checkpoint-v1" },
+      INPUT,
+      "trace"
+    );
+    expect(mocks.enrollManagedRun.mock.calls[0][1].executionPolicy.finalizationMode).toBe(
+      "checkpoint-v1"
+    );
+  });
   it("preflights a new versioned policy using the same attempt snapshot contract as claims", async () => {
     const model = "openrouter/deepseek/deepseek-v4.1-flash";
     const executionPolicy = createExecutionPolicy({

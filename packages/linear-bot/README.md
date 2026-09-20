@@ -257,3 +257,16 @@ session.
 
 An explicit `/manage <objective>` instruction can run a broad objective as a recursive tree of small
 tasks with durable parents. See [the managed work guide](../../docs/MANAGED_WORK.md).
+
+Checkpoint finalization is deployment-opt-in: set both `MANAGED_CHECKPOINT_ENABLED=true` and
+`MANAGED_CHECKPOINT_CAPABILITY=checkpoint-v1` only after deploying a compatible control plane and
+runtime. Defaults and existing enrolled policies remain prompt-guidance-only. The control plane
+independently checks the connected runtime's advertised capability; unsupported delivery is recorded,
+not silently treated as capture success.
+
+Opted-in attempts reserve `DEFAULT_FINALIZATION_LEAD_MS` for deterministic freeze-and-capture before
+their original hard deadline. This aborts active model work and preserves partial source; it does not
+start a second model turn or claim successful completion. A durable one-shot intent precedes the
+bounded checkpoint request, and `sent` means transport acceptance, not artifact verification.
+Unknown delivery is not retried. An attempt still unbound at finalization records `unbound` and relies
+on the unchanged hard watchdog; a late bind does not create another checkpoint attempt.

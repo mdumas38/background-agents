@@ -154,7 +154,9 @@ export function buildManagedLaunchRequest(
       `- Begin finalizing by ${new Date(policy.finalizeAtMs).toISOString()}. Stop optional exploration; preserve and push reviewed-in-scope changes and report focused checks.`,
       "- Run the focused checks once per meaningful change. Do not rerun a passing suite without a relevant change or new failure evidence.",
       "- If time is insufficient, report the preserved partial work and remaining checks honestly; never claim completion from an unverified patch.",
-      "- These are worker instructions, not a promise of runtime interruption or an extension of the hard stop."
+      policy.finalizationMode === "checkpoint-v1"
+        ? "- At the finalization deadline the coordinator requests a runtime freeze-and-capture, without another model turn. Finish delivery before then; capture preserves partial work, not a successful completion. The hard stop never extends."
+        : "- These are worker instructions, not a promise of runtime interruption or an extension of the hard stop."
     );
   }
 

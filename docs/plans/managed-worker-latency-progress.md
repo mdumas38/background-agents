@@ -58,10 +58,44 @@ restart/lifecycle cases. Two additional enrollment/replay regressions were added
 two affected suites passed all seven tests. Shared and Linear builds, Linear typechecking, scoped
 ESLint/Prettier, and diff checks pass. No cloud integration or live-provider acceptance is claimed.
 
+## Enforced checkpoint batch (default off)
+
+The next batch adds a durable, one-shot finalization alarm inside the original hard deadline. It
+requests a bounded source checkpoint from the exact active message, then asks the runtime to abort
+that turn. It does not send another model prompt, extend the deadline, create a commit, or declare
+the task successful. A live snapshot is partial, unverified recovery evidence.
+
+The runtime budgets capture and abort separately within the remaining deadline. Failed or hung
+provider aborts leave execution marked as running so the hard watchdog remains armed. Lost responses
+do not cause another checkpoint dispatch. Unsupported runtimes and attempts without a message
+binding at finalization fall back to the unchanged hard stop; late binding does not retry checkpoint
+capture in this version.
+
+The control plane authenticates the Linear actor, fences message/request/sandbox identities, and
+pins one bounded diff bundle per session independently of subsequent diff refreshes. A different
+checkpoint cannot evict that bundle. `GET /sessions/:id/checkpoint` returns its patch-free manifest
+and receipt status; existing diff-file reads can retrieve the retained revision. A transport
+acknowledgment alone does not establish that a checkpoint was captured.
+
+Rollout requires both `linear_bot_managed_checkpoint_enabled = true` and
+`linear_bot_managed_checkpoint_capability = "checkpoint-v1"`, plus a runtime advertising that
+capability. Defaults remain false/empty. Deploy compatible control-plane schema and runtime before
+opting in new managed roots; existing roots retain their frozen policy. No deployment, paid model
+call, managed-worker restart, or production latency/cost improvement is claimed by this batch.
+
+Validation for this batch: all 599 Linear-bot tests passed, including Workerd restart cases; the
+final scheduler guards then passed all 18 stop tests. Control-plane focused coverage passed 61
+tests, including real SQLite migration/retention and authenticated checkpoint routes. Runtime
+checkpoint/abort coverage passed 57 focused tests; the earlier full runtime run passed 1,102 tests
+with 28 skips before the final targeted guards. The shared suite passed 907 tests with one diff-size
+test timing out under concurrent validation; its affected suites then passed all 15 tests in
+isolation. Web typechecking and control-plane/Linear builds passed. Terraform formatting passed;
+mocked Terraform plan tests were not run because this worktree has no installed providers.
+
 ### Still required before resuming managed workers
 
-1. Runtime-enforced finalization/checkpoint transport, bounded artifact capture, and durable alarm
-   restart/race coverage. The prompt reserve alone cannot interrupt a stuck provider request.
+1. Review and separately approve deployment/canary of the default-off checkpoint implementation,
+   including recovery-artifact inspection. Capture is not a substitute for accepted completion.
 2. Correlated cross-tier event collection and prompt/runtime/image metadata beyond the current
    policy and structured logs; private operator parity if that operator is used again.
 3. Measured prepared-image/cache optimization with invalidation, credential isolation, and exact

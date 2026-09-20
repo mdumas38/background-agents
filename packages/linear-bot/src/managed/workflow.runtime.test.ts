@@ -117,6 +117,62 @@ afterEach(async () => {
   persistence = undefined;
 });
 
+it("preserves checkpoint intent and original hard deadline across Workerd restart without replay", async () => {
+  persistence = await mkdtemp(join(tmpdir(), "managed-finalization-runtime-"));
+  const requests: CapturedStopRequest[] = [];
+  const start = makeStart(await loadScript(), requests);
+  runtime = start();
+  const call = async (path: string, body?: unknown) => {
+    const response = await runtime!.dispatchFetch(`https://test${path}`, {
+      method: body === undefined ? "GET" : "POST",
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    expect(response.ok).toBe(true);
+    return (await response.json()) as FixtureState & {
+      alarm: number;
+      finalizations: Array<{ status: string }>;
+    };
+  };
+  const model = "openrouter/deepseek/deepseek-v4.1-flash";
+  const state = await call("/start", {
+    context: {
+      runId: "checkpoint-restart",
+      organizationId: "org",
+      appUserId: "app",
+      rootIssue: { id: "issue", identifier: "TEST-1", url: "https://linear.test/issue" },
+      teamId: "team",
+      projectId: null,
+      repoOwner: "acme",
+      repoName: "repo",
+      model,
+      actorUserId: "human",
+      workerTimeoutMs: 600_000,
+      executionPolicy: createExecutionPolicy({
+        model,
+        workerTimeoutMs: 600_000,
+        checkpointCapability: "checkpoint-v1",
+      }),
+    },
+    spec: { title: "Checkpoint", objective: "Preserve patch", acceptance: "Capture evidence" },
+  });
+  const policy = Object.values(state.run.attempts)[0].executionPolicy!;
+  expect(state.alarm).toBe(policy.finalizeAtMs);
+  await runtime!.dispose();
+  runtime = start();
+  const finalized = await call("/finalize", { nowMs: policy.finalizeAtMs });
+  expect(finalized.alarm).toBe(policy.hardDeadlineMs);
+  expect(finalized.finalizations).toMatchObject([{ status: "sent" }]);
+  expect(requests).toHaveLength(1);
+  expect(requests[0].url).toMatch(/\/checkpoint$/);
+  expect(requests[0].signatureHeader).toBeTruthy();
+  await runtime!.dispose();
+  runtime = start();
+  const repeated = await call("/finalize", { nowMs: policy.finalizeAtMs + 1 });
+  expect(repeated.alarm).toBe(policy.hardDeadlineMs);
+  expect(repeated.prompts).toHaveLength(1);
+  expect(requests).toHaveLength(1);
+}, 60_000);
+
 it("runs the managed split/restart scenario in Workerd", async () => {
   const script = await loadScript();
   persistence = await mkdtemp(join(tmpdir(), "managed-workflow-runtime-"));

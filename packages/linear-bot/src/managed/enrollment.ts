@@ -55,6 +55,14 @@ export async function startManagedWork(
   const storage = requireStorage(env);
   const existing = await loadManagedContext(storage);
   const { context, spec } = buildManagedEnrollment(input, env.LINEAR_TASK_MODE, !existing);
+  if (!existing && env.MANAGED_CHECKPOINT_ENABLED === "true") {
+    if (env.MANAGED_CHECKPOINT_CAPABILITY !== "checkpoint-v1") {
+      throw new Error("Unsupported managed checkpoint capability.");
+    }
+    if (!context.executionPolicy)
+      throw new Error("Checkpoint finalization requires frozen policy.");
+    context.executionPolicy.finalizationMode = env.MANAGED_CHECKPOINT_CAPABILITY;
+  }
   if (!existing) {
     const attemptId = crypto.randomUUID();
     const candidate = claimTask(

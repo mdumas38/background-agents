@@ -13,7 +13,11 @@ import type {
   SpawnSource,
 } from "@open-inspect/shared/types/sessions";
 import { artifactTypeSchema } from "@open-inspect/shared/types/artifacts";
-import type { EventType, GitSyncStatus } from "@open-inspect/shared/types/sandbox-events";
+import type {
+  EventType,
+  GitSyncStatus,
+  SandboxCheckpointRequest,
+} from "@open-inspect/shared/types/sandbox-events";
 import type { GitPushSpec } from "../source-control";
 import { z } from "zod";
 
@@ -245,6 +249,9 @@ interface RefreshDiffCommand {
 }
 
 export type SandboxCommand =
+  | ({
+      type: "checkpoint";
+    } & SandboxCheckpointRequest)
   | PromptCommand
   | StopCommand
   | SnapshotCommand
