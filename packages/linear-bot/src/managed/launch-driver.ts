@@ -31,12 +31,14 @@ async function requireAdmissibleRun(storage: ManagedRunStorage, claim: ManagedTa
  * Build the one-shot launch adapter for an enrolled managed run.
  *
  * Effect ordering is the contract: the fresh run is re-read and checked before any issue, session,
- * or prompt allocation; the issue is registered through the shared registry; the session is created
- * and durably bound before the prompt is enqueued; and the message is bound after enqueue. A stop
- * observed after session binding stops the run and throws before enqueue, so the pump records the
- * uncertain outcome. A stop that lands concurrently with enqueue is re-checked after the message is
- * bound and stops the newly bound message before throwing, so a prompt created after the root stop
- * cannot outlive it. Nothing here retries or catches.
+ * or prompt allocation; the issue is registered through the shared registry; the session identity is
+ * durably bound before the remote session is created, so the binding survives a creation that throws
+ * or returns uncertainly; admission is re-checked after the prebind and before the remote create;
+ * and the message is bound after enqueue. A stop observed after session binding stops the run and
+ * throws before enqueue, so the pump records the uncertain outcome. A stop that lands concurrently
+ * with enqueue is re-checked after the message is bound and stops the newly bound message before
+ * throwing, so a prompt created after the root stop cannot outlive it. Nothing here retries or
+ * catches.
  */
 export function createManagedLaunch(
   env: Env,
@@ -69,13 +71,16 @@ export function createManagedLaunch(
     const request = buildManagedLaunchRequest(context, claim, issue);
 
     await requireAdmissibleRun(storage, claim);
-    const sessionId = await createManagedSession(
+    const sessionId = crypto.randomUUID();
+    await bindSession(sessionId);
+
+    await requireAdmissibleRun(storage, claim);
+    await createManagedSession(
       env,
-      request.session,
+      { ...request.session, managedSessionId: sessionId },
       context.actorUserId,
       traceId
     );
-    await bindSession(sessionId);
 
     const afterBind = await loadRun(storage);
     if (!afterBind || afterBind.id !== claim.run.id) {
