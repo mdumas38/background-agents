@@ -25,6 +25,8 @@ interface RecordEntry {
   delivered?: boolean;
   status: "pending" | "done" | "needs_reconciliation";
   attempts: number;
+  /** Per-record gate keeps a shared coordinator alarm from accelerating reconciliation retries. */
+  nextReconciliationAttemptAtMs?: number;
 }
 export const COMPLETION_RETRY_MS = 60_000;
 export const COMPLETION_MAX_ATTEMPTS = 12;
@@ -111,6 +113,24 @@ export class CompletionDelivery {
     const records = await this.state.storage.list<RecordEntry>({ prefix: "completion:" });
     for (const [key, record] of records) {
       if (record.status === "done") continue;
+      const nowMs = Date.now();
+      if (
+        record.status === "needs_reconciliation" &&
+        record.nextReconciliationAttemptAtMs !== undefined &&
+        record.nextReconciliationAttemptAtMs > nowMs
+      ) {
+        // Another record may have fired the shared alarm early. Preserve this
+        // record's own eligibility wake-up instead of spending its retry now.
+        await this.state.storage.transaction(async (storage) => {
+          const alarm = await storage.getAlarm();
+          await storage.setAlarm(
+            alarm === null
+              ? record.nextReconciliationAttemptAtMs!
+              : Math.min(alarm, record.nextReconciliationAttemptAtMs!)
+          );
+        });
+        continue;
+      }
       const retryMs =
         record.status === "needs_reconciliation"
           ? COMPLETION_RECONCILIATION_RETRY_MS
@@ -119,10 +139,13 @@ export class CompletionDelivery {
       // an earlier managed deadline armed instead of postponing it with each retry. Exhausted
       // deliveries re-enter through the same idempotent delivery/readback path at a lower rate.
       await this.state.storage.transaction(async (storage) => {
-        const retryAt = Date.now() + retryMs;
+        const retryAt = nowMs + retryMs;
         const alarm = await storage.getAlarm();
         await storage.setAlarm(alarm === null ? retryAt : Math.min(alarm, retryAt));
       });
+      if (record.status === "needs_reconciliation") {
+        record.nextReconciliationAttemptAtMs = nowMs + COMPLETION_RECONCILIATION_RETRY_MS;
+      }
       record.attempts++;
       await this.state.storage.put(key, record);
       try {
@@ -144,7 +167,24 @@ export class CompletionDelivery {
         );
         record.status = "done";
       } catch {
-        if (record.attempts >= COMPLETION_MAX_ATTEMPTS) record.status = "needs_reconciliation";
+        if (
+          record.attempts >= COMPLETION_MAX_ATTEMPTS &&
+          record.status !== "needs_reconciliation"
+        ) {
+          record.status = "needs_reconciliation";
+          record.nextReconciliationAttemptAtMs = Date.now() + COMPLETION_RECONCILIATION_RETRY_MS;
+          // The current one-minute retry alarm may already have fired. Persist
+          // the lower-frequency recovery deadline atomically with the state.
+          await this.state.storage.transaction(async (storage) => {
+            await storage.put(key, record);
+            const alarm = await storage.getAlarm();
+            await storage.setAlarm(
+              alarm === null
+                ? record.nextReconciliationAttemptAtMs!
+                : Math.min(alarm, record.nextReconciliationAttemptAtMs!)
+            );
+          });
+        }
         console.warn("linear.completion_delivery_pending", {
           key,
           deliveryId: record.deliveryId,
