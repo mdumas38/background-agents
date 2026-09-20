@@ -19,8 +19,8 @@ vi.mock("../completion/extractor", async (original) => ({
 }));
 
 import {
-  MANAGED_PROVIDER_FAILURE_EVIDENCE,
-  MANAGED_PROVIDER_FAILURE_SUMMARY,
+  MANAGED_EXECUTION_FAILURE_EVIDENCE,
+  MANAGED_EXECUTION_FAILURE_SUMMARY,
   MANAGED_UNREADABLE_REPORT_EVIDENCE,
   MANAGED_UNREADABLE_REPORT_SUMMARY,
   readManagedResult,
@@ -94,7 +94,7 @@ describe("readManagedResult report outcomes", () => {
     );
   });
 
-  it("maps a failed worker callback to a fixed blocked provider report without extraction", async () => {
+  it("maps a failed worker callback to a fixed blocked unknown report without extraction", async () => {
     const result = await readManagedResult(
       env(),
       callback({ success: false, error: "raw provider stack trace: secret" }),
@@ -103,9 +103,9 @@ describe("readManagedResult report outcomes", () => {
     expect(result.costUsd).toBe(1.25);
     expect(result.outcome).toEqual({
       kind: "blocked",
-      summary: MANAGED_PROVIDER_FAILURE_SUMMARY,
-      reason: "provider",
-      evidence: MANAGED_PROVIDER_FAILURE_EVIDENCE,
+      summary: MANAGED_EXECUTION_FAILURE_SUMMARY,
+      reason: "unknown",
+      evidence: MANAGED_EXECUTION_FAILURE_EVIDENCE,
     });
     expect(JSON.stringify(result.outcome)).not.toContain("raw provider stack trace");
     expect(mocks.extractAgentResponse).not.toHaveBeenCalled();

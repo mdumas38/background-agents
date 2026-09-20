@@ -9,10 +9,10 @@ import { parseManagedOutcome, type ManagedOutcome } from "./contracts";
  * Read the bounded managed-work outcome and its trusted cost after a worker completes.
  *
  * The cost is always read from the control plane's managed-accounting endpoint, never from model
- * output. A failed worker callback becomes a fixed blocked provider report; a completed callback
- * whose report is missing or unreadable becomes a fixed blocked unknown report. Transient cost or
- * extraction failures throw so the caller can retry durably instead of settling on fake data. This
- * module performs no retries, storage, or direct network IO of its own.
+ * output. A failed worker callback becomes a fixed blocked unknown report that does not attribute a
+ * cause; a completed callback whose report is missing or unreadable becomes a fixed blocked unknown
+ * report. Transient cost or extraction failures throw so the caller can retry durably instead of
+ * settling on fake data. This module performs no retries, storage, or direct network IO of its own.
  */
 
 export interface ManagedResult {
@@ -20,10 +20,11 @@ export interface ManagedResult {
   costUsd: number;
 }
 
-/** Fixed, safe summary for a worker that reported its own failure; never includes raw errors. */
-export const MANAGED_PROVIDER_FAILURE_SUMMARY = "Managed worker reported a provider failure.";
-export const MANAGED_PROVIDER_FAILURE_EVIDENCE =
-  "The managed worker callback reported success=false. Provider error details are withheld.";
+/** Fixed, safe summary for a worker callback that did not succeed; never includes raw errors. */
+export const MANAGED_EXECUTION_FAILURE_SUMMARY =
+  "Managed worker execution did not complete successfully.";
+export const MANAGED_EXECUTION_FAILURE_EVIDENCE =
+  "The managed worker callback reported success=false. The callback alone does not establish the cause; an operator must inspect the stop and runtime records.";
 
 /** Fixed, bounded explanation for a completed report that could not be read as an outcome. */
 export const MANAGED_UNREADABLE_REPORT_SUMMARY = "Managed worker report could not be read.";
@@ -47,12 +48,12 @@ async function readManagedCost(env: Env, sessionId: string, traceId?: string): P
   return parsed.data.totalCost;
 }
 
-function blockedProvider(): ManagedOutcome {
+function blockedExecutionFailure(): ManagedOutcome {
   return {
     kind: "blocked",
-    summary: MANAGED_PROVIDER_FAILURE_SUMMARY,
-    reason: "provider",
-    evidence: MANAGED_PROVIDER_FAILURE_EVIDENCE,
+    summary: MANAGED_EXECUTION_FAILURE_SUMMARY,
+    reason: "unknown",
+    evidence: MANAGED_EXECUTION_FAILURE_EVIDENCE,
   };
 }
 
@@ -73,7 +74,7 @@ export async function readManagedResult(
   const costUsd = await readManagedCost(env, payload.sessionId, traceId);
 
   if (!payload.success) {
-    return { outcome: blockedProvider(), costUsd };
+    return { outcome: blockedExecutionFailure(), costUsd };
   }
 
   const response = await extractAgentResponse(env, payload.sessionId, payload.messageId, traceId);
