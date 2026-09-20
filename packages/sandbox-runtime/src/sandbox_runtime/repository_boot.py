@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from .boot_timing import measure_boot_stage
 from .constants import REPO_MANIFEST_FILE_PATH
 from .repo_config import RepoConfigError, RepoEntry, dump_repo_manifest, parse_repositories
 from .repository_sync import RepositorySyncStatus
@@ -153,8 +154,11 @@ class RepositoryBoot:
             raise RuntimeError(f"invalid repository config: {self.repo_config_error}")
         self._write_repo_manifest()
         if self.repositories:
-            await self.synchronizer.ensure_credentials_configured()
-        sync_result = await self.synchronizer.sync(self.repositories, boot_mode)
+            with measure_boot_stage(self.log, "credentials", boot_mode=boot_mode.value):
+                await self.synchronizer.ensure_credentials_configured()
+        with measure_boot_stage(self.log, "repository_sync", boot_mode=boot_mode.value) as stage:
+            sync_result = await self.synchronizer.sync(self.repositories, boot_mode)
+            stage.succeeded = not sync_result.failures
         self.repositories = list(sync_result.repositories)
         git_sync_success = not sync_result.failures
         if sync_result.failures:
@@ -207,8 +211,12 @@ class RepositoryBoot:
         setup_success: bool | None = None
         if self.repositories and boot_mode in (BootMode.FRESH, BootMode.BUILD):
             setup_success = True
-            for repo in self.repositories:
-                if await self.hooks.run_setup(repo, boot_mode):
+            for index, repo in enumerate(self.repositories):
+                with measure_boot_stage(
+                    self.log, "setup", boot_mode=boot_mode.value, repository_index=index
+                ) as stage:
+                    stage.succeeded = await self.hooks.run_setup(repo, boot_mode)
+                if stage.succeeded:
                     continue
                 setup_success = False
                 if boot_mode is BootMode.BUILD:
@@ -223,10 +231,19 @@ class RepositoryBoot:
 
         start_success: bool | None = None
         if self.repositories and boot_mode is not BootMode.BUILD:
-            await self.tunnel_environment.wait_until_ready(expected_tunnel_ports)
+            with measure_boot_stage(
+                self.log, "tunnel_readiness", boot_mode=boot_mode.value
+            ) as stage:
+                stage.succeeded = await self.tunnel_environment.wait_until_ready(
+                    expected_tunnel_ports
+                )
             start_success = True
             for index, repo in enumerate(self.repositories):
-                if await self.hooks.run_start(repo, boot_mode):
+                with measure_boot_stage(
+                    self.log, "start", boot_mode=boot_mode.value, repository_index=index
+                ) as stage:
+                    stage.succeeded = await self.hooks.run_start(repo, boot_mode)
+                if stage.succeeded:
                     continue
                 start_success = False
                 if index == 0:

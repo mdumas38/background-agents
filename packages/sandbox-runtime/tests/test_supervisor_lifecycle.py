@@ -146,16 +146,33 @@ async def test_bridge_restart_exhaustion_is_fatal(tmp_path, monkeypatch):
 
 
 async def test_opencode_restarts_do_not_rematerialize_managed_skills(tmp_path, monkeypatch):
-    supervisor, _repository, opencode_server, *_ = _supervisor(tmp_path, [])
+    events = []
+    supervisor, _repository, opencode_server, *_ = _supervisor(tmp_path, events)
     supervisor._repository_boot_result = RepositoryBootResult(True, [], True, True, (), tmp_path)
     opencode_server.exit_code.return_value = 1
     supervisor._report_fatal_error = AsyncMock()
-    monkeypatch.setattr("sandbox_runtime.supervisor.asyncio.sleep", AsyncMock())
+    # Backoff now waits on the shutdown event, not asyncio.sleep. Stub the
+    # actual wait boundary while retaining the requested delays and ordering.
+    wait_for_shutdown = AsyncMock(
+        side_effect=lambda delay_seconds: events.append(("wait", delay_seconds)) or False
+    )
+    monkeypatch.setattr(supervisor, "_wait_for_shutdown", wait_for_shutdown)
 
     await SandboxSupervisor.monitor_processes(supervisor)
 
     assert opencode_server.start.await_count == supervisor.MAX_RESTARTS
     supervisor.managed_skills.materialize.assert_not_awaited()
+    assert events == [
+        event
+        for attempt in range(1, supervisor.MAX_RESTARTS + 1)
+        for event in (
+            ("wait", min(supervisor.BACKOFF_BASE**attempt, supervisor.BACKOFF_MAX)),
+            "opencode",
+            ("wait", 1.0),
+        )
+    ]
+    supervisor._report_fatal_error.assert_awaited_once()
+    assert supervisor.shutdown_event.is_set()
 
 
 async def test_code_server_restart_exhaustion_is_nonfatal(tmp_path, monkeypatch):

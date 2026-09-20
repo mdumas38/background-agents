@@ -10,12 +10,19 @@ from unittest.mock import ANY, AsyncMock, MagicMock, patch
 import pytest
 
 from sandbox_runtime.repository_sync import (
+    RepositorySynchronizer,
     RepositorySyncOutcome,
     RepositorySyncResult,
     RepositorySyncStatus,
 )
 from sandbox_runtime.runtime_config import BootMode
 from sandbox_runtime.supervisor import ImageBuildExecutionCancelled
+
+
+@pytest.fixture(autouse=True)
+def isolate_credential_installation(monkeypatch):
+    """Boot policy tests must not install helpers or mutate the host git configuration."""
+    monkeypatch.setattr(RepositorySynchronizer, "ensure_credentials_configured", AsyncMock())
 
 
 @pytest.fixture(autouse=True)
@@ -127,6 +134,11 @@ class TestImageBuildMode:
             await supervisor.run(_completion_callback(supervisor))
 
         supervisor.repository_boot.synchronizer.sync.assert_called_once()
+        # This boundary must stay mocked: its real implementation mutates global
+        # git config and installs executables outside the test workspace.
+        credentials = supervisor.repository_boot.synchronizer.ensure_credentials_configured
+        assert isinstance(credentials, AsyncMock)
+        credentials.assert_awaited_once()
         supervisor.repository_boot.hooks.run_setup.assert_called_once()
         supervisor.repository_boot.hooks.run_start.assert_not_called()
         # OpenCode and bridge should NOT be started in build mode
@@ -1456,6 +1468,10 @@ class TestBaseBranchProperty:
 
 class TestEnsureCredentialHelperConfigured:
     """Phase-0 git credential helper configuration."""
+
+    @pytest.fixture(autouse=True)
+    def isolate_credential_installation(self):
+        """Exercise the real method; these tests mock its subprocess and file boundaries."""
 
     @pytest.mark.asyncio
     async def test_configures_helper_and_usehttppath(self, base_env):
