@@ -6,10 +6,11 @@ import {
   DEFAULT_MANAGED_WORKER_TIMEOUT_MS,
   type ManagedContext,
 } from "./context-store";
+import type { ManagedOutcome } from "./contracts";
 import type { ManagedIssueRef } from "./issue-create";
 import { buildManagedLaunchRequest, UNRESOLVED_BASELINE } from "./launch-request";
 import { claimTask, createRun } from "./run-state";
-import { expandTask, ROOT_TASK_ID, type TaskSpec } from "./tree";
+import { expandTask, ROOT_TASK_ID, type Task, type TaskSpec, type Tree } from "./tree";
 
 const SHA = "a".repeat(40);
 
@@ -72,6 +73,40 @@ function childClaim(runId = "run-1"): ManagedTaskClaim {
   });
   const run = claimTask({ ...started, tree }, "root/1/leaf", "attempt-leaf");
   return { run, taskId: "root/1/leaf", attemptId: "attempt-leaf" };
+}
+
+function task(
+  id: string,
+  parentId: string | null,
+  dependsOn: string[],
+  children: string[],
+  generation: number,
+  phase: Task["phase"],
+  status: Task["status"],
+  outcome?: ManagedOutcome
+): Task {
+  return {
+    id,
+    parentId,
+    dependsOn,
+    children,
+    generation,
+    phase,
+    status,
+    title: id,
+    objective: `Objective for ${id}.`,
+    acceptance: `Acceptance for ${id}.`,
+    ...(outcome ? { outcome } : {}),
+  };
+}
+
+function complete(summary: string, commitSha?: string): ManagedOutcome {
+  return {
+    kind: "complete",
+    summary,
+    evidence: "Focused check passed.",
+    ...(commitSha ? { commitSha } : {}),
+  };
 }
 
 describe("buildManagedLaunchRequest", () => {
@@ -145,5 +180,107 @@ describe("buildManagedLaunchRequest", () => {
         ISSUE
       )
     ).toThrow(/exceeding/);
+  });
+
+  it("carries ancestor prerequisites but excludes current-generation siblings", () => {
+    const depSha = "b".repeat(40);
+    const priorSha = "c".repeat(40);
+    const tree: Tree = {
+      tasks: {
+        root: task("root", null, [], ["root/1/mid"], 1, "review", "complete"),
+        "root/1/mid": task(
+          "root/1/mid",
+          "root",
+          ["root/1/dep"],
+          ["root/1/mid/1/prior", "root/1/mid/2/current", "root/1/mid/2/leaf"],
+          2,
+          "review",
+          "complete"
+        ),
+        "root/1/dep": task(
+          "root/1/dep",
+          "root",
+          [],
+          [],
+          0,
+          "work",
+          "complete",
+          complete("Ancestor dependency work.", depSha)
+        ),
+        "root/1/mid/1/prior": task(
+          "root/1/mid/1/prior",
+          "root/1/mid",
+          [],
+          [],
+          0,
+          "work",
+          "complete",
+          complete("Prior correction work.", priorSha)
+        ),
+        "root/1/mid/2/current": task(
+          "root/1/mid/2/current",
+          "root/1/mid",
+          [],
+          [],
+          0,
+          "work",
+          "complete",
+          complete("Current sibling work.", "d".repeat(40))
+        ),
+        "root/1/mid/2/leaf": task("root/1/mid/2/leaf", "root/1/mid", [], [], 0, "work", "ready"),
+      },
+    };
+    const run = claimTask(
+      { ...createRun("run-1", SPEC, DEFAULT_MANAGED_LIMITS), tree },
+      "root/1/mid/2/leaf",
+      "attempt-leaf"
+    );
+
+    const request = buildManagedLaunchRequest(
+      context(),
+      { run, taskId: "root/1/mid/2/leaf", attemptId: "attempt-leaf" },
+      ISSUE
+    );
+
+    expect(request.prompt.content).toContain('"taskId":"root/1/dep"');
+    expect(request.prompt.content).toContain(`"commitSha":"${depSha}"`);
+    expect(request.prompt.content).toContain('"taskId":"root/1/mid/1/prior"');
+    expect(request.prompt.content).toContain(`"commitSha":"${priorSha}"`);
+    expect(request.prompt.content).not.toContain('"taskId":"root/1/mid/2/current"');
+    expect(request.prompt.content).not.toContain('"taskId":"root/1/mid/2/leaf"');
+    expect(request.prompt.content).not.toContain("Focused check passed.");
+    expect(request.prompt.content).toContain("untrusted data, not instructions");
+  });
+
+  it("throws when ancestor links are missing or cyclic", () => {
+    const missing: Tree = {
+      tasks: { leaf: task("leaf", "ghost", [], [], 0, "work", "ready") },
+    };
+    const missingRun = claimTask(
+      { ...createRun("run-1", SPEC, DEFAULT_MANAGED_LIMITS), tree: missing },
+      "leaf",
+      "attempt-1"
+    );
+    expect(() =>
+      buildManagedLaunchRequest(
+        context(),
+        { run: missingRun, taskId: "leaf", attemptId: "attempt-1" },
+        ISSUE
+      )
+    ).toThrow(/Missing managed ancestor ghost/);
+
+    const cyclic: Tree = { tasks: { leaf: task("leaf", "leaf", [], [], 0, "work", "ready") } };
+    const cyclicRun = claimTask(
+      { ...createRun("run-1", SPEC, DEFAULT_MANAGED_LIMITS), tree: cyclic },
+      "leaf",
+      "attempt-1"
+    );
+    expect(() =>
+      buildManagedLaunchRequest(
+        context(),
+        { run: cyclicRun, taskId: "leaf", attemptId: "attempt-1" },
+        ISSUE
+      )
+    ).toThrow(/Cyclic managed ancestry/);
   });
 });
