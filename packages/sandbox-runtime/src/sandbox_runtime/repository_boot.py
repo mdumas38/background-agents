@@ -191,6 +191,19 @@ class RepositoryBoot:
                             "the checkout may be stale."
                         )
                     self.warnings.record("sync", message, repo)
+        # A repository image is an optimization, never authority to run a
+        # mixed checkout. `git checkout` may succeed while retaining local
+        # tracked edits that do not conflict with the requested revision.
+        # Do not run setup or expose readiness from that source.
+        if boot_mode is BootMode.REPO_IMAGE:
+            dirty = [
+                outcome.repository
+                for outcome in sync_result.outcomes
+                if outcome.status is RepositorySyncStatus.SUCCEEDED and not outcome.tracked_clean
+            ]
+            if dirty:
+                names = ", ".join(f"{repo.owner}/{repo.name}" for repo in dirty)
+                raise RuntimeError(f"repository image has dirty tracked source after sync: {names}")
         self._write_repo_manifest()
 
         repository_shas: list[dict[str, str]] = []

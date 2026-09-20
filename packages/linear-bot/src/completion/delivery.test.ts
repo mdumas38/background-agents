@@ -12,6 +12,7 @@ import {
   deliverRecordedCompletion,
   enqueueCompletion,
   COMPLETION_MAX_ATTEMPTS,
+  COMPLETION_RECONCILIATION_RETRY_MS,
   type CompletionSender,
 } from "./delivery";
 import type { Env } from "../types";
@@ -145,8 +146,14 @@ it("retains exhausted and conflicting delivery for reconciliation without claimi
     attempts: COMPLETION_MAX_ATTEMPTS,
   });
   const calls = mocks.graphql.mock.calls.length;
+  // Native alarms clear before their handler invokes the next reconciliation pass.
+  vi.spyOn(s.storage, "getAlarm").mockResolvedValueOnce(null);
+  const earliestReconciliation = Date.now() + COMPLETION_RECONCILIATION_RETRY_MS;
   await setup(s.storage).delivery.flush();
   expect(mocks.graphql).toHaveBeenCalledTimes(calls);
+  const alarm = await s.storage.getAlarm();
+  expect(alarm).toBeGreaterThanOrEqual(earliestReconciliation);
+  expect(alarm).toBeLessThanOrEqual(Date.now() + COMPLETION_RECONCILIATION_RETRY_MS);
 });
 it("does not acknowledge an acceptance whose durable alarm could not be written", async () => {
   const s = setup();

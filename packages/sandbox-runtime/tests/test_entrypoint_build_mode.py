@@ -100,11 +100,14 @@ def _completion_callback(supervisor):
     return callback
 
 
-def _sync_result(repositories, status=RepositorySyncStatus.SUCCEEDED):
+def _sync_result(repositories, status=RepositorySyncStatus.SUCCEEDED, tracked_clean=True):
     repositories = tuple(repositories)
     return RepositorySyncResult(
         repositories,
-        tuple(RepositorySyncOutcome(repo, status) for repo in repositories),
+        tuple(
+            RepositorySyncOutcome(repo, status, tracked_clean=tracked_clean)
+            for repo in repositories
+        ),
     )
 
 
@@ -800,7 +803,7 @@ class TestFromRepoImage:
                 tuple(boot.repositories),
                 tuple(
                     RepositorySyncOutcome(
-                        repo, RepositorySyncStatus.SUCCEEDED, before_sha, after_sha
+                        repo, RepositorySyncStatus.SUCCEEDED, before_sha, after_sha, True
                     )
                     for repo in boot.repositories
                 ),
@@ -810,6 +813,30 @@ class TestFromRepoImage:
         boot.hooks.run_start = AsyncMock(return_value=True)
         await boot.boot(BootMode.REPO_IMAGE, [])
         boot.hooks.run_setup.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_dirty_image_source_is_fatal_before_setup_or_start(self, repo_image_env):
+        supervisor = _make_supervisor(repo_image_env)
+        boot = supervisor.repository_boot
+        boot.synchronizer.sync = AsyncMock(
+            return_value=RepositorySyncResult(
+                tuple(boot.repositories),
+                tuple(
+                    RepositorySyncOutcome(
+                        repo, RepositorySyncStatus.SUCCEEDED, "a" * 40, "a" * 40, False
+                    )
+                    for repo in boot.repositories
+                ),
+            )
+        )
+        boot.hooks.run_setup = AsyncMock()
+        boot.hooks.run_start = AsyncMock()
+
+        with pytest.raises(RuntimeError, match="dirty tracked source"):
+            await boot.boot(BootMode.REPO_IMAGE, [])
+
+        boot.hooks.run_setup.assert_not_awaited()
+        boot.hooks.run_start.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_unverified_image_setup_failure_is_fatal(self, repo_image_env):

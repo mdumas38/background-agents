@@ -28,6 +28,8 @@ interface RecordEntry {
 }
 export const COMPLETION_RETRY_MS = 60_000;
 export const COMPLETION_MAX_ATTEMPTS = 12;
+/** Exhausted deliveries remain recoverable and wake the coordinator for safe readback retries. */
+export const COMPLETION_RECONCILIATION_RETRY_MS = 15 * 60_000;
 function identity(payload: LinearCompletionCallback): string {
   // Timestamps/signatures change on transport retry; all causal fields must agree.
   return JSON.stringify([
@@ -146,6 +148,20 @@ export class CompletionDelivery {
         });
       }
       await this.state.storage.put(key, record);
+    }
+    // A terminal receipt must not remove the coordinator's final wake-up while its
+    // externally-visible delivery remains unresolved. Reconciliation uses the same
+    // immutable delivery id and readback safeguards as ordinary delivery; it never
+    // treats the receipt itself as settlement.
+    const needsReconciliation = [...records.values()].some(
+      (record) => record.status === "needs_reconciliation"
+    );
+    if (needsReconciliation) {
+      await this.state.storage.transaction(async (storage) => {
+        const retryAt = Date.now() + COMPLETION_RECONCILIATION_RETRY_MS;
+        const alarm = await storage.getAlarm();
+        await storage.setAlarm(alarm === null ? retryAt : Math.min(alarm, retryAt));
+      });
     }
     // Leave the armed wakeup: a concurrent accept may have added work after list().
   }
