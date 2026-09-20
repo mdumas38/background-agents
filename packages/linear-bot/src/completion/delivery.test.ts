@@ -154,6 +154,15 @@ it("does not acknowledge an acceptance whose durable alarm could not be written"
   await expect(s.delivery.accept(payload, "a")).rejects.toThrow();
   expect(mocks.graphql).not.toHaveBeenCalled();
 });
+it("preserves an earlier managed deadline across completion accept and flush", async () => {
+  const created = createDispatchStorage();
+  const s = setup(created.storage);
+  const earlier = Date.now() + 1_000;
+  await s.storage.setAlarm(earlier);
+  await s.delivery.accept(payload, "a");
+  await s.done();
+  expect(created.getAlarm()).toBe(earlier);
+});
 it("rejects readback for a different session or body", async () => {
   mocks.graphql.mockResolvedValue({
     data: {
