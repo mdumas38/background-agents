@@ -69,8 +69,10 @@ function loadScript(): Promise<string> {
 }
 
 /**
- * Build a Miniflare factory over one persistence directory. The external `CONTROL_PLANE` service
- * binding is the only stubbed IO: every outbound signed request is captured and answered `200`.
+ * Build a Miniflare factory over one persistence directory. The five external managed adapters
+ * (session-create, prompt-enqueue, issue-create, result-reader, baseline-reader) are replaced by
+ * fakes via the esbuild plugin; the `CONTROL_PLANE` service binding is additionally stubbed so every
+ * outbound signed request is captured and answered `200`.
  */
 function makeStart(
   script: string,
@@ -143,12 +145,12 @@ it("targets the bound session after a lost create response and durable restart",
   const script = await loadScript();
   persistence = await mkdtemp(join(tmpdir(), "managed-workflow-runtime-"));
   const stopRequests: CapturedStopRequest[] = [];
-  const start = makeStart(script, stopRequests);
-  runtime = start({
+  const start = makeStart(script, stopRequests, {
     [MANAGED_FIXTURE_CREATE_FAILURE_BINDING]: MANAGED_FIXTURE_CREATE_FAILURE_RESPONSE_LOST,
-  } as unknown as Record<string, string>);
+  });
+  runtime = start();
 
-  const call = async (path: string, body?: unknown): Promise<unknown> => {
+  const call = async (path: string, body?: unknown): Promise<CreationRestartState> => {
     const response = await runtime!.dispatchFetch(`https://test${path}`, {
       method: body === undefined ? "GET" : "POST",
       ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
@@ -156,7 +158,7 @@ it("targets the bound session after a lost create response and durable restart",
     if (!response.ok) {
       throw new Error(`${path} → ${response.status}: ${await response.text()}`);
     }
-    return response.json();
+    return response.json() as Promise<CreationRestartState>;
   };
 
   const restart = async () => {
@@ -164,9 +166,5 @@ it("targets the bound session after a lost create response and durable restart",
     runtime = start();
   };
 
-  await exerciseCreationRestart(
-    call as (path: string, body?: unknown) => Promise<never>,
-    restart,
-    stopRequests
-  );
+  await exerciseCreationRestart(call, restart, stopRequests);
 }, 60_000);

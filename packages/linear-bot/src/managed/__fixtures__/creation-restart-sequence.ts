@@ -17,7 +17,11 @@ export interface CapturedStopRequest {
   signatureHeader: string | null;
 }
 
-const SPEC = { title: "Root", objective: "Lost response restart fixture", acceptance: "Fixture passes" };
+const SPEC = {
+  title: "Root",
+  objective: "Lost response restart fixture",
+  acceptance: "Fixture passes",
+};
 
 /**
  * Exercise one managed creation whose response is lost, then restart the runtime and stop the run.

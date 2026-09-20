@@ -65,7 +65,10 @@ export class ManagedFixture {
     }
 
     if (request.method === "POST" && pathname === "/stop") {
-      const body = (await request.json().catch(() => ({}))) as { reason?: string; traceId?: string };
+      const body = (await request.json().catch(() => ({}))) as {
+        reason?: string;
+        traceId?: string;
+      };
       await stopManagedRun(this.managedEnv, body.reason ?? "fixture-stop", body.traceId);
       return snapshot(this.storage);
     }
