@@ -260,6 +260,7 @@ export const MODEL_CATALOG = [
         id: "openrouter/deepseek/deepseek-v4.1-flash",
         name: "DeepSeek V4.1 Flash (OpenRouter)",
         description: "OpenRouter model used by the investigation profile",
+        reasoning: { efforts: ["low", "high", "max"], default: "high" },
       },
     ],
   },
