@@ -5,6 +5,13 @@ Status: implementation started September 20, 2026, following user approval. Trac
 The first changes are foundations, not completion of the milestone acceptance criteria. No
 deployment, main-branch merge, or paid benchmark is authorized by this document.
 
+Implementation mode updated September 20: the user explicitly paused managed-worker coding and
+authorized the parent assistant plus local subagents to implement these fixes. DeepSeek 4.1 Flash
+(`openrouter/deepseek/deepseek-v4.1-flash`) remains the intended worker route; the one Sonnet pilot
+did not justify promotion. Do not launch managed sessions to implement or benchmark this plan until
+the user reauthorizes them. This supersedes the worker-only ownership rules and launch strategy
+below, not the release, cost, source-provenance, or validation gates.
+
 ## Outcome
 
 Make routine managed tasks finish quickly and predictably while preserving code quality, durable
@@ -96,8 +103,9 @@ checkout and its unrelated documentation changes are preserved separately.
    idle sandboxes. Cross-task reuse of a running sandbox is deferred.
 5. Keep one behavior and its focused validation together. A target line count alone does not
    determine task size. Complex recovery/concurrency work gets explicit design context.
-6. Coordinator owns decomposition, review, and integration. Corrective implementation stays with
-   managed workers; a timeout does not imply permission for local takeover.
+6. The parent assistant owns implementation, review, and integration during the user-authorized
+   managed-worker pause. Local subagents may implement bounded slices. Managed workers resume only
+   after explicit authorization and review of the latency fixes.
 7. Preserve source and observed facts even when the task did not finish. Artifact capture, worker
    completion, accepted review, deadline trigger, and cleanup are separate states.
 
@@ -338,10 +346,10 @@ split further only when a real boundary or uncertainty warrants it.
 | 5     | MW-09 progress projection/UI                                               | MW-02, MW-06, MW-08           | Web worker             |
 | 6     | MW-10 matched benchmark and release report                                 | Milestones 1–3                | Evaluation + review    |
 
-Logical parallel lanes above do not authorize launches. When implementation begins, initially use at
-most two independent managed workers, with file ownership and pinned dependency SHAs. Serialize
-shared schema changes and overlapping runtime changes. The execution strategy should avoid repeating
-the 87-session campaign to implement these improvements.
+Logical parallel lanes above do not authorize launches. During the current pause, use local work
+with explicit file ownership; do not launch managed workers. Serialize shared schema changes and
+overlapping runtime changes. Keep the existing worker resource limits for any separately authorized
+future canary.
 
 Each dispatch packet names owned files, interface contracts, expected artifact, exact focused
 validation, allowed model policy, existing deadline/budget, and recovery behavior. Review once at a

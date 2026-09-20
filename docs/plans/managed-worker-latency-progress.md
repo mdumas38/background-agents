@@ -5,8 +5,72 @@ September 20, 2026. Root
 Integration branch: `mdumas38/managed-worker-latency`; accepted base:
 `2614c6353544eb816fd00aee226abd7c910bc74e`.
 
-This is the first implementation batch, not completion of the ten-slice plan. No main merge,
-deployment, production acceptance, or paid benchmark has been performed.
+This records implementation batches, not completion of the ten-slice plan. No main merge,
+deployment, production acceptance, or matched paid benchmark has been performed.
+
+## Current local implementation batch
+
+The user authorized parent/local-subagent implementation and paused managed workers after the one
+Sonnet 5 medium pilot also reached its watchdog. That pilot cost $0.768733 in reported worker-model
+usage (infrastructure/coordinator excluded), produced an uncommitted patch, and was terminated with
+source preserved. Its patch was not mechanically accepted. DeepSeek 4.1 Flash remains the intended
+route; no global model setting, low-effort default, worker launch, or deployment was changed here.
+
+Implemented and locally tested:
+
+- **Provider configuration:** pinned OpenCode 1.18.29 was dropping DeepSeek/OpenRouter reasoning
+  variants entirely. Explicit model-scoped `reasoning.effort` variants now serialize low/high/max
+  correctly through the actual binary to a localhost fake provider. Omission/model switching and
+  existing OpenAI/Anthropic contracts pass. This is wire proof, not live-provider or snapshot proof.
+- **Test latency and correctness:** isolate boot-policy credential fixtures without weakening the
+  dedicated credential tests. Prefer checkout `src` in pytest and fail closed on a pre-imported
+  installed runtime. Replace a stale sleep mock with the actual shutdown-aware wait boundary: the
+  lifecycle/monitor group passes in 0.58 seconds versus 67 seconds for one previous test alone.
+  Production retry/backoff values are unchanged.
+- **Startup measurement:** content-free monotonic timings cover credentials, repository sync, setup,
+  tunnel readiness, and start. Returned failures, exceptions, and cancellation have distinct
+  truthful outcomes. Existing structured logs are used; cross-tier event transport is not complete.
+- **Task context:** deduplicate exact copies in native provider context and recent comments while
+  retaining full canonical descriptions, instruction provenance, and provider-only context. Managed
+  prompts retain escaped trust boundaries with one shared warning. Focused-check and delivery
+  guidance discourages repeated unchanged checks; no required context is truncated.
+- **Frozen policy:** new roots persist requested/resolved model and effort, policy/prompt versions,
+  timeout and finalization lead. Claims retain baseline and absolute deadline/finalization times;
+  replay does not reinterpret a candidate policy, and legacy contexts remain readable. The current
+  finalization mode is explicitly **prompt guidance**, not a runtime checkpoint alarm or interrupt.
+- **Completion races:** trusted accepted callbacks retain terminal evidence transactionally with the
+  inbox. Deadline decisions reconcile exact inbox identities before stopping, recheck inside the
+  stop transaction, and recheck before claiming a stop request. Late success preserves the original
+  stop trigger without reopening admission. Receipts do not settle cost, mark review accepted, free
+  reservations, or launch successors.
+- **Offline audit:** `python3 scripts/audit-managed-latency.py records.json --csv attempts.csv`
+  consumes a strict sanitized import schema documented in the script. Deterministic JSON/CSV keeps
+  failed/censored attempts, deadline-with-success, missing-cost values, and explicit denominators.
+  It does not pretend to collect missing cross-tier timings or billing data automatically.
+
+Runtime validation: full suite before the test-speed-only change passed **1,088 tests, 23 skipped**
+in 101.21 seconds; the affected lifecycle/monitor group then passed **15 tests in 0.58 seconds**.
+Pinned localhost provider/config checks passed **7 tests**, and adapter/config checks passed **35
+tests**. Python changes pass Ruff. Offline audit has six passing deterministic tests.
+
+Linear-bot full validation passed **587 tests across 61 files**, including four real Workerd
+restart/lifecycle cases. Two additional enrollment/replay regressions were added afterward; their
+two affected suites passed all seven tests. Shared and Linear builds, Linear typechecking, scoped
+ESLint/Prettier, and diff checks pass. No cloud integration or live-provider acceptance is claimed.
+
+### Still required before resuming managed workers
+
+1. Runtime-enforced finalization/checkpoint transport, bounded artifact capture, and durable alarm
+   restart/race coverage. The prompt reserve alone cannot interrupt a stuck provider request.
+2. Correlated cross-tier event collection and prompt/runtime/image metadata beyond the current
+   policy and structured logs; private operator parity if that operator is used again.
+3. Measured prepared-image/cache optimization with invalidation, credential isolation, and exact
+   source identity; no unsafe setup skip or running-sandbox reuse was introduced.
+4. Typed bounded recovery, complex-task routing, outage preflight/circuit, and progress UI.
+5. Separate approval for deployment and matched DeepSeek evaluation/canary, including cost limits.
+   No claim of lower production watchdog rate or accepted-result latency is made yet.
+
+## Historical first-batch checkpoint
 
 ## Reviewed foundations
 
