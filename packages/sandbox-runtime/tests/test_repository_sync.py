@@ -51,7 +51,7 @@ async def _make_bare_origin(tmp_path: Path) -> tuple[Path, str, str]:
     await _run_git("commit", "-q", "-am", "two", cwd=source)
     head_sha = await _run_git("rev-parse", "HEAD", cwd=source)
     bare = tmp_path / "origin.git"
-    await _run_git("clone", "-q", "--bare", str(source), str(bare))
+    await _run_git("clone", "-q", "--bare", str(source), str(bare), cwd=tmp_path)
     return bare, pinned_sha, head_sha
 
 
