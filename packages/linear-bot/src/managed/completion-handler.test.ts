@@ -213,13 +213,6 @@ function reconciliationRun(): ManagedRun {
 
 const latest = { run: completeRun() };
 
-function sender(result = true) {
-  return vi.fn<CompletionSender>(async () => {
-    mocks.order.push("send");
-    return result;
-  });
-}
-
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.order.length = 0;
@@ -246,7 +239,7 @@ beforeEach(() => {
 
 describe("handleManagedCompletion", () => {
   it("settles, pumps, arms the deadline, and sends exactly one progress comment", async () => {
-    const send = vi.fn(async () => {
+    const send = vi.fn<CompletionSender>(async () => {
       mocks.order.push("send");
       return true;
     });
