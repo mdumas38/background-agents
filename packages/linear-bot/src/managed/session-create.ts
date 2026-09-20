@@ -29,6 +29,10 @@ export async function createManagedSession(
   if (!(typeof parsed.data.maxCostUsd === "number" && parsed.data.maxCostUsd > 0)) {
     throw new Error("Managed session requires a positive maxCostUsd");
   }
+  if (!parsed.data.managedSessionId) {
+    throw new Error("Managed session requires a reserved managedSessionId");
+  }
+  const managedSessionId = parsed.data.managedSessionId;
 
   let response: Response;
   try {
@@ -53,5 +57,6 @@ export async function createManagedSession(
 
   const result = createSessionResponseSchema.safeParse(raw);
   if (!result.success) throw new Error(UNCERTAIN_MESSAGE);
+  if (result.data.sessionId !== managedSessionId) throw new Error(UNCERTAIN_MESSAGE);
   return result.data.sessionId;
 }

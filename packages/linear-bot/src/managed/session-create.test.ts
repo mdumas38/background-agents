@@ -5,6 +5,8 @@ import type { Env } from "../types";
 import { createFakeKV, makeLinearBotEnv } from "../test-helpers";
 import { createManagedSession } from "./session-create";
 
+const MANAGED_SESSION_ID = "3f1b2c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d";
+
 function validInput(overrides: Partial<CreateSessionInput> = {}): CreateSessionInput {
   return {
     repoOwner: "acme",
@@ -13,6 +15,7 @@ function validInput(overrides: Partial<CreateSessionInput> = {}): CreateSessionI
     model: "anthropic/claude-haiku-4-5",
     executionProfile: "implementation",
     maxCostUsd: 2.5,
+    managedSessionId: MANAGED_SESSION_ID,
     ...overrides,
   };
 }
@@ -37,13 +40,26 @@ describe("createManagedSession", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("rejects a missing reserved managedSessionId before any control-plane fetch", async () => {
+    const env = makeLinearBotEnv(createFakeKV().kv);
+    const fetchMock = controlPlaneFetch(env);
+
+    await expect(
+      createManagedSession(env, validInput({ managedSessionId: undefined }), "user-1")
+    ).rejects.toThrow();
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("posts one signed request and never retries an ambiguous outcome", async () => {
     const env = makeLinearBotEnv(createFakeKV().kv);
     const fetchMock = controlPlaneFetch(env);
-    fetchMock.mockResolvedValueOnce(Response.json({ sessionId: "session-1", status: "created" }));
+    fetchMock.mockResolvedValueOnce(
+      Response.json({ sessionId: MANAGED_SESSION_ID, status: "created" })
+    );
 
     await expect(createManagedSession(env, validInput(), "user-1", "trace-1")).resolves.toBe(
-      "session-1"
+      MANAGED_SESSION_ID
     );
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -56,6 +72,7 @@ describe("createManagedSession", () => {
       repoName: "backend",
       executionProfile: "implementation",
       maxCostUsd: 2.5,
+      managedSessionId: MANAGED_SESSION_ID,
     });
 
     const headers = init.headers as Record<string, string>;
@@ -79,6 +96,20 @@ describe("createManagedSession", () => {
     await expect(createManagedSession(env, validInput(), "user-1")).rejects.toThrow(
       "Managed session creation outcome uncertain"
     );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects a mismatched response session id as uncertain without retrying", async () => {
+    const env = makeLinearBotEnv(createFakeKV().kv);
+    const fetchMock = controlPlaneFetch(env);
+    fetchMock.mockResolvedValueOnce(
+      Response.json({ sessionId: "11111111-2222-4333-8444-555555555555", status: "created" })
+    );
+
+    await expect(createManagedSession(env, validInput(), "user-1")).rejects.toThrow(
+      "Managed session creation outcome uncertain"
+    );
+
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
