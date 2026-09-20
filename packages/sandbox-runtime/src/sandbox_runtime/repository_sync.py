@@ -20,6 +20,14 @@ GH_WRAPPER_INSTALL_PATH = Path("/usr/local/bin/gh")
 GH_WRAPPER_BODY = Path(__file__).with_name("gh-wrapper.sh").read_text()
 DEFAULT_GIT_CLONE_TIMEOUT_SECONDS = 300.0
 DEFAULT_GIT_FETCH_TIMEOUT_SECONDS = 120.0
+# Exact full-length object names only. Short or prefixed refs are ambiguous and
+# must keep flowing through the named-branch clone path.
+_GIT_COMMIT_SHA_RE = re.compile(r"^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$")
+
+
+def _is_pinned_commit(ref: str) -> bool:
+    """True when ``ref`` is an exact full-length commit SHA, not a branch."""
+    return bool(_GIT_COMMIT_SHA_RE.fullmatch(ref))
 
 
 class RepositorySyncTimeout(TimeoutError):
@@ -100,16 +108,24 @@ class RepositorySynchronizer:
 
     async def _clone_repo(self, repo: RepoEntry) -> bool:
         self.log.info("git.clone_start", repo_owner=repo.owner, repo_name=repo.name)
+        pinned_commit = _is_pinned_commit(repo.branch)
+        clone_args = [
+            "git",
+            "clone",
+            "--depth",
+            str(self.CLONE_DEPTH_COMMITS),
+        ]
+        if pinned_commit:
+            # ``--branch`` rejects a raw commit SHA on a fresh clone. Clone the
+            # default tip without checking out; the follow-up update fetches the
+            # pinned object into ``origin/<SHA>`` and checks it out.
+            clone_args.append("--no-checkout")
+        else:
+            clone_args.extend(["--branch", repo.branch])
+        clone_args.extend([self._build_repo_url(repo), str(repo.path)])
         try:
             result = await asyncio.create_subprocess_exec(
-                "git",
-                "clone",
-                "--depth",
-                str(self.CLONE_DEPTH_COMMITS),
-                "--branch",
-                repo.branch,
-                self._build_repo_url(repo),
-                str(repo.path),
+                *clone_args,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 start_new_session=True,
