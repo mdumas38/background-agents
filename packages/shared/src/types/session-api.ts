@@ -343,10 +343,11 @@ export const createSessionInputSchema = createSessionRequestBaseSchema
     /**
      * Caller-reserved session identity for managed-work creation. The Linear
      * bot persists the UUID before any IO and passes it here so a lost response
-     * leaves a known id to reconcile. Reserved to this request only, never
-     * stored for reuse; hyphenated UUIDs cannot collide with the 32-hex ids
-     * `generateId` produces. The strict UUID format rejects trimmed or
-     * whitespace-padded values rather than coercing them.
+     * leaves a known id to reconcile. The id is persisted like any other
+     * session id (D1 and the session coordinator); the API just does not treat
+     * it as an automatic replay key. Hyphenated UUIDs cannot collide with the
+     * 32-hex ids `generateId` produces. The strict UUID format rejects trimmed
+     * or whitespace-padded values rather than coercing them.
      */
     managedSessionId: z.string().uuid().optional(),
   })
