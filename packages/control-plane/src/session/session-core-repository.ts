@@ -45,6 +45,15 @@ export interface SessionRepositoryData {
   baseBranch: string;
 }
 
+/**
+ * A durable pre-initialization stop fence: initialization was stopped before
+ * the session aggregate existed. Tied to the preallocated session identity.
+ */
+export interface PreInitStopFenceRow {
+  session_id: string;
+  recorded_at: number;
+}
+
 /** Persistence for the session and its member repositories. */
 export class SessionCoreRepository {
   constructor(
@@ -215,6 +224,40 @@ export class SessionCoreRepository {
        WHERE id = (SELECT id FROM session LIMIT 1)`,
       updatedAt
     );
+  }
+
+  /**
+   * Durably records that initialization was stopped before the session
+   * aggregate existed. Idempotent: a repeat for the same session identity keeps
+   * the first `recorded_at` and never writes a session row. Returns true only
+   * when this call inserted the fence.
+   */
+  recordPreInitStopFence(sessionId: string, recordedAt: number): boolean {
+    const result = this.sql.exec(
+      `INSERT INTO session_preinit_stop_fence (session_id, recorded_at)
+       VALUES (?, ?)
+       ON CONFLICT (session_id) DO NOTHING`,
+      sessionId,
+      recordedAt
+    );
+    // Consume the result before reading rowsWritten so the count is final.
+    result.toArray();
+    return (result.rowsWritten ?? 0) > 0;
+  }
+
+  /**
+   * Reads the fence for the exact session identity. Call inside the repository
+   * transaction that guards initialization so a stop recorded before the
+   * aggregate cannot be lost between the check and the aggregate write.
+   */
+  getPreInitStopFence(sessionId: string): PreInitStopFenceRow | null {
+    const rows = this.rows<PreInitStopFenceRow>(
+      this.sql.exec(
+        `SELECT session_id, recorded_at FROM session_preinit_stop_fence WHERE session_id = ?`,
+        sessionId
+      )
+    );
+    return rows[0] ?? null;
   }
 
   /**

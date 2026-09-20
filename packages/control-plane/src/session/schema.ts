@@ -63,6 +63,14 @@ const COMPLETION_OUTBOX_TABLE_SQL = `CREATE TABLE IF NOT EXISTS linear_completio
   accepted_at INTEGER
 );`;
 
+// A durable record that initialization was stopped before the session aggregate
+// existed. Keyed by the preallocated session identity so a stop cannot be lost
+// when no `session` row is present, without manufacturing one.
+const PREINIT_STOP_FENCE_TABLE_SQL = `CREATE TABLE IF NOT EXISTS session_preinit_stop_fence (
+  session_id TEXT PRIMARY KEY,
+  recorded_at INTEGER NOT NULL
+);`;
+
 export const SCHEMA_SQL = `
 ${COMPLETION_OUTBOX_TABLE_SQL}
 -- Core session state
@@ -219,6 +227,10 @@ ${SESSION_DIFF_TABLE_SQL}
 
 -- Runtime alarm recovery source for hosts that can be adopted by another process.
 ${SESSION_ALARM_STATE_TABLE_SQL}
+
+-- Pre-initialization stop fence: initialization was durably stopped before a
+-- session aggregate existed. Recorded by the stop path and checked by init.
+${PREINIT_STOP_FENCE_TABLE_SQL}
 
 -- A terminal message whose D1 projection has not landed yet. Only the newest
 -- is kept: the projection is monotonic, so an older one would be a no-op.
@@ -707,6 +719,11 @@ export const MIGRATIONS: readonly SchemaMigration[] = [
       ),
   },
   { id: 52, description: "Durable Linear completion outbox", run: COMPLETION_OUTBOX_TABLE_SQL },
+  {
+    id: 53,
+    description: "Persist pre-initialization stop fences",
+    run: PREINIT_STOP_FENCE_TABLE_SQL,
+  },
 ];
 
 /**
