@@ -340,6 +340,15 @@ export const createSessionInputSchema = createSessionRequestBaseSchema
     actorDisplayName: z.string().optional(),
     actorEmail: z.string().optional(),
     actorAvatarUrl: z.string().optional(),
+    /**
+     * Caller-reserved session identity for managed-work creation. The Linear
+     * bot persists the UUID before any IO and passes it here so a lost response
+     * leaves a known id to reconcile. Reserved to this request only, never
+     * stored for reuse; hyphenated UUIDs cannot collide with the 32-hex ids
+     * `generateId` produces. The strict UUID format rejects trimmed or
+     * whitespace-padded values rather than coercing them.
+     */
+    managedSessionId: z.string().uuid().optional(),
   })
   .refine(hasMatchingRepositoryIdentifiers, {
     message: "repoOwner and repoName must be provided together",
