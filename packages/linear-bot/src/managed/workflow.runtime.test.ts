@@ -1,11 +1,21 @@
 import { afterEach, it } from "vitest";
+import { SERVICE_SIGNATURE_HEADER } from "@open-inspect/shared/service-auth";
 import { build } from "esbuild";
 import { Miniflare } from "miniflare";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  exerciseCreationRestart,
+  type CapturedStopRequest,
+  type CreationRestartState,
+} from "./__fixtures__/creation-restart-sequence";
 import { exerciseManagedWorkflow, type FixtureState } from "./__fixtures__/runtime-sequence";
+import {
+  MANAGED_FIXTURE_CREATE_FAILURE_BINDING,
+  MANAGED_FIXTURE_CREATE_FAILURE_RESPONSE_LOST,
+} from "./__fixtures__/runtime-adapters";
 
 const adapterPath = fileURLToPath(new URL("./__fixtures__/runtime-adapters.ts", import.meta.url));
 const managedDir = fileURLToPath(new URL(".", import.meta.url));
@@ -19,16 +29,10 @@ const EXTERNAL_ADAPTERS = new Set([
 
 let runtime: Miniflare | undefined;
 let persistence: string | undefined;
+let scriptPromise: Promise<string> | undefined;
 
-afterEach(async () => {
-  await runtime?.dispose();
-  runtime = undefined;
-  if (persistence) await rm(persistence, { recursive: true, force: true });
-  persistence = undefined;
-});
-
-it("runs the managed split/restart scenario in Workerd", async () => {
-  const bundle = await build({
+function loadScript(): Promise<string> {
+  scriptPromise ??= build({
     stdin: {
       contents: `export { ManagedFixture } from './__fixtures__/runtime-harness';\nexport { default } from './__fixtures__/runtime-harness';`,
       resolveDir: managedDir,
@@ -60,21 +64,60 @@ it("runs the managed split/restart scenario in Workerd", async () => {
         },
       },
     ],
-  });
+  }).then((bundle) => bundle.outputFiles[0].text);
+  return scriptPromise;
+}
 
-  persistence = await mkdtemp(join(tmpdir(), "managed-workflow-runtime-"));
-  const start = () =>
+/**
+ * Build a Miniflare factory over one persistence directory. The external `CONTROL_PLANE` service
+ * binding is the only stubbed IO: every outbound signed request is captured and answered `200`.
+ */
+function makeStart(
+  script: string,
+  stopRequests: CapturedStopRequest[],
+  extraBindings: Record<string, string> = {}
+) {
+  return () =>
     new Miniflare({
       name: "managed-workflow-test",
       modules: true,
-      script: bundle.outputFiles[0].text,
+      script,
       compatibilityDate: "2024-09-23",
       compatibilityFlags: ["nodejs_compat"],
       durableObjects: { FIXTURE: { className: "ManagedFixture", useSQLite: true } },
       durableObjectsPersist: persistence,
-      bindings: { WEB_APP_URL: "https://web.test" },
+      bindings: {
+        WEB_APP_URL: "https://web.test",
+        SERVICE_AUTH_SECRET: "fixture-service-secret",
+        ...extraBindings,
+      },
+      serviceBindings: {
+        CONTROL_PLANE: async (request: Request) => {
+          stopRequests.push({
+            url: request.url,
+            method: request.method,
+            signatureHeader: request.headers.get(SERVICE_SIGNATURE_HEADER),
+          });
+          return new Response(JSON.stringify({ ok: true }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        },
+      },
     });
+}
 
+afterEach(async () => {
+  await runtime?.dispose();
+  runtime = undefined;
+  if (persistence) await rm(persistence, { recursive: true, force: true });
+  persistence = undefined;
+});
+
+it("runs the managed split/restart scenario in Workerd", async () => {
+  const script = await loadScript();
+  persistence = await mkdtemp(join(tmpdir(), "managed-workflow-runtime-"));
+  const start = makeStart(script, []);
   runtime = start();
 
   const call = async (path: string, body?: unknown): Promise<FixtureState> => {
@@ -94,4 +137,36 @@ it("runs the managed split/restart scenario in Workerd", async () => {
   };
 
   await exerciseManagedWorkflow(call, restart);
+}, 60_000);
+
+it("targets the bound session after a lost create response and durable restart", async () => {
+  const script = await loadScript();
+  persistence = await mkdtemp(join(tmpdir(), "managed-workflow-runtime-"));
+  const stopRequests: CapturedStopRequest[] = [];
+  const start = makeStart(script, stopRequests);
+  runtime = start({
+    [MANAGED_FIXTURE_CREATE_FAILURE_BINDING]: MANAGED_FIXTURE_CREATE_FAILURE_RESPONSE_LOST,
+  } as unknown as Record<string, string>);
+
+  const call = async (path: string, body?: unknown): Promise<unknown> => {
+    const response = await runtime!.dispatchFetch(`https://test${path}`, {
+      method: body === undefined ? "GET" : "POST",
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    });
+    if (!response.ok) {
+      throw new Error(`${path} → ${response.status}: ${await response.text()}`);
+    }
+    return response.json();
+  };
+
+  const restart = async () => {
+    await runtime!.dispose();
+    runtime = start();
+  };
+
+  await exerciseCreationRestart(
+    call as (path: string, body?: unknown) => Promise<never>,
+    restart,
+    stopRequests
+  );
 }, 60_000);

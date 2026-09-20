@@ -5,6 +5,7 @@ import type { ManagedOutcome } from "../contracts";
 import { enrollManagedRun, type ManagedContext } from "../context-store";
 import { createManagedLaunch } from "../launch-driver";
 import { pumpManagedRun } from "../pump";
+import { stopManagedRun } from "../stop";
 import { loadRun } from "../store";
 import type { TaskSpec } from "../tree";
 
@@ -14,7 +15,7 @@ async function snapshot(storage: DurableObjectStorage): Promise<Response> {
     storage.list({ prefix: "fixture:prompt:" }),
     storage.list({ prefix: "fixture:issue:" }),
     storage.get("fixture:resultReads"),
-    storage.list({ prefix: "fixture:session:" }),
+    storage.list<{ sessionId: string }>({ prefix: "fixture:session:" }),
   ]);
   return Response.json({
     run,
@@ -22,6 +23,7 @@ async function snapshot(storage: DurableObjectStorage): Promise<Response> {
     issueCount: issues.size,
     resultReads: resultReads ?? 0,
     sessionCount: sessions.size,
+    sessionIds: Array.from(sessions.values()).map((session) => session.sessionId),
   });
 }
 
@@ -59,6 +61,12 @@ export class ManagedFixture {
       };
       await this.storage.put("fixture:result", { outcome, costUsd });
       await handleCompletionCallback(payload, this.managedEnv, "fixture", async () => true);
+      return snapshot(this.storage);
+    }
+
+    if (request.method === "POST" && pathname === "/stop") {
+      const body = (await request.json().catch(() => ({}))) as { reason?: string; traceId?: string };
+      await stopManagedRun(this.managedEnv, body.reason ?? "fixture-stop", body.traceId);
       return snapshot(this.storage);
     }
 
