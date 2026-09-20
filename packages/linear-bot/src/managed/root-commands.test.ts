@@ -160,6 +160,7 @@ describe("handleManagedRootCommand", () => {
     const contradictory = webhook({
       action: "stopped",
       agentSession: {
+        ...webhook().agentSession,
         id: "agent-session-1",
         creatorId: "user-1",
         comment: { body: "stopped", userId: "user-1" },
@@ -181,8 +182,7 @@ describe("handleManagedRootCommand", () => {
       action: "stopped",
       agentSession: {
         id: "agent-session-1",
-        creatorId: "user-1",
-        comment: { body: "stopped", userId: "user-1" },
+        issue: webhook().agentSession.issue,
       },
     });
     controlPlaneFetch(env).mockResolvedValue(new Response(null, { status: 204 }));

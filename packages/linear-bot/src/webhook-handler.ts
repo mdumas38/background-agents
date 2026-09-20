@@ -694,7 +694,7 @@ async function handleNewSession(
       });
       await emitAgentActivity(client, agentSessionId, {
         type: "error",
-        body: "Failed to start managed work for this explicit /manage instruction. No coding session was allocated.",
+        body: "Failed to confirm managed work for this explicit /manage instruction. The allocation state is unconfirmed; run `/manage status` to inspect persisted work before retrying.",
       });
     }
     return;
