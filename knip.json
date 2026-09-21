@@ -28,6 +28,9 @@
         "src/types/repositories.ts": ["duplicates"]
       }
     },
+    "packages/chit": {
+      "project": ["src/**/*.ts"]
+    },
     "packages/control-plane": {
       "entry": ["test/integration/**/*.test.ts"],
       "project": ["src/**/*.ts", "test/**/*.ts", "scripts/**/*.ts"]

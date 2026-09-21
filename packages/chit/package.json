@@ -1,0 +1,56 @@
+{
+  "name": "@open-inspect/chit",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./moves": {
+      "import": "./dist/moves.js",
+      "types": "./dist/moves.d.ts"
+    },
+    "./control": {
+      "import": "./dist/control.js",
+      "types": "./dist/control.d.ts"
+    },
+    "./judgments": {
+      "import": "./dist/judgments.js",
+      "types": "./dist/judgments.d.ts"
+    },
+    "./aggregation": {
+      "import": "./dist/aggregation.js",
+      "types": "./dist/aggregation.d.ts"
+    },
+    "./contracts": {
+      "import": "./dist/contracts.js",
+      "types": "./dist/contracts.d.ts"
+    },
+    "./fixtures": {
+      "import": "./dist/fixtures.js",
+      "types": "./dist/fixtures.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:watch": "vitest",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^4.1.0",
+    "typescript": "^5.7.2",
+    "vitest": "^4.1.0"
+  }
+}
