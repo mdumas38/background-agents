@@ -1,4 +1,18 @@
-Newest active checkpoint (2026-09-21): managed-worker reliability PR #25 at
+Newest active checkpoint (2026-09-21, 02:57 UTC): a fresh read-only audit reconfirmed control plane
+`165defc2-a29c-4213-9772-a23977a182a8` and Linear
+`888cc75c-f8b6-409d-bfb4-c961e258094c` at 100%, all three health endpoints healthy, checkpoint
+false/empty, publication false, implementation mode, and zero active sessions, automation runs, or
+Modal sandboxes. The exact contract review found that the detailed fenced-block requirement is not
+the terminal section of the full launch prompt: launch/baseline/ancestor/time-policy text is appended
+after it. [The bounded DIV-195 correction plan](managed-report-framing-plan-2026-09-21.md) keeps the
+strict parser and existing failure behavior, adds one exact terminal framing reminder after every
+other section, and adds regressions for XML rejection, blocked/no-child settlement, and replay
+idempotency. It adds no retry, second model turn, XML fallback, or budget change. Planning only; no
+source correction, deployment, flag change, paid worker, or replacement canary has occurred. The
+plan was posted once to DIV-195 as comment `401f1eca-33f9-476a-999a-05d9bb99244a`; readback confirmed
+one comment, no children, and Backlog state unchanged.
+
+Previous checkpoint (2026-09-21): managed-worker reliability PR #25 at
 `659898da0b3dcb9488247e6224b14409c6630c67` is deployed to div61-dev from preserved deployment
 integration `05d8f5db12165e8a9bf1541c60107b0d266c4d52`. After explicit owner approval, the clean
 integration was pushed to `origin/mdumas38/div-61-deploy-the-minimum-open-inspect-stack`; local and

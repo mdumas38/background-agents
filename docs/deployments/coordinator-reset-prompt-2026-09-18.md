@@ -1,6 +1,20 @@
 Continue as sole coordinator in:
 /home/orca/orca/workspaces/background-agents/openinspect-reliability-coordinator
 
+NEWEST ACTIVE WORK (2026-09-21, 02:57 UTC): read-only production revalidation passed. Control plane
+`165defc2-a29c-4213-9772-a23977a182a8` and Linear
+`888cc75c-f8b6-409d-bfb4-c961e258094c` remain at 100%; all three health endpoints are healthy;
+checkpoint is false/empty, publication false, task mode implementation; active D1 sessions,
+automation runs, and Modal sandboxes are all zero. Read
+`managed-report-framing-plan-2026-09-21.md`. Exact source review found that launch/baseline/ancestor/
+time-policy sections follow the detailed fenced-output contract in the actual prompt. The bounded
+DIV-195 plan makes an exact anti-XML framing reminder the final launch-prompt section while leaving
+strict parsing, visible blocked settlement, admission/accounting, timeouts, and root budgets
+unchanged. It adds deterministic prompt-order, XML rejection, blocked/no-child, and replay tests.
+No implementation, deployment, flag change, paid worker, or replacement canary has occurred. The
+plan is posted once on DIV-195 as comment `401f1eca-33f9-476a-999a-05d9bb99244a`; readback confirmed
+one comment, no children, and Backlog state unchanged.
+
 NEWEST ACTIVE WORK (2026-09-21): PR #25 main
 659898da0b3dcb9488247e6224b14409c6630c67 is deployed to div61-dev from deployment integration
 05d8f5db12165e8a9bf1541c60107b0d266c4d52. After explicit owner approval, the clean integration
