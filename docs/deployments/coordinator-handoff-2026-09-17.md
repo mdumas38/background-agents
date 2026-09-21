@@ -1,3 +1,30 @@
+Newest active checkpoint (2026-09-21): managed-worker reliability PR #25 at
+`659898da0b3dcb9488247e6224b14409c6630c67` is deployed to div61-dev from preserved deployment
+integration `05d8f5db12165e8a9bf1541c60107b0d266c4d52`. After explicit owner approval, the clean
+integration was pushed to `origin/mdumas38/div-61-deploy-the-minimum-open-inspect-stack`; local and
+remote now match. GitHub workflow 35553844364 validated but
+skipped apply because repository production secrets are absent; it is not deployment evidence.
+The reviewed manual plan `b109318a11c17389f99318ad754a7d51b92f78e4a23d43b8d9424700479fc373`
+deployed the compatible Modal runtime, control plane and Linear worker with checkpoint defaults off.
+Live control-plane version is `165defc2-a29c-4213-9772-a23977a182a8`; final Linear version is
+`888cc75c-f8b6-409d-bfb4-c961e258094c`. Modal, control-plane and Linear health pass, and live flags
+are checkpoint false/empty, publication false, implementation mode.
+
+The one approved canary was a no-go, not a pass. DIV-194 root session
+`263f5f7d-72bb-439e-add0-f1f7743f0d5a` froze `checkpoint-v1` during a short opt-in window, after
+which global flags were immediately restored. Its sizing report returned valid split JSON inside
+XML-style `<openinspect-managed-work>` tags instead of the required fenced block. Strict parsing
+created no leaf, so no checkpoint was requested and no recovery artifact exists. Reported model
+cost was $0.015426432. Source remained at reviewed main with only the pre-existing `package-lock.json`
+dirtiness; sandbox `sb-U2wsTj82fLUuQPOj1uNjT3` was terminated with exit 137. DIV-194 is Canceled;
+DIV-195 tracks report-framing hardening in Backlog. Final audit found zero active sessions,
+automation runs or Modal sandboxes. DIV-184 remains Backlog/open. Do not launch a replacement
+canary or enable checkpoint rollout without a new decision after DIV-195 is addressed.
+
+Newest active work: Jev M1 DIV-91–94 is ready for owner review in Jev draft PRs #3–6.
+Read jev-m1-handoff-2026-09-19.md final checkpoint first. No workers running.
+Earlier reliability closure remains complete; preserve its evidence and DIV-86 draft.
+
 # OpenInspect coordinator handoff — bounded Linear pilot complete
 
 ## Current checkpoint — Linear closeout verified (2026-09-19)

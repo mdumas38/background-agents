@@ -1,6 +1,38 @@
 Continue as sole coordinator in:
 /home/orca/orca/workspaces/background-agents/openinspect-reliability-coordinator
 
+NEWEST ACTIVE WORK (2026-09-21): PR #25 main
+659898da0b3dcb9488247e6224b14409c6630c67 is deployed to div61-dev from deployment integration
+05d8f5db12165e8a9bf1541c60107b0d266c4d52. After explicit owner approval, the clean integration
+was pushed to `origin/mdumas38/div-61-deploy-the-minimum-open-inspect-stack`; local and remote now
+match. GitHub workflow 35553844364 only validated and skipped
+apply because production secrets are absent. The reviewed manual plan deployed compatible Modal,
+control-plane and Linear code with checkpoint defaults off. Live control plane is
+165defc2-a29c-4213-9772-a23977a182a8; final Linear is
+888cc75c-f8b6-409d-bfb4-c961e258094c. All three health checks pass. Final flags are checkpoint
+false/empty, publication false and implementation mode.
+
+The one approved checkpoint canary did not pass. DIV-194 root OpenInspect session
+263f5f7d-72bb-439e-add0-f1f7743f0d5a was enrolled during a short `checkpoint-v1` window, then
+global flags were restored immediately. Its sizing report used XML-style managed-work tags instead
+of the required fenced block, so strict parsing created no leaf and no checkpoint was requested.
+Cost was $0.015426432. Source was unchanged apart from the pre-existing package-lock dirtiness; its
+sandbox was terminated. DIV-194 is Canceled and DIV-195 tracks report-framing hardening. Final audit
+found zero active sessions, automation runs or Modal sandboxes. DIV-184 remains Backlog/open. Do
+not launch a replacement canary or enable rollout without a new decision after DIV-195. The Jev M1
+checkpoint below remains separate and unchanged.
+
+NEW ACTIVE WORK (2026-09-19): read jev-m1-handoff-2026-09-19.md first. Mason approved
+Jev experiment milestone 1 (DIV-91–94), one native Linear/OpenInspect worker at a time,
+with a conservative $5 reported-model stop threshold. Repository admission is verified.
+DIV-91–94 are implemented/In Review, draft Jev PRs #3–6; integrated head f4e15b7.
+All workers stopped; final audit zero active sessions/runs/sandboxes. Reported spend ~$0.13.
+140 Python tests (139 passed, one optional ROM skip), three Node tests, real test-cartridge
+CLI and fresh-process restoration checks passed. Read final M1 checkpoint; no new launch.
+Merges, paid TypeSafe benchmarks and later milestones remain separate approvals.
+The completed reliability pilot below stays complete; deployment settings, private evidence
+and DIV-86's unsent draft remain preserved.
+
 FINAL CHECKPOINT (2026-09-19): bounded Linear pilot complete. Read
 linear-pilot-closeout-2026-09-19.md and newest coordinator handoff first. Mason approved the
 one-response fresh-write recovery test; it passed live through shipped modules in an isolated
