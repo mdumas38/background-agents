@@ -11,11 +11,7 @@ import {
   type LinearCallbackContext,
 } from "@open-inspect/shared/types/session-api";
 import { z } from "zod";
-import {
-  FOLLOW_UP_INSTRUCTIONS,
-  PUBLISHED_TASK_HEADING,
-  publicationEnabled,
-} from "./follow-ups/proposals";
+import { FOLLOW_UP_INSTRUCTIONS, publicationEnabled } from "./follow-ups/proposals";
 import type {
   Env,
   LinearIssueDetails,
@@ -50,8 +46,13 @@ import {
   lookupIssueSession,
   storeIssueSession,
 } from "./kv-store";
+import { handleManagedRootCommand } from "./managed/root-commands";
+import { startManagedWork } from "./managed/enrollment";
+import { FOCUSED_DELIVERY_GUIDANCE, referenceCanonicalContext } from "./task-context";
 
 const log = createLogger("handler");
+
+const MANAGED_COMMAND_PATTERN = /^\/manage(?:\s|$)/;
 
 const sessionEventsSummaryResponseSchema = z.object({
   events: z.array(
@@ -655,6 +656,47 @@ async function handleNewSession(
     labelModel,
   });
 
+  // An explicit `/manage …` instruction enrolls a managed root. This is scoped
+  // to the session instruction comment only, never the issue description or
+  // provider prompt context, and must not fall back to an ordinary session.
+  const instructionBody = instructionComment?.body;
+  if (instructionBody !== undefined && MANAGED_COMMAND_PATTERN.test(instructionBody.trim())) {
+    try {
+      const managedResponse = await startManagedWork(
+        env,
+        {
+          webhook,
+          issue,
+          issueDetails,
+          target,
+          model,
+          reasoningEffort,
+          actorUserId: sessionActorUserId ?? "",
+          actorDisplayName,
+          actorEmail,
+          instruction: instructionBody,
+        },
+        traceId
+      );
+      await emitAgentActivity(client, agentSessionId, {
+        type: "response",
+        body: managedResponse,
+      });
+    } catch (err) {
+      log.error("agent_session.managed_start_failed", {
+        trace_id: traceId,
+        agent_session_id: agentSessionId,
+        issue_identifier: issue.identifier,
+        error: err instanceof Error ? err : new Error(String(err)),
+      });
+      await emitAgentActivity(client, agentSessionId, {
+        type: "error",
+        body: "Failed to confirm managed work for this explicit /manage instruction. The allocation state is unconfirmed; run `/manage status` to inspect persisted work before retrying.",
+      });
+    }
+    return;
+  }
+
   const callbackContext = buildLinearCallbackContext({
     webhook,
     issue,
@@ -858,6 +900,30 @@ export async function handleAgentSessionEvent(
     org_id: webhook.organizationId,
   });
 
+  // Managed root command interception. An enrolled root returns status or denial
+  // text here and must never fall through to generic stop/follow-up/new-session
+  // handling. A missing issue keeps the existing no-issue behavior.
+  if (issue) {
+    const managedResponse = await handleManagedRootCommand(webhook, env, traceId);
+    if (managedResponse !== undefined) {
+      const client = await getAgentSessionLinearClient({
+        env,
+        traceId,
+        orgId: webhook.organizationId,
+        agentSessionId,
+        issue,
+        mode: "follow_up",
+        expectedAppUserId: webhook.appUserId,
+      });
+      if (!client) return;
+      await emitAgentActivity(client, agentSessionId, {
+        type: "response",
+        body: managedResponse,
+      });
+      return;
+    }
+  }
+
   // Stop handling
   if (
     webhook.agentActivity?.signal === "stop" ||
@@ -897,8 +963,17 @@ export function buildInitialPrompt(params: {
 }): string {
   const { webhook, issue, issueDetails, instructionComment, clarificationReply } = params;
   const useProviderContext = webhook.promptContext && !params.omitOptionalContext;
+  const description = issueDetails?.description ?? issue.description;
+  const canonicalFields = [
+    { source: "linear_issue_description", content: description },
+    { source: "linear_agent_instruction", content: instructionComment?.body },
+    { source: "linear_repository_clarification", content: clarificationReply?.body },
+  ];
   let prompt = useProviderContext
-    ? buildPromptContextPrompt(webhook.promptContext!, params.mode)
+    ? buildPromptContextPrompt(
+        referenceCanonicalContext(webhook.promptContext!, canonicalFields),
+        params.mode
+      )
     : buildPrompt(
         issue,
         issueDetails && params.omitOptionalContext
@@ -917,8 +992,7 @@ export function buildInitialPrompt(params: {
       if (content)
         prompt += `\n\n${buildUntrustedUserContentBlock({ source, author: "unknown", content })}`;
     }
-    const description = issueDetails?.description ?? issue.description;
-    if (description?.startsWith(PUBLISHED_TASK_HEADING)) {
+    if (description) {
       prompt += `\n\n## Complete durable task description\n\n${buildUntrustedUserContentBlock({ source: "linear_issue_description", author: "unknown", content: description })}`;
     }
   }
@@ -929,6 +1003,7 @@ export function buildInitialPrompt(params: {
   if (params.additionalInstructions)
     prompt += `\n\n## Additional Instructions\n\n${params.additionalInstructions}`;
   if (params.publishFollowUps) prompt += `\n\n${FOLLOW_UP_INSTRUCTIONS}`;
+  if (params.mode !== "read-only") prompt += `\n\n${FOCUSED_DELIVERY_GUIDANCE}`;
   return prompt;
 }
 
@@ -984,13 +1059,20 @@ export function buildPrompt(
     // Include recent comments for context
     if (issueDetails.comments.length > 0) {
       parts.push("", "---", "**Recent comments:**");
+      const seen = new Map([
+        [description, "linear_issue_description"],
+        [comment?.body, "linear_agent_instruction"],
+        [clarificationReply?.body, "linear_repository_clarification"],
+      ]);
       for (const c of issueDetails.comments.slice(-5)) {
+        const duplicateSource = seen.get(c.body);
+        seen.set(c.body, duplicateSource ?? "earlier linear_issue_comment");
         const author = c.user?.name || "Unknown";
         parts.push(
           buildUntrustedUserContentBlock({
             source: "linear_issue_comment",
             author,
-            content: c.body,
+            content: duplicateSource ? `[Same content as ${duplicateSource}.]` : c.body,
           })
         );
       }

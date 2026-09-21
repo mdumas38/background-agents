@@ -20,6 +20,7 @@ export default { fetch(request, env) { return env.DISPATCH.get(env.DISPATCH.idFr
     write: false,
     format: "esm",
     platform: "browser",
+    conditions: ["workerd"],
     target: "es2022",
     plugins: [
       {

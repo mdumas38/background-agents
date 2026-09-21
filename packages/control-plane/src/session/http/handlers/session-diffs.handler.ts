@@ -14,6 +14,7 @@ import {
   SandboxNotConnectedError,
 } from "../../diffs/errors";
 import type { SessionDiffService } from "../../diffs/service";
+import type { CheckpointService } from "../../checkpoint-service";
 
 /**
  * HTTP boundary for the session diff endpoints: reads requests, delegates
@@ -21,7 +22,10 @@ import type { SessionDiffService } from "../../diffs/service";
  * response bodies.
  */
 export class SessionDiffsHandler {
-  constructor(private readonly diffService: SessionDiffService) {}
+  constructor(
+    private readonly diffService: SessionDiffService,
+    private readonly checkpoints?: CheckpointService
+  ) {}
 
   /** Serialize the browser-safe state returned by the authenticated manifest route. */
   state(): Response {
@@ -31,7 +35,27 @@ export class SessionDiffsHandler {
   /** Accept a sandbox-produced bundle as the latest revision. */
   async storeBundle(request: Request): Promise<Response> {
     try {
-      const revisionId = this.diffService.publishBundle(await this.readJson(request));
+      const body = await this.readJson(request);
+      const checkpointRequestId =
+        body && typeof body === "object" && "checkpointRequestId" in body
+          ? body.checkpointRequestId
+          : undefined;
+      if (checkpointRequestId !== undefined) {
+        if (
+          typeof checkpointRequestId !== "string" ||
+          !body ||
+          typeof body !== "object" ||
+          !("triggerMessageId" in body) ||
+          typeof body.triggerMessageId !== "string" ||
+          !this.checkpoints?.acceptsUpload(body.triggerMessageId, checkpointRequestId)
+        ) {
+          return Response.json({ error: "Checkpoint request is not active" }, { status: 409 });
+        }
+      }
+      const revisionId =
+        checkpointRequestId === undefined
+          ? this.diffService.publishBundle(body)
+          : this.diffService.publishBundle(body, checkpointRequestId);
       return Response.json({ revisionId });
     } catch (e) {
       return this.errorResponse(e);

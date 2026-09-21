@@ -57,6 +57,12 @@ export class EventRepository {
     private readonly transactionSync: TransactionSync
   ) {}
 
+  getEventById(id: string): EventRow | null {
+    return (
+      (this.sql.exec(`SELECT * FROM events WHERE id = ?`, id).toArray()[0] as EventRow) ?? null
+    );
+  }
+
   createEvent(data: CreateEventData): void {
     this.sql.exec(
       `INSERT INTO events (id, type, data, message_id, created_at, timeline_sequence)

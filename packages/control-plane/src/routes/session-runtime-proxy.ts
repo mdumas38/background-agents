@@ -27,8 +27,10 @@ import {
   SCM_AGNOSTIC_HANDLER_AUTHENTICATED_ROUTE,
   SCM_AGNOSTIC_SANDBOX_ROUTE,
   SCM_AGNOSTIC_HUMAN_USER_ROUTE,
+  SCM_AGNOSTIC_SERVICE_ROUTE,
   SCM_AGNOSTIC_USER_OR_SERVICE_ROUTE,
   SCM_CREDENTIALS_ROUTE,
+  serviceAuthorized,
 } from "./shared";
 import { parseBody, parseJsonBody } from "./body";
 import { type SessionRouteContext, dispatchSession } from "./session-route";
@@ -41,6 +43,19 @@ const participantsResponseSchema = z.object({
       canonicalUserId: z.string().nullable().optional(),
     })
   ),
+});
+
+/**
+ * The accounting projection linear-bot is allowed to read. Missing, negative,
+ * or non-finite cost is refused rather than defaulted, so a malformed trusted
+ * record cannot be reported as a settled zero. `accountingReady` is required:
+ * an absent or malformed readiness flag fails closed rather than being treated
+ * as settled.
+ */
+const managedAccountingSchema = z.object({
+  id: z.string(),
+  totalCost: z.number().finite().nonnegative(),
+  accountingReady: z.boolean(),
 });
 
 const SANDBOX_ERROR_BODY_MAX_BYTES = 2 * 1024;
@@ -183,6 +198,34 @@ async function handleSessionSnapshot(
   return Response.json(snapshot, { headers });
 }
 
+/**
+ * Read only the recorded session cost for a managed worker. The full snapshot
+ * stays behind user authorization; this projects the trusted session state
+ * down to the identity and cost the managed run ledger needs.
+ */
+async function handleManagedAccounting(
+  _request: Request,
+  _env: Env,
+  params: SessionParams,
+  ctx: SessionRouteContext
+): Promise<Response> {
+  const response = await ctx.sessionRuntime.fetch(params.id, SessionInternalPaths.state);
+  if (response.status === 404) return error("Session not found", 404);
+  if (!response.ok) return response;
+
+  const parsed = managedAccountingSchema.safeParse(await response.json().catch(() => null));
+  if (!parsed.success) return error("Invalid session accounting", 502);
+
+  // A worker that is still processing, has a queued prompt, or is awaiting stop
+  // confirmation has not finished settling its cost. Answer non-2xx so the
+  // managed coordinator treats the read as transient and keeps its reservation.
+  if (!parsed.data.accountingReady) {
+    return error("Worker accounting is not ready", 409);
+  }
+
+  return Response.json({ id: parsed.data.id, totalCost: parsed.data.totalCost });
+}
+
 async function handleCreatePR(
   request: Request,
   _env: Env,
@@ -323,6 +366,14 @@ sessionRuntimeProxyRoutes.get(
   "/sessions/:id",
   admit({ ...SCM_AGNOSTIC_HUMAN_USER_ROUTE, authorization: requirePermission("sessions.read") }),
   (c) => dispatchSession(c, handleSessionSnapshot)
+);
+sessionRuntimeProxyRoutes.get(
+  "/sessions/:id/managed-accounting",
+  admit({
+    ...SCM_AGNOSTIC_SERVICE_ROUTE,
+    authorization: serviceAuthorized("linear-bot"),
+  }),
+  (c) => dispatchSession(c, handleManagedAccounting)
 );
 sessionRuntimeProxyRoutes.post(
   "/sessions/:id/stop",

@@ -19,6 +19,7 @@ import { createLogger } from "./logger";
 import { createStartCallbackRouter } from "./callbacks/start-callback";
 import { rejectInvalidCallback } from "./callbacks/reject-invalid-callback";
 import { formatPublicationResult, requestFollowUpPublication } from "./follow-ups/publication";
+import { handleManagedCompletion } from "./managed/completion-handler";
 
 const log = createLogger("callback");
 
@@ -225,6 +226,10 @@ export async function handleCompletionCallback(
   traceId: string,
   send: CompletionSender
 ): Promise<void> {
+  if (payload.context.managedWork) {
+    return handleManagedCompletion(payload, env, traceId, send);
+  }
+
   const startTime = Date.now();
   const { sessionId, context } = payload;
 

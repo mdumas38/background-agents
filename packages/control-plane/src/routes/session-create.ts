@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { admit, dispatch } from "../routing/admit";
 import type { ControlPlaneHonoEnv } from "../routing/hono-env";
 import type { RepositoryRef, RepositoryPair } from "@open-inspect/shared/types/repositories";
+import type { SandboxSettings } from "@open-inspect/shared/types/integrations";
 import {
   checkHarnessCompatibility,
   getValidHarnessOrDefault,
@@ -44,9 +45,51 @@ import {
 
 const logger = createLogger("router:session-create");
 const INVALID_SESSION_REQUEST_BODY_ERROR = "Invalid session request body";
+const MANAGED_SESSION_ID_FORBIDDEN_ERROR =
+  "A preallocated session id is not accepted from this caller";
+
+/**
+ * Whether this request's verified principal may reserve its own session id.
+ *
+ * Only the Linear bot acting through a verified Linear actor may preallocate a
+ * session id: it persists the UUID before issuing the create, so a lost
+ * response leaves a known identity to reconcile. Every other principal —
+ * humans, other services, and actorless callers — has a supplied
+ * `managedSessionId` rejected and otherwise gets a generated id.
+ */
+function isManagedSessionIdentityPrincipal(ctx: RequestContext): boolean {
+  const principal = ctx.principal;
+  return (
+    principal?.kind === "service" &&
+    principal.service === "linear-bot" &&
+    principal.actor !== null &&
+    principal.actor.provider === "linear" &&
+    principal.actor.participantUserId.length > 0
+  );
+}
 
 // Defense in depth on top of schema validation — matches git ref charsets.
 const BRANCH_NAME_PATTERN = /^[\w.\-/]+$/;
+
+/**
+ * Fold an optional request-scoped cost limit into the resolved sandbox
+ * settings. A request may only lower a configured limit, never raise or remove
+ * one; omission leaves the settings untouched. The init handler seeds
+ * `max_cost_usd` from `sandboxSettings.maxSessionCostUsd`, so no separate budget
+ * plumbing is needed.
+ */
+function withRequestedMaxSessionCostUsd(
+  sandboxSettings: SandboxSettings,
+  requestedMaxCostUsd: number | undefined
+): SandboxSettings {
+  if (requestedMaxCostUsd === undefined) return sandboxSettings;
+  const configured = sandboxSettings.maxSessionCostUsd;
+  return {
+    ...sandboxSettings,
+    maxSessionCostUsd:
+      configured === undefined ? requestedMaxCostUsd : Math.min(configured, requestedMaxCostUsd),
+  };
+}
 
 async function extractSessionActorProfileClaims(
   request: Request,
@@ -86,6 +129,22 @@ export async function handleCreateSession(
   const enforcement = applyIdentityEnforcement(ctx, "session-create", parsed.raw);
   if (enforcement.rejection) return enforcement.rejection;
   const enforced = enforcement.enforced;
+
+  // A caller may reserve its session id only through the trusted managed-work
+  // path, and only before any repository lookup or sandbox allocation. The id
+  // seeds this create and is persisted like any other session id (D1 and the
+  // session coordinator); the API just does not treat it as an automatic replay
+  // key. D1's unique sessions.id insert stays the single creation guard, so a
+  // duplicate managed id fails closed instead of initializing an existing
+  // session.
+  if (body.managedSessionId !== undefined && !isManagedSessionIdentityPrincipal(ctx)) {
+    logger.warn("Preallocated session id rejected", {
+      event: "session.create.managed_id_rejected",
+      request_id: ctx.request_id,
+      trace_id: ctx.trace_id,
+    });
+    return error(MANAGED_SESSION_ID_FORBIDDEN_ERROR, 403);
+  }
 
   let repositoryContext: RepositoryPair | null;
   try {
@@ -236,8 +295,9 @@ export async function handleCreateSession(
     scopeMembers,
     environmentId
   );
+  const effectiveSandboxSettings = withRequestedMaxSessionCostUsd(sandboxSettings, body.maxCostUsd);
 
-  const sessionId = generateId();
+  const sessionId = body.managedSessionId ?? generateId();
   let providerAuth;
   try {
     providerAuth = await resolveSessionProviderAuth(ctx.db, {
@@ -297,7 +357,7 @@ export async function handleCreateSession(
     scmTokenExpiresAt,
     codeServerEnabled,
     vncEnabled,
-    sandboxSettings,
+    sandboxSettings: effectiveSandboxSettings,
     spawnSource,
     managedSkillsManifest,
     providerAuth,

@@ -795,6 +795,22 @@ variable "enable_linear_dispatch_binding" {
   default     = false
 }
 
+variable "linear_bot_managed_checkpoint_enabled" {
+  description = "Opt new managed roots into checkpoint finalization only after compatible runtime/control-plane deployment."
+  type        = bool
+  default     = false
+}
+
+variable "linear_bot_managed_checkpoint_capability" {
+  description = "Operator-verified checkpoint runtime capability; empty keeps finalization disabled."
+  type        = string
+  default     = ""
+  validation {
+    condition     = contains(["", "checkpoint-v1"], var.linear_bot_managed_checkpoint_capability)
+    error_message = "Checkpoint capability must be empty or checkpoint-v1."
+  }
+}
+
 variable "linear_bot_task_mode" {
   description = "Trusted Linear launch prompt mode; read-only is advisory, not a sandbox permission boundary."
   type        = string

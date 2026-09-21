@@ -24,6 +24,8 @@ function createService() {
 
   const stopExecution = vi.fn();
   const parseArtifactMetadata = vi.fn();
+  const hasInitializedSession = vi.fn(() => true);
+  const recordPreInitStopFence = vi.fn();
 
   return {
     service: new MessageService({
@@ -33,6 +35,8 @@ function createService() {
       messageQueue,
       stopExecution,
       parseArtifactMetadata,
+      hasInitializedSession,
+      recordPreInitStopFence,
     }),
     repository,
     eventRepository,
@@ -40,6 +44,8 @@ function createService() {
     messageQueue,
     stopExecution,
     parseArtifactMetadata,
+    hasInitializedSession,
+    recordPreInitStopFence,
   };
 }
 
@@ -66,11 +72,36 @@ describe("MessageService", () => {
   });
 
   it("stops execution and returns stopping status", async () => {
-    const { service, stopExecution } = createService();
+    const { service, stopExecution, recordPreInitStopFence } = createService();
     const result = await service.stop();
 
     expect(result).toEqual({ status: "stopping" });
     expect(stopExecution).toHaveBeenCalledTimes(1);
+    expect(recordPreInitStopFence).not.toHaveBeenCalled();
+  });
+
+  it("records the pre-init stop fence when no session exists", async () => {
+    const { service, stopExecution, hasInitializedSession, recordPreInitStopFence } =
+      createService();
+    hasInitializedSession.mockReturnValue(false);
+
+    const result = await service.stop();
+
+    expect(result).toEqual({ status: "stopping" });
+    expect(recordPreInitStopFence).toHaveBeenCalledTimes(1);
+    expect(stopExecution).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps repeated pre-init stops idempotent", async () => {
+    const { service, stopExecution, hasInitializedSession, recordPreInitStopFence } =
+      createService();
+    hasInitializedSession.mockReturnValue(false);
+
+    await expect(service.stop()).resolves.toEqual({ status: "stopping" });
+    await expect(service.stop()).resolves.toEqual({ status: "stopping" });
+
+    expect(recordPreInitStopFence).toHaveBeenCalledTimes(2);
+    expect(stopExecution).toHaveBeenCalledTimes(2);
   });
 
   it("paginates events with hasMore and cursor", () => {

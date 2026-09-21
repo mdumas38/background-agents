@@ -3,11 +3,13 @@ from __future__ import annotations
 import asyncio
 import os
 import re
+from contextvars import ContextVar
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from .boot_timing import measure_boot_stage
 from .diff_baseline import resolve_session_diff_baselines
 from .process_output import communicate_owned_subprocess, terminate_owned_subprocess
 from .runtime_config import BootMode
@@ -20,6 +22,16 @@ GH_WRAPPER_INSTALL_PATH = Path("/usr/local/bin/gh")
 GH_WRAPPER_BODY = Path(__file__).with_name("gh-wrapper.sh").read_text()
 DEFAULT_GIT_CLONE_TIMEOUT_SECONDS = 300.0
 DEFAULT_GIT_FETCH_TIMEOUT_SECONDS = 120.0
+DEFAULT_GIT_INSPECTION_TIMEOUT_SECONDS = 10.0
+# Exact full-length object names only. Short or prefixed refs are ambiguous and
+# must keep flowing through the named-branch clone path.
+_GIT_COMMIT_SHA_RE = re.compile(r"^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$")
+_REPOSITORY_INDEX: ContextVar[int | None] = ContextVar("repository_index", default=None)
+
+
+def _is_pinned_commit(ref: str) -> bool:
+    """True when ``ref`` is an exact full-length commit SHA, not a branch."""
+    return bool(_GIT_COMMIT_SHA_RE.fullmatch(ref))
 
 
 class RepositorySyncTimeout(TimeoutError):
@@ -36,6 +48,21 @@ class RepositorySyncStatus(StrEnum):
 class RepositorySyncOutcome:
     repository: RepoEntry
     status: RepositorySyncStatus
+    before_head_sha: str | None = None
+    after_head_sha: str | None = None
+    tracked_clean: bool = False
+
+    @property
+    def source_unchanged(self) -> bool:
+        """Only a verified full object identity can retain prepared setup."""
+        return bool(
+            self.status is RepositorySyncStatus.SUCCEEDED
+            and self.tracked_clean
+            and self.before_head_sha
+            and self.after_head_sha
+            and _is_pinned_commit(self.before_head_sha)
+            and self.before_head_sha == self.after_head_sha
+        )
 
 
 @dataclass(frozen=True)
@@ -100,16 +127,24 @@ class RepositorySynchronizer:
 
     async def _clone_repo(self, repo: RepoEntry) -> bool:
         self.log.info("git.clone_start", repo_owner=repo.owner, repo_name=repo.name)
+        pinned_commit = _is_pinned_commit(repo.branch)
+        clone_args = [
+            "git",
+            "clone",
+            "--depth",
+            str(self.CLONE_DEPTH_COMMITS),
+        ]
+        if pinned_commit:
+            # ``--branch`` rejects a raw commit SHA on a fresh clone. Clone the
+            # default tip without checking out; the follow-up update fetches the
+            # pinned object into ``origin/<SHA>`` and checks it out.
+            clone_args.append("--no-checkout")
+        else:
+            clone_args.extend(["--branch", repo.branch])
+        clone_args.extend([self._build_repo_url(repo), str(repo.path)])
         try:
             result = await asyncio.create_subprocess_exec(
-                "git",
-                "clone",
-                "--depth",
-                str(self.CLONE_DEPTH_COMMITS),
-                "--branch",
-                repo.branch,
-                self._build_repo_url(repo),
-                str(repo.path),
+                *clone_args,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 start_new_session=True,
@@ -290,11 +325,25 @@ class RepositorySynchronizer:
         try:
             if not await self._ensure_plain_origin(repo):
                 return False
-            if not await self._fetch_branch(repo, repo.branch):
+            with measure_boot_stage(
+                self.log,
+                "git_fetch",
+                boot_mode=boot_mode.value,
+                repository_index=_REPOSITORY_INDEX.get(),
+            ) as stage:
+                stage.succeeded = await self._fetch_branch(repo, repo.branch)
+            if not stage.succeeded:
                 return False
             if preserve_checkout:
                 return True
-            return await self._checkout_branch(repo, repo.branch)
+            with measure_boot_stage(
+                self.log,
+                "git_checkout",
+                boot_mode=boot_mode.value,
+                repository_index=_REPOSITORY_INDEX.get(),
+            ) as stage:
+                stage.succeeded = await self._checkout_branch(repo, repo.branch)
+            return stage.succeeded
         except RepositorySyncTimeout:
             raise
         except Exception as error:
@@ -324,12 +373,40 @@ class RepositorySynchronizer:
                 stderr=asyncio.subprocess.PIPE,
                 start_new_session=True,
             )
-            stdout, _ = await self._communicate_owned_subprocess(process)
+            stdout, _ = await asyncio.wait_for(
+                self._communicate_owned_subprocess(process),
+                timeout=DEFAULT_GIT_INSPECTION_TIMEOUT_SECONDS,
+            )
             if process.returncode == 0:
                 return stdout.decode().strip()
         except Exception as error:
             self.log.warn("git.rev_parse_error", error=str(error))
         return ""
+
+    async def _tracked_checkout_clean(self, repo: RepoEntry) -> bool:
+        """Inspect tracked source only; ignored dependency contents are not verified."""
+        if not repo.path.exists():
+            return False
+        try:
+            process = await asyncio.create_subprocess_exec(
+                "git",
+                "diff-index",
+                "--no-ext-diff",
+                "--quiet",
+                "HEAD",
+                "--",
+                cwd=repo.path,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                start_new_session=True,
+            )
+            await asyncio.wait_for(
+                self._communicate_owned_subprocess(process),
+                timeout=DEFAULT_GIT_INSPECTION_TIMEOUT_SECONDS,
+            )
+            return process.returncode == 0
+        except Exception:
+            return False
 
     async def _sync_repo(self, repo: RepoEntry, boot_mode: BootMode) -> bool:
         self.log.debug(
@@ -338,8 +415,16 @@ class RepositorySynchronizer:
             repo_name=repo.name,
             repo_path=str(repo.path),
         )
-        if not repo.path.exists() and not await self._clone_repo(repo):
-            return False
+        if not repo.path.exists():
+            with measure_boot_stage(
+                self.log,
+                "git_clone",
+                boot_mode=boot_mode.value,
+                repository_index=_REPOSITORY_INDEX.get(),
+            ) as stage:
+                stage.succeeded = await self._clone_repo(repo)
+            if not stage.succeeded:
+                return False
         return await self._update_existing_repo(repo, boot_mode)
 
     async def _sync_repo_status(self, repo: RepoEntry, boot_mode: BootMode) -> RepositorySyncStatus:
@@ -355,12 +440,51 @@ class RepositorySynchronizer:
         if not repositories:
             self.log.info("git.skip_clone", reason="no_repo_configured")
             return RepositorySyncResult((), ())
-        statuses = await asyncio.gather(
-            *(self._sync_repo_status(repo, boot_mode) for repo in repositories)
-        )
+
+        async def sync_member(index: int, repo: RepoEntry) -> RepositorySyncOutcome:
+            token = _REPOSITORY_INDEX.set(index)
+            try:
+                before_sha = after_sha = None
+                before_clean = after_clean = False
+                if boot_mode is BootMode.REPO_IMAGE:
+                    with measure_boot_stage(
+                        self.log,
+                        "git_verify_before",
+                        boot_mode=boot_mode.value,
+                        repository_index=index,
+                    ) as stage:
+                        before_sha = await self._get_head_sha(repo)
+                        before_clean = await self._tracked_checkout_clean(repo)
+                        stage.succeeded = bool(
+                            before_sha and _is_pinned_commit(before_sha) and before_clean
+                        )
+                status = await self._sync_repo_status(repo, boot_mode)
+                if boot_mode is BootMode.REPO_IMAGE:
+                    with measure_boot_stage(
+                        self.log,
+                        "git_verify_after",
+                        boot_mode=boot_mode.value,
+                        repository_index=index,
+                    ) as stage:
+                        after_sha = await self._get_head_sha(repo)
+                        after_clean = await self._tracked_checkout_clean(repo)
+                        stage.succeeded = bool(
+                            after_sha and _is_pinned_commit(after_sha) and after_clean
+                        )
+                return RepositorySyncOutcome(
+                    repo,
+                    status,
+                    before_sha if before_sha and _is_pinned_commit(before_sha) else None,
+                    after_sha if after_sha and _is_pinned_commit(after_sha) else None,
+                    before_clean and after_clean,
+                )
+            finally:
+                _REPOSITORY_INDEX.reset(token)
+
         outcomes = tuple(
-            RepositorySyncOutcome(repo, status)
-            for repo, status in zip(repositories, statuses, strict=True)
+            await asyncio.gather(
+                *(sync_member(index, repo) for index, repo in enumerate(repositories))
+            )
         )
         resolved = await resolve_session_diff_baselines(
             repositories,

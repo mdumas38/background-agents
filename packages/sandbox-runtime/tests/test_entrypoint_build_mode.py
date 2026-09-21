@@ -10,12 +10,19 @@ from unittest.mock import ANY, AsyncMock, MagicMock, patch
 import pytest
 
 from sandbox_runtime.repository_sync import (
+    RepositorySynchronizer,
     RepositorySyncOutcome,
     RepositorySyncResult,
     RepositorySyncStatus,
 )
 from sandbox_runtime.runtime_config import BootMode
 from sandbox_runtime.supervisor import ImageBuildExecutionCancelled
+
+
+@pytest.fixture(autouse=True)
+def isolate_credential_installation(monkeypatch):
+    """Boot policy tests must not install helpers or mutate the host git configuration."""
+    monkeypatch.setattr(RepositorySynchronizer, "ensure_credentials_configured", AsyncMock())
 
 
 @pytest.fixture(autouse=True)
@@ -93,11 +100,14 @@ def _completion_callback(supervisor):
     return callback
 
 
-def _sync_result(repositories, status=RepositorySyncStatus.SUCCEEDED):
+def _sync_result(repositories, status=RepositorySyncStatus.SUCCEEDED, tracked_clean=True):
     repositories = tuple(repositories)
     return RepositorySyncResult(
         repositories,
-        tuple(RepositorySyncOutcome(repo, status) for repo in repositories),
+        tuple(
+            RepositorySyncOutcome(repo, status, tracked_clean=tracked_clean)
+            for repo in repositories
+        ),
     )
 
 
@@ -127,6 +137,11 @@ class TestImageBuildMode:
             await supervisor.run(_completion_callback(supervisor))
 
         supervisor.repository_boot.synchronizer.sync.assert_called_once()
+        # This boundary must stay mocked: its real implementation mutates global
+        # git config and installs executables outside the test workspace.
+        credentials = supervisor.repository_boot.synchronizer.ensure_credentials_configured
+        assert isinstance(credentials, AsyncMock)
+        credentials.assert_awaited_once()
         supervisor.repository_boot.hooks.run_setup.assert_called_once()
         supervisor.repository_boot.hooks.run_start.assert_not_called()
         # OpenCode and bridge should NOT be started in build mode
@@ -745,12 +760,20 @@ class TestFromRepoImage:
         supervisor.repository_boot.synchronizer._clone_repo.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_skips_setup_and_runs_start_script(self, repo_image_env):
-        """Setup is skipped for repo images, but start hook still runs."""
+    async def test_skips_setup_only_for_verified_unchanged_source(self, repo_image_env):
+        """An unchanged prepared source can retain setup while start still runs."""
         supervisor = _make_supervisor(repo_image_env)
 
         supervisor.repository_boot.synchronizer.sync = AsyncMock(
-            return_value=_successful_sync(supervisor.repository_boot)
+            return_value=RepositorySyncResult(
+                tuple(supervisor.repository_boot.repositories),
+                tuple(
+                    RepositorySyncOutcome(
+                        repo, RepositorySyncStatus.SUCCEEDED, "a" * 40, "a" * 40, True
+                    )
+                    for repo in supervisor.repository_boot.repositories
+                ),
+            )
         )
 
         supervisor.repository_boot.hooks.run_setup = AsyncMock(return_value=True)
@@ -765,6 +788,109 @@ class TestFromRepoImage:
 
         supervisor.repository_boot.hooks.run_setup.assert_not_called()
         supervisor.repository_boot.hooks.run_start.assert_called_once()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "before_sha,after_sha", [("a" * 40, "b" * 40), (None, "b" * 40), ("abc", "abc")]
+    )
+    async def test_changed_or_unverified_source_runs_setup(
+        self, repo_image_env, before_sha, after_sha
+    ):
+        supervisor = _make_supervisor(repo_image_env)
+        boot = supervisor.repository_boot
+        boot.synchronizer.sync = AsyncMock(
+            return_value=RepositorySyncResult(
+                tuple(boot.repositories),
+                tuple(
+                    RepositorySyncOutcome(
+                        repo, RepositorySyncStatus.SUCCEEDED, before_sha, after_sha, True
+                    )
+                    for repo in boot.repositories
+                ),
+            )
+        )
+        boot.hooks.run_setup = AsyncMock(return_value=True)
+        boot.hooks.run_start = AsyncMock(return_value=True)
+        await boot.boot(BootMode.REPO_IMAGE, [])
+        boot.hooks.run_setup.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_dirty_image_source_is_fatal_before_setup_or_start(self, repo_image_env):
+        supervisor = _make_supervisor(repo_image_env)
+        boot = supervisor.repository_boot
+        boot.synchronizer.sync = AsyncMock(
+            return_value=RepositorySyncResult(
+                tuple(boot.repositories),
+                tuple(
+                    RepositorySyncOutcome(
+                        repo, RepositorySyncStatus.SUCCEEDED, "a" * 40, "a" * 40, False
+                    )
+                    for repo in boot.repositories
+                ),
+            )
+        )
+        boot.hooks.run_setup = AsyncMock()
+        boot.hooks.run_start = AsyncMock()
+
+        with pytest.raises(RuntimeError, match="dirty tracked source"):
+            await boot.boot(BootMode.REPO_IMAGE, [])
+
+        boot.hooks.run_setup.assert_not_awaited()
+        boot.hooks.run_start.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_unverified_image_setup_failure_is_fatal(self, repo_image_env):
+        supervisor = _make_supervisor(repo_image_env)
+        boot = supervisor.repository_boot
+        boot.synchronizer.sync = AsyncMock(return_value=_successful_sync(boot))
+        boot.hooks.run_setup = AsyncMock(return_value=False)
+        boot.hooks.run_start = AsyncMock()
+        with pytest.raises(RuntimeError, match="setup hook failed"):
+            await boot.boot(BootMode.REPO_IMAGE, [])
+        boot.hooks.run_start.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "status", [RepositorySyncStatus.FAILED, RepositorySyncStatus.TIMED_OUT]
+    )
+    async def test_image_sync_failure_is_fatal(self, repo_image_env, status):
+        supervisor = _make_supervisor(repo_image_env)
+        boot = supervisor.repository_boot
+        boot.synchronizer.sync = AsyncMock(return_value=_sync_result(boot.repositories, status))
+        boot.hooks.run_setup = AsyncMock()
+        boot.hooks.run_start = AsyncMock()
+        with pytest.raises(RuntimeError, match="git sync"):
+            await boot.boot(BootMode.REPO_IMAGE, [])
+        boot.hooks.run_setup.assert_not_awaited()
+        boot.hooks.run_start.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_one_changed_repository_refreshes_all_setup_in_order(self, repo_image_env):
+        supervisor = _make_supervisor(repo_image_env)
+        boot = supervisor.repository_boot
+        primary = boot.repositories[0]
+        secondary = replace(primary, name="sibling", path=primary.path.parent / "sibling")
+        boot.repositories = [primary, secondary]
+        boot.synchronizer.sync = AsyncMock(
+            return_value=RepositorySyncResult(
+                tuple(boot.repositories),
+                (
+                    RepositorySyncOutcome(
+                        primary, RepositorySyncStatus.SUCCEEDED, "a" * 40, "a" * 40, True
+                    ),
+                    RepositorySyncOutcome(
+                        secondary, RepositorySyncStatus.SUCCEEDED, "a" * 40, "b" * 40, True
+                    ),
+                ),
+            )
+        )
+        boot.hooks.run_setup = AsyncMock(return_value=True)
+        boot.hooks.run_start = AsyncMock(return_value=True)
+        await boot.boot(BootMode.REPO_IMAGE, [])
+        assert [call.args[0] for call in boot.hooks.run_setup.await_args_list] == [
+            primary,
+            secondary,
+        ]
 
     @pytest.mark.asyncio
     async def test_starts_opencode_and_bridge(self, repo_image_env):
@@ -1456,6 +1582,10 @@ class TestBaseBranchProperty:
 
 class TestEnsureCredentialHelperConfigured:
     """Phase-0 git credential helper configuration."""
+
+    @pytest.fixture(autouse=True)
+    def isolate_credential_installation(self):
+        """Exercise the real method; these tests mock its subprocess and file boundaries."""
 
     @pytest.mark.asyncio
     async def test_configures_helper_and_usehttppath(self, base_env):

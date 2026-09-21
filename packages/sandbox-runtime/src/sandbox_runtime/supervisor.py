@@ -11,6 +11,7 @@ from urllib.parse import quote
 
 import httpx
 
+from .boot_timing import measure_boot_stage
 from .constants import (
     BOOT_WARNINGS_FILE_PATH,
     BRIDGE_FATAL_ERROR_FILE_PATH,
@@ -433,7 +434,8 @@ class SandboxSupervisor:
                 return True
 
             try:
-                await self.browser_desktop.start()
+                with measure_boot_stage(self.log, "browser_start", boot_mode=self.boot_mode.value):
+                    await self.browser_desktop.start()
             except Exception as error:
                 self.log.warn("vnc.start_failed", exc=error)
                 await self.browser_desktop.stop()
@@ -444,22 +446,31 @@ class SandboxSupervisor:
             # Materialization is sandbox-boot work; OpenCode process restarts
             # reuse this tree and must not depend on control-plane availability.
             if self.managed_skills is not None:
-                await self.managed_skills.materialize(boot_result.repositories, boot_result.workdir)
+                with measure_boot_stage(self.log, "skills", boot_mode=self.boot_mode.value):
+                    await self.managed_skills.materialize(
+                        boot_result.repositories, boot_result.workdir
+                    )
 
             try:
-                await self.code_server.start(boot_result.workdir)
+                with measure_boot_stage(
+                    self.log, "code_server_start", boot_mode=self.boot_mode.value
+                ):
+                    await self.code_server.start(boot_result.workdir)
             except Exception as error:
                 self.log.warn("code_server.start_failed", exc=error)
                 await self.code_server.stop()
             try:
-                await self.web_terminal.start(boot_result.workdir)
+                with measure_boot_stage(self.log, "terminal_start", boot_mode=self.boot_mode.value):
+                    await self.web_terminal.start(boot_result.workdir)
             except Exception as error:
                 self.log.warn("web_terminal.start_failed", exc=error)
                 await self.web_terminal.stop()
 
-            await self.harness_process.start(boot_result.repositories, boot_result.workdir)
+            with measure_boot_stage(self.log, "harness_start", boot_mode=self.boot_mode.value):
+                await self.harness_process.start(boot_result.repositories, boot_result.workdir)
             harness_ready = True
-            await self.agent_bridge.start()
+            with measure_boot_stage(self.log, "bridge_start", boot_mode=self.boot_mode.value):
+                await self.agent_bridge.start()
             self.log.info(
                 "sandbox.startup",
                 repo_owner=self.config.repo_owner,

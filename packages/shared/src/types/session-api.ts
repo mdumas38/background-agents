@@ -55,6 +55,23 @@ export type SlackCallbackContext = z.infer<typeof slackCallbackContextSchema>;
  */
 export const SLACK_ACTIVITY_REFRESH_KIND = "slack.activity_refresh";
 
+const managedWorkCallbackIdentityIdSchema = nonEmptyStringSchema.max(512);
+const managedWorkCallbackTaskIdSchema = nonEmptyStringSchema.max(16384);
+
+/**
+ * Trusted launch metadata carried under the existing callback HMAC. Records the
+ * managed root/run/task/attempt a callback belongs to; never extracted from a
+ * worker report or issue description. `taskId` allows deep hierarchical ids.
+ */
+export const managedWorkCallbackIdentitySchema = z.strictObject({
+  rootIssueId: managedWorkCallbackIdentityIdSchema,
+  runId: managedWorkCallbackIdentityIdSchema,
+  taskId: managedWorkCallbackTaskIdSchema,
+  attemptId: managedWorkCallbackIdentityIdSchema,
+});
+
+export type ManagedWorkCallbackIdentity = z.infer<typeof managedWorkCallbackIdentitySchema>;
+
 const linearCallbackContextBaseSchema = z.strictObject({
   source: z.literal("linear"),
   issueId: nonEmptyStringSchema,
@@ -67,22 +84,32 @@ const linearCallbackContextBaseSchema = z.strictObject({
   emitToolProgressActivities: z.boolean().optional(),
   /** Trusted launch-time opt-in; publication never authorizes another execution. */
   publishFollowUps: z.boolean().optional(),
+  /** Trusted managed-work identity for callbacks tied to a managed run. */
+  managedWork: managedWorkCallbackIdentitySchema.optional(),
 });
 
-export const linearCallbackContextSchema = z.union([
-  linearCallbackContextBaseSchema.extend({
-    organizationId: nonEmptyStringSchema,
-    /** Installed Linear app-user identity used to verify runtime credentials. */
-    appUserId: nonEmptyStringSchema,
-    /** Move the issue to its team's started workflow when this message begins processing. */
-    transitionIssueOnStart: z.literal(true),
-  }),
-  linearCallbackContextBaseSchema.extend({
-    organizationId: nonEmptyStringSchema.optional(),
-    appUserId: nonEmptyStringSchema.optional(),
-    transitionIssueOnStart: z.literal(false).optional(),
-  }),
-]);
+export const linearCallbackContextSchema = z
+  .union([
+    linearCallbackContextBaseSchema.extend({
+      organizationId: nonEmptyStringSchema,
+      /** Installed Linear app-user identity used to verify runtime credentials. */
+      appUserId: nonEmptyStringSchema,
+      /** Move the issue to its team's started workflow when this message begins processing. */
+      transitionIssueOnStart: z.literal(true),
+    }),
+    linearCallbackContextBaseSchema.extend({
+      organizationId: nonEmptyStringSchema.optional(),
+      appUserId: nonEmptyStringSchema.optional(),
+      transitionIssueOnStart: z.literal(false).optional(),
+    }),
+  ])
+  .refine(
+    (context) => !context.managedWork || Boolean(context.organizationId && context.appUserId),
+    {
+      message: "managedWork requires organizationId and appUserId",
+      path: ["managedWork"],
+    }
+  );
 
 export type LinearCallbackContext = z.infer<typeof linearCallbackContextSchema>;
 
@@ -278,6 +305,11 @@ const createSessionRequestBaseSchema = z.object({
   skillSelection: sessionSkillSelectionSchema.optional(),
   /** Explicit account/API-key choices. Omission resolves provider policy. */
   providerSelections: modelProviderSelectionsSchema.optional(),
+  /**
+   * Optional per-session cost limit in USD. Only ever lowers the configured
+   * sandbox setting — it can never raise or remove an existing limit.
+   */
+  maxCostUsd: z.number().finite().positive().optional(),
 });
 
 export const createSessionRequestSchema = createSessionRequestBaseSchema
@@ -308,6 +340,16 @@ export const createSessionInputSchema = createSessionRequestBaseSchema
     actorDisplayName: z.string().optional(),
     actorEmail: z.string().optional(),
     actorAvatarUrl: z.string().optional(),
+    /**
+     * Caller-reserved session identity for managed-work creation. The Linear
+     * bot persists the UUID before any IO and passes it here so a lost response
+     * leaves a known id to reconcile. The id is persisted like any other
+     * session id (D1 and the session coordinator); the API just does not treat
+     * it as an automatic replay key. Hyphenated UUIDs cannot collide with the
+     * 32-hex ids `generateId` produces. The strict UUID format rejects trimmed
+     * or whitespace-padded values rather than coercing them.
+     */
+    managedSessionId: z.string().uuid().optional(),
   })
   .refine(hasMatchingRepositoryIdentifiers, {
     message: "repoOwner and repoName must be provided together",

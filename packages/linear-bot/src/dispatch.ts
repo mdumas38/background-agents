@@ -3,6 +3,7 @@ import { handleAgentSessionEvent } from "./webhook-handler";
 import { linearCompletionCallbackSchema } from "@open-inspect/shared/types/session-api";
 import { CompletionDelivery } from "./completion/delivery";
 import { publishFollowUps } from "./follow-ups/publication";
+import { armManagedDeadline, checkManagedDeadline } from "./managed/stop";
 
 /** Logical identity survives a new delivery ID for the same creation/activity. */
 export function dispatchKey(webhook: AgentSessionWebhook, deliveryId: string): string {
@@ -18,11 +19,19 @@ export class LinearDispatch {
     private readonly state: DurableObjectState,
     private readonly env: Env
   ) {
-    this.completions = new CompletionDelivery(state, env);
+    this.completions = new CompletionDelivery(state, { ...env, SESSION_STORE: state.storage });
   }
 
   async alarm(): Promise<void> {
-    await this.completions.flush();
+    const managedEnv: Env = { ...this.env, SESSION_STORE: this.state.storage };
+    try {
+      await checkManagedDeadline(managedEnv);
+      await this.completions.flush();
+    } finally {
+      // Re-arm even when a deadline stop or completion flush fails, so the remaining deadline is
+      // never lost. The helpers no-op without a managed context or run.
+      await armManagedDeadline(managedEnv);
+    }
   }
 
   async fetch(request: Request): Promise<Response> {
