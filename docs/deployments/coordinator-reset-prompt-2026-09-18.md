@@ -1,6 +1,13 @@
 Continue as sole coordinator in:
 /home/orca/orca/workspaces/background-agents/openinspect-reliability-coordinator
 
+NEWEST ACTIVE WORK (2026-09-21, 23:41 UTC): the clean local `main` checkout was fast-forwarded from
+stale `c395971f` to `origin/main` `659898da0b3dcb9488247e6224b14409c6630c67`; local and remote now
+match with no source edits. Next implement DIV-195 exactly as bounded in
+`managed-report-framing-plan-2026-09-21.md`, validate the focused Linear path, and prepare it for
+review. Do not infer merge, deployment, checkpoint enablement, paid-worker, or replacement-canary
+approval from this repository synchronization.
+
 NEWEST ACTIVE WORK (2026-09-21, 02:57 UTC): read-only production revalidation passed. Control plane
 `165defc2-a29c-4213-9772-a23977a182a8` and Linear
 `888cc75c-f8b6-409d-bfb4-c961e258094c` remain at 100%; all three health endpoints are healthy;

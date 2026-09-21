@@ -3,6 +3,10 @@
 Status: planning only. No source correction, deployment, flag change, paid worker, or replacement
 canary is authorized or claimed here.
 
+Repository precondition update: at `2026-09-21T23:41:07Z`, the clean local `main` checkout was
+fast-forwarded from stale `c395971f` to `origin/main`
+`659898da0b3dcb9488247e6224b14409c6630c67`. Local and remote main now match.
+
 ## Verified precondition
 
 Read-only production checks at `2026-09-21T02:57:37Z` confirmed:

@@ -1,4 +1,11 @@
-Newest active checkpoint (2026-09-21, 02:57 UTC): a fresh read-only audit reconfirmed control plane
+Newest active checkpoint (2026-09-21, 23:41 UTC): the clean local `main` checkout was fast-forwarded
+from stale `c395971f` to `origin/main` `659898da0b3dcb9488247e6224b14409c6630c67`; local and remote now
+match with no source edits. The bounded DIV-195 implementation sequence remains: make the exact
+anti-XML framing reminder the final launch-prompt section, add the prompt/parser/result/settlement
+regressions in the recorded plan, run bounded Linear validation, and submit the source change for
+review. Merge, default-off deployment, and one replacement canary remain separate approval gates.
+
+Verified checkpoint (2026-09-21, 02:57 UTC): a fresh read-only audit reconfirmed control plane
 `165defc2-a29c-4213-9772-a23977a182a8` and Linear
 `888cc75c-f8b6-409d-bfb4-c961e258094c` at 100%, all three health endpoints healthy, checkpoint
 false/empty, publication false, implementation mode, and zero active sessions, automation runs, or
