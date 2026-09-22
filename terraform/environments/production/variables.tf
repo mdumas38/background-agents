@@ -322,7 +322,7 @@ variable "linear_api_key" {
 }
 
 variable "linear_bot_default_model" {
-  description = "Model the Linear bot starts a session with when neither the repository's integration config, the requesting user's preference, nor a model label selects one. A canonical \"provider/model\" id, or a bare \"claude-\"/\"gpt-\" id the bots normalize into that provider's namespace."
+  description = "Model the Linear bot starts a session with when neither the repository's integration config, the requesting user's preference, nor a model label selects one. A canonical \"provider/model\" id, an OpenRouter \"openrouter/provider/model\" id, or a bare \"claude-\"/\"gpt-\" id the bots normalize into that provider's namespace."
   type        = string
   default     = "claude-sonnet-4-6"
   nullable    = false
@@ -332,10 +332,10 @@ variable "linear_bot_default_model" {
   # blank value must fail at plan time rather than deploy.
   validation {
     condition = can(regex(
-      "^(?:[^/[:space:]]+/[^/[:space:]]+|(?:claude-|gpt-)[^/[:space:]]+)$",
+      "^(?:[^/[:space:]]+/[^/[:space:]]+|openrouter/[^/[:space:]]+/[^/[:space:]]+|(?:claude-|gpt-)[^/[:space:]]+)$",
       var.linear_bot_default_model
     ))
-    error_message = "linear_bot_default_model must be a canonical \"provider/model\" id such as \"anthropic/claude-haiku-4-5\", or a bare \"claude-\"/\"gpt-\" id, naming a model with no whitespace on each side of any slash."
+    error_message = "linear_bot_default_model must be a canonical \"provider/model\" id, an \"openrouter/provider/model\" id, or a bare \"claude-\"/\"gpt-\" id, naming a model with no empty segments or whitespace."
   }
 }
 
