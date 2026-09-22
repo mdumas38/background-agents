@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { linearCallbackContextSchema } from "@open-inspect/shared/types/session-api";
+import { MAX_WEB_PROMPT_CHARS } from "@open-inspect/shared/types/prompts";
 import type { ManagedTaskClaim } from "./claim-next";
 import {
   DEFAULT_MANAGED_LIMITS,
@@ -205,6 +206,28 @@ describe("buildManagedLaunchRequest", () => {
         ISSUE
       )
     ).toThrow(/exceeding/);
+  });
+
+  it("checks the shared size limit after appending the final framing reminder", () => {
+    const baseline = buildManagedLaunchRequest(context(), rootClaim(), ISSUE);
+    const appendedOverflow = MAX_WEB_PROMPT_CHARS - baseline.prompt.content.length + 1;
+    const nearLimit = claimTask(
+      createRun(
+        "run-1",
+        { ...SPEC, objective: SPEC.objective + "x".repeat(appendedOverflow) },
+        DEFAULT_MANAGED_LIMITS
+      ),
+      ROOT_TASK_ID,
+      "attempt-1"
+    );
+
+    expect(() =>
+      buildManagedLaunchRequest(
+        context(),
+        { run: nearLimit, taskId: ROOT_TASK_ID, attemptId: "attempt-1" },
+        ISSUE
+      )
+    ).toThrow(/Complete managed launch prompt.*MAX_WEB_PROMPT_CHARS/);
   });
 
   it("carries ancestor prerequisites but excludes current-generation siblings", () => {
