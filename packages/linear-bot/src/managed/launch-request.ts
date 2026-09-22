@@ -9,7 +9,7 @@ import {
 import type { ManagedTaskClaim } from "./claim-next";
 import type { ManagedContext } from "./context-store";
 import type { ManagedIssueRef } from "./issue-create";
-import { buildManagedPrompt } from "./prompts";
+import { buildManagedPrompt, MANAGED_FINAL_RESPONSE_REMINDER } from "./prompts";
 import type { Tree } from "./tree";
 import { assertExecutionPolicy } from "./execution-policy";
 
@@ -159,6 +159,7 @@ export function buildManagedLaunchRequest(
         : "- These are worker instructions, not a promise of runtime interruption or an extension of the hard stop."
     );
   }
+  sections.push("", MANAGED_FINAL_RESPONSE_REMINDER);
 
   const callbackContext: LinearCallbackContext = {
     source: "linear",
