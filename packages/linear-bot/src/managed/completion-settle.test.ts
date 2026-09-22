@@ -88,6 +88,14 @@ const COMPLETE: ManagedOutcome = {
   evidence: "Focused tests pass.",
 };
 
+const UNREADABLE: ManagedOutcome = {
+  kind: "blocked",
+  summary: "Managed worker report could not be read.",
+  reason: "unknown",
+  evidence:
+    "The completed managed worker report did not contain one valid bounded outcome. Raw report content is withheld.",
+};
+
 function context(overrides: Partial<ManagedContext> = {}): ManagedContext {
   return {
     runId: "run-1",
@@ -166,6 +174,25 @@ beforeEach(() => {
 });
 
 describe("settleManagedCompletion", () => {
+  it("settles malformed framing once with no child or budget-expanding correction attempt", async () => {
+    holder.run.admission.limits = {
+      ...holder.run.admission.limits,
+      maxReportedCostUsd: holder.run.admission.limits.maxWorkerCostUsd,
+    };
+    mocks.readManagedResult.mockResolvedValue({ outcome: UNREADABLE, costUsd: 0.25 });
+
+    const first = await settleManagedCompletion(env(), payload(), "trace-1");
+    const replay = await settleManagedCompletion(env(), payload(), "trace-1");
+
+    expect(first.run.tree.tasks.root).toMatchObject({ status: "blocked", outcome: UNREADABLE });
+    expect(Object.keys(first.run.tree.tasks)).toEqual(["root"]);
+    expect(first.run.admission).toMatchObject({ dispatched: 1, taskCount: 1, reportedCost: 0.25 });
+    expect(first.run.admission.reservations).toEqual({});
+    expect(replay.run).toEqual(first.run);
+    expect(mocks.readManagedResult).toHaveBeenCalledTimes(1);
+    expect(mocks.readManagedBaseline).not.toHaveBeenCalled();
+  });
+
   it("rejects a conflicting receipt accepted while result IO was in flight", async () => {
     mocks.readManagedResult.mockImplementation(async () => {
       holder.run.attempts["attempt-1"].completionReceipt = {

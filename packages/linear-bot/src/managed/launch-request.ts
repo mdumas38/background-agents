@@ -6,10 +6,11 @@ import {
   type LinearCallbackContext,
   type SendPromptRequest,
 } from "@open-inspect/shared/types/session-api";
+import { MAX_WEB_PROMPT_CHARS } from "@open-inspect/shared/types/prompts";
 import type { ManagedTaskClaim } from "./claim-next";
 import type { ManagedContext } from "./context-store";
 import type { ManagedIssueRef } from "./issue-create";
-import { buildManagedPrompt } from "./prompts";
+import { buildManagedPrompt, MANAGED_FINAL_RESPONSE_REMINDER } from "./prompts";
 import type { Tree } from "./tree";
 import { assertExecutionPolicy } from "./execution-policy";
 
@@ -159,6 +160,14 @@ export function buildManagedLaunchRequest(
         : "- These are worker instructions, not a promise of runtime interruption or an extension of the hard stop."
     );
   }
+  sections.push("", MANAGED_FINAL_RESPONSE_REMINDER);
+  const content = sections.join("\n");
+  if (content.length > MAX_WEB_PROMPT_CHARS) {
+    throw new Error(
+      `Complete managed launch prompt for task ${claim.taskId} is ${content.length} characters, ` +
+        `exceeding MAX_WEB_PROMPT_CHARS (${MAX_WEB_PROMPT_CHARS}); refusing to truncate evidence.`
+    );
+  }
 
   const callbackContext: LinearCallbackContext = {
     source: "linear",
@@ -192,7 +201,7 @@ export function buildManagedLaunchRequest(
   if (!session.success) throw new Error("Invalid managed launch session input.");
 
   const prompt = sendPromptRequestSchema.safeParse({
-    content: sections.join("\n"),
+    content,
     source: "linear",
     requiredExecutionProfile: "implementation",
     callbackContext,

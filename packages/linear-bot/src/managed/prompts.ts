@@ -123,6 +123,20 @@ const BLOCKED_EXAMPLE = JSON.stringify({
   evidence: "The objective conflicts with the existing contract.",
 });
 
+/**
+ * Final launch-prompt instruction for the response delimiter that the strict parser accepts.
+ * Launch-only context is appended after the detailed contract, so callers must append this after
+ * every other section rather than relying on the earlier examples to remain the prompt tail.
+ */
+export const MANAGED_FINAL_RESPONSE_REMINDER = [
+  "## Required final response framing",
+  "End your final response with exactly one top-level fenced block and nothing after it.",
+  `Opening line (copy the characters after the colon exactly): \`\`\`${MANAGED_WORK_FENCE}`,
+  "Closing line (copy the characters after the colon exactly): ```",
+  "Between those lines, output exactly one JSON object matching one allowed outcome above.",
+  `Do not use XML tags such as \`<${MANAGED_WORK_FENCE}>...</${MANAGED_WORK_FENCE}>\`; XML framing is invalid.`,
+].join("\n");
+
 function outputContractSection(): string {
   return [
     "## Final report contract",
