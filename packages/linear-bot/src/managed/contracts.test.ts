@@ -50,6 +50,13 @@ function report(json: string): string {
 }
 
 describe("parseManagedOutcome fences", () => {
+  it("parses an exact fenced report", () => {
+    expect(parseManagedOutcome(`${FENCE}${MARKER}\n${complete()}\n${FENCE}`)).toMatchObject({
+      ok: true,
+      outcome: { kind: "complete" },
+    });
+  });
+
   it("parses a valid five-child split with sibling dependencies", () => {
     const json = split([
       child("contract"),
@@ -93,6 +100,32 @@ describe("parseManagedOutcome fences", () => {
     });
   });
 
+  it("rejects XML-tag substitution as a missing managed-work block", () => {
+    expect(
+      parseManagedOutcome(
+        `<openinspect-managed-work>${split([child("leaf")])}</openinspect-managed-work>`
+      )
+    ).toEqual({
+      ok: false,
+      reason: "Report contains no openinspect-managed-work outcome block.",
+    });
+  });
+
+  it("rejects an incorrect fence info string", () => {
+    expect(parseManagedOutcome(`\`\`\`openinspect-managed-works\n${complete()}\n\`\`\``)).toEqual({
+      ok: false,
+      reason: "Report contains no openinspect-managed-work outcome block.",
+    });
+  });
+
+  it("accepts ordinary prose surrounding one otherwise valid top-level block", () => {
+    expect(
+      parseManagedOutcome(
+        `Before the result.\n\n${FENCE}${MARKER}\n${complete()}\n${FENCE}\nAfter.`
+      )
+    ).toMatchObject({ ok: true, outcome: { kind: "complete" } });
+  });
+
   it("rejects an unclosed managed-work fence", () => {
     const unclosed = `Notes.\n\n${FENCE}${MARKER}\n${split([child("a")])}`;
     expect(parseManagedOutcome(unclosed)).toEqual({
@@ -125,6 +158,13 @@ describe("parseManagedOutcome fences", () => {
 });
 
 describe("parseManagedOutcome schema strictness", () => {
+  it("rejects valid JSON with an invalid outcome schema", () => {
+    const result = parseManagedOutcome(report(JSON.stringify({ kind: "split", children: [] })));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toContain("Managed work block is invalid");
+  });
+
   it("rejects unknown fields at the top level", () => {
     const result = parseManagedOutcome(report(complete({ unexpected: true })));
     expect(result.ok).toBe(false);

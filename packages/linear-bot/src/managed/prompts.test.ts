@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { MAX_WEB_PROMPT_CHARS } from "@open-inspect/shared/types/prompts";
 import type { ManagedCompleteOutcome } from "./contracts";
-import { buildManagedPrompt, LEAF_TARGET_MS } from "./prompts";
+import { buildManagedPrompt, LEAF_TARGET_MS, MANAGED_FINAL_RESPONSE_REMINDER } from "./prompts";
 import type { Task, Tree } from "./tree";
 
 const CONTEXT = {
@@ -28,6 +28,14 @@ function complete(summary: string, evidence: string, commitSha?: string): Manage
 }
 
 describe("buildManagedPrompt", () => {
+  it("defines an exact anti-XML final response reminder", () => {
+    expect(MANAGED_FINAL_RESPONSE_REMINDER).toContain("```openinspect-managed-work");
+    expect(MANAGED_FINAL_RESPONSE_REMINDER).toContain(
+      "<openinspect-managed-work>...</openinspect-managed-work>"
+    );
+    expect(MANAGED_FINAL_RESPONSE_REMINDER).toContain("nothing after it");
+  });
+
   it("keeps malicious task text inside its untrusted block after compacting the contract", () => {
     const prompt = buildManagedPrompt(
       {
