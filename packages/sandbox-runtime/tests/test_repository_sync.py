@@ -13,12 +13,173 @@ from sandbox_runtime.repository_sync import (
     RepositorySyncOutcome,
     RepositorySyncStatus,
     RepositorySyncTimeout,
+    _is_pinned_commit,
 )
 from sandbox_runtime.runtime_config import BootMode
 
 
 def _repository(tmp_path: Path, name: str = "app") -> RepoEntry:
     return RepoEntry(owner="acme", name=name, branch="main", path=tmp_path / name)
+
+
+async def _run_git(*args: str, cwd: Path) -> str:
+    process = await asyncio.create_subprocess_exec(
+        "git",
+        *args,
+        cwd=cwd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await process.communicate()
+    assert process.returncode == 0, stderr.decode(errors="replace")
+    return stdout.decode().strip()
+
+
+async def _make_bare_origin(tmp_path: Path) -> tuple[Path, str, str]:
+    """Build a real local bare origin with an older pinned commit and a tip."""
+    source = tmp_path / "origin-src"
+    source.mkdir()
+    await _run_git("init", "-q", cwd=source)
+    await _run_git("config", "user.email", "test@example.com", cwd=source)
+    await _run_git("config", "user.name", "Test", cwd=source)
+    (source / "file.txt").write_text("one")
+    await _run_git("add", "file.txt", cwd=source)
+    await _run_git("commit", "-q", "-m", "one", cwd=source)
+    await _run_git("branch", "-M", "main", cwd=source)
+    pinned_sha = await _run_git("rev-parse", "HEAD", cwd=source)
+    (source / "file.txt").write_text("two")
+    await _run_git("commit", "-q", "-am", "two", cwd=source)
+    head_sha = await _run_git("rev-parse", "HEAD", cwd=source)
+    bare = tmp_path / "origin.git"
+    await _run_git("clone", "-q", "--bare", str(source), str(bare), cwd=tmp_path)
+    return bare, pinned_sha, head_sha
+
+
+def _pinned_synchronizer(bare: Path) -> RepositorySynchronizer:
+    synchronizer = RepositorySynchronizer("github.com", MagicMock())
+    synchronizer._build_repo_url = MagicMock(return_value=str(bare))
+    return synchronizer
+
+
+def _pinned_repository(tmp_path: Path, sha: str) -> RepoEntry:
+    return RepoEntry(owner="acme", name="app", branch=sha, path=tmp_path / "app")
+
+
+@pytest.mark.asyncio
+async def test_prepared_source_identity_tracks_real_git_before_and_after_sync(tmp_path: Path):
+    bare, pinned_sha, head_sha = await _make_bare_origin(tmp_path)
+    synchronizer = _pinned_synchronizer(bare)
+    repo = _repository(tmp_path)
+    assert await synchronizer._sync_repo(repo, BootMode.FRESH)
+    unchanged = await synchronizer.sync([repo], BootMode.REPO_IMAGE)
+    assert unchanged.outcomes[0].source_unchanged is True
+    assert unchanged.outcomes[0].before_head_sha == head_sha
+    assert unchanged.outcomes[0].after_head_sha == head_sha
+    await _run_git("checkout", "--detach", pinned_sha, cwd=repo.path)
+    changed = await synchronizer.sync([repo], BootMode.REPO_IMAGE)
+    assert changed.outcomes[0].source_unchanged is False
+    assert changed.outcomes[0].before_head_sha == pinned_sha
+    assert changed.outcomes[0].after_head_sha == head_sha
+    records = [
+        call.kwargs
+        for call in synchronizer.log.info.call_args_list
+        if call.args == ("boot.stage_completed",)
+    ]
+    assert {record["stage"] for record in records} >= {"git_clone", "git_fetch", "git_checkout"}
+    assert all(
+        record["repository_index"] == 0
+        for record in records
+        if record["boot_mode"] == BootMode.REPO_IMAGE.value
+    )
+
+
+@pytest.mark.asyncio
+async def test_missing_prepared_checkout_is_not_treated_as_reusable(tmp_path: Path):
+    bare, _pinned_sha, head_sha = await _make_bare_origin(tmp_path)
+    synchronizer = _pinned_synchronizer(bare)
+    result = await synchronizer.sync([_repository(tmp_path)], BootMode.REPO_IMAGE)
+    assert result.outcomes[0].before_head_sha is None
+    assert result.outcomes[0].after_head_sha == head_sha
+    assert result.outcomes[0].source_unchanged is False
+    records = [
+        call.kwargs
+        for call in synchronizer.log.info.call_args_list
+        if call.args == ("boot.stage_completed",)
+    ]
+    inspections = [record for record in records if record["stage"].startswith("git_verify_")]
+    assert [record["stage"] for record in inspections] == ["git_verify_before", "git_verify_after"]
+    assert [record["outcome"] for record in inspections] == ["failed", "succeeded"]
+    assert all(record["repository_index"] == 0 for record in inspections)
+    assert all(record["duration_seconds"] >= 0 for record in inspections)
+    assert result.outcomes[0].status is RepositorySyncStatus.SUCCEEDED
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("staged", [False, True])
+async def test_dirty_prepared_tracked_source_is_not_reused(tmp_path: Path, staged):
+    bare, _pinned_sha, head_sha = await _make_bare_origin(tmp_path)
+    synchronizer = _pinned_synchronizer(bare)
+    repo = _repository(tmp_path)
+    assert await synchronizer._sync_repo(repo, BootMode.FRESH)
+    (repo.path / "file.txt").write_text("dirty source")
+    if staged:
+        await _run_git("add", "file.txt", cwd=repo.path)
+    result = await synchronizer.sync([repo], BootMode.REPO_IMAGE)
+    assert result.outcomes[0].before_head_sha == head_sha
+    assert result.outcomes[0].after_head_sha == head_sha
+    assert result.outcomes[0].tracked_clean is False
+    assert result.outcomes[0].source_unchanged is False
+
+
+@pytest.mark.parametrize(
+    ("ref", "expected"),
+    [
+        ("a" * 40, True),
+        ("A" * 40, True),
+        ("0" * 64, True),
+        ("a" * 39, False),
+        ("a" * 41, False),
+        ("a" * 7, False),
+        ("main", False),
+        ("machine-pinned" + "a" * 40, False),
+    ],
+)
+def test_is_pinned_commit_accepts_only_exact_full_sha(ref: str, expected: bool) -> None:
+    assert _is_pinned_commit(ref) is expected
+
+
+@pytest.mark.asyncio
+async def test_pinned_commit_fresh_clone_checks_out_exact_sha(tmp_path: Path) -> None:
+    bare, pinned_sha, _head_sha = await _make_bare_origin(tmp_path)
+    synchronizer = _pinned_synchronizer(bare)
+    repo = _pinned_repository(tmp_path, pinned_sha)
+
+    assert await synchronizer._sync_repo(repo, BootMode.FRESH) is True
+    assert await _run_git("rev-parse", "HEAD", cwd=repo.path) == pinned_sha
+
+
+@pytest.mark.asyncio
+async def test_pinned_commit_updates_existing_checkout_to_exact_sha(tmp_path: Path) -> None:
+    bare, pinned_sha, head_sha = await _make_bare_origin(tmp_path)
+    synchronizer = _pinned_synchronizer(bare)
+
+    named = _repository(tmp_path)
+    assert await synchronizer._sync_repo(named, BootMode.FRESH) is True
+    assert await _run_git("rev-parse", "HEAD", cwd=named.path) == head_sha
+
+    repo = _pinned_repository(tmp_path, pinned_sha)
+    assert await synchronizer._sync_repo(repo, BootMode.FRESH) is True
+    assert await _run_git("rev-parse", "HEAD", cwd=repo.path) == pinned_sha
+
+
+@pytest.mark.asyncio
+async def test_named_branch_clone_still_uses_branch(tmp_path: Path) -> None:
+    bare, _pinned_sha, head_sha = await _make_bare_origin(tmp_path)
+    synchronizer = _pinned_synchronizer(bare)
+    repo = _repository(tmp_path)
+
+    assert await synchronizer._sync_repo(repo, BootMode.FRESH) is True
+    assert await _run_git("rev-parse", "HEAD", cwd=repo.path) == head_sha
 
 
 def _hung_process() -> MagicMock:

@@ -136,8 +136,33 @@ class TestHandlePartTranslation:
         events = stream._handle_part(make_state("cp-message-123"), part, None)
 
         assert events == [
-            {"type": "token", "content": "Hello, world!", "messageId": "cp-message-123"}
+            {
+                "type": "token",
+                "content": "Hello, world!",
+                "messageId": "cp-message-123",
+                "partId": "part-1",
+            }
         ]
+
+    def test_text_parts_have_distinct_ids_and_cumulative_updates(self, bridge: AgentBridge):
+        stream = bridge.harness.prompt_stream
+        state = make_state("cp-message-123")
+        first = stream._handle_part(state, create_text_part("part-1", "Before tools"), None)[0]
+        stream._handle_part(state, create_tool_part("call-1", "Bash", "running"), None)
+        last = stream._handle_part(state, create_text_part("part-2", "After tools"), None)[0]
+        updated = stream._handle_part(state, create_text_part("part-1", "Before tools!"), None)[0]
+
+        assert [(event["partId"], event["content"]) for event in (first, last, updated)] == [
+            ("part-1", "Before tools"),
+            ("part-2", "After tools"),
+            ("part-1", "Before tools!"),
+        ]
+
+    def test_text_part_without_id_omits_part_id(self, bridge: AgentBridge):
+        event = bridge.harness.prompt_stream._handle_part(
+            make_state("cp-message-123"), {"type": "text", "text": "Hello"}, None
+        )[0]
+        assert "partId" not in event
 
     def test_empty_text_part_emits_nothing(self, bridge: AgentBridge):
         """Empty text parts should produce no events."""
@@ -310,6 +335,48 @@ class TestBuildPromptRequestBody:
 
         assert body["variant"] == "medium"
         assert body["model"] == {"providerID": "xai", "modelID": "grok-4.6"}
+
+    @pytest.mark.parametrize("effort", ["low", "high", "max"])
+    def test_openrouter_deepseek_forwards_explicit_effort(self, bridge: AgentBridge, effort: str):
+        body = bridge.harness.prompt_stream._build_prompt_request_body(
+            "Hello",
+            "openrouter/deepseek/deepseek-v4.1-flash",
+            reasoning_effort=effort,
+        )
+
+        assert body["variant"] == effort
+        assert body["model"] == {
+            "providerID": "openrouter",
+            "modelID": "deepseek/deepseek-v4.1-flash",
+        }
+
+    @pytest.mark.parametrize("effort", ["medium", "none", "xhigh", "ultra"])
+    def test_openrouter_deepseek_rejects_unsupported_effort(self, bridge: AgentBridge, effort: str):
+        with pytest.raises(ValueError):
+            bridge.harness.prompt_stream._build_prompt_request_body(
+                "Hello",
+                "openrouter/deepseek/deepseek-v4.1-flash",
+                reasoning_effort=effort,
+            )
+
+    def test_openrouter_deepseek_without_effort_omits_variant(self, bridge: AgentBridge):
+        body = bridge.harness.prompt_stream._build_prompt_request_body(
+            "Hello", "openrouter/deepseek/deepseek-v4.1-flash"
+        )
+
+        assert "variant" not in body
+        assert body["model"] == {
+            "providerID": "openrouter",
+            "modelID": "deepseek/deepseek-v4.1-flash",
+        }
+
+    def test_other_openrouter_model_ignores_effort(self, bridge: AgentBridge):
+        body = bridge.harness.prompt_stream._build_prompt_request_body(
+            "Hello", "openrouter/other/model", reasoning_effort="high"
+        )
+
+        assert "variant" not in body
+        assert body["model"] == {"providerID": "openrouter", "modelID": "other/model"}
 
 
 class TestOpenCodeIdentifier:

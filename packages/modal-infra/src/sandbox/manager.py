@@ -17,6 +17,7 @@ from typing import Any
 
 import modal
 
+from sandbox_runtime.boot_timing import measure_boot_stage
 from sandbox_runtime.constants import (
     CODE_SERVER_PORT,
     CODE_SERVER_PORT_ENV_VAR,
@@ -390,12 +391,15 @@ class SandboxManager:
         snapshot_id: str | None = None
         if isinstance(spec.source, _BaseImageSource):
             image = base_image
+            image_source, boot_mode = "base", "fresh"
         elif isinstance(spec.source, _RepositoryImageSource):
             image = modal.Image.from_id(spec.source.image_id)
+            image_source, boot_mode = "repository", "repo_image"
             env_vars["FROM_REPO_IMAGE"] = "true"
             env_vars["REPO_IMAGE_SHA"] = spec.source.sha or ""
         else:
             image = modal.Image.from_id(spec.source.image_id)
+            image_source, boot_mode = "snapshot", "snapshot_restore"
             env_vars["RESTORED_FROM_SNAPSHOT"] = "true"
             clone_token = spec.source.clone_token
             include_github_cli_aliases = True
@@ -463,29 +467,51 @@ class SandboxManager:
         if exposed_ports:
             create_kwargs["encrypted_ports"] = exposed_ports
 
-        sandbox = await modal.Sandbox.create.aio(
-            "python",
-            "-m",
-            "sandbox_runtime.entrypoint",
-            **create_kwargs,
-        )
+        with measure_boot_stage(
+            log,
+            "provider_create",
+            boot_mode=boot_mode,
+            image_source=image_source,
+            sandbox_id=sandbox_id,
+        ):
+            sandbox = await modal.Sandbox.create.aio(
+                "python",
+                "-m",
+                "sandbox_runtime.entrypoint",
+                **create_kwargs,
+            )
         modal_object_id = sandbox.object_id
-        (
-            code_server_url,
-            vnc_url,
-            ttyd_url,
-            extra_tunnel_urls,
-        ) = await self._resolve_and_setup_tunnels(
-            sandbox,
-            sandbox_id,
-            config.code_server_enabled,
-            config.vnc_enabled,
-            terminal_enabled,
-            tunnel_ports,
-            code_server_port,
-            novnc_port,
-            ttyd_proxy_port,
-        )
+        with measure_boot_stage(
+            log,
+            "tunnel_publish",
+            boot_mode=boot_mode,
+            image_source=image_source,
+            sandbox_id=sandbox_id,
+        ) as timing:
+            (
+                code_server_url,
+                vnc_url,
+                ttyd_url,
+                extra_tunnel_urls,
+            ) = await self._resolve_and_setup_tunnels(
+                sandbox,
+                sandbox_id,
+                config.code_server_enabled,
+                config.vnc_enabled,
+                terminal_enabled,
+                tunnel_ports,
+                code_server_port,
+                novnc_port,
+                ttyd_proxy_port,
+            )
+            # Resolution can return partial results without raising. Measure URL publication,
+            # not merely a successful helper return; env-file failures retain their own log.
+            timing.succeeded = (
+                (not config.code_server_enabled or bool(code_server_url))
+                and (not config.vnc_enabled or bool(vnc_url))
+                and (not terminal_enabled or bool(ttyd_url))
+                and all(port in (extra_tunnel_urls or {}) for port in tunnel_ports)
+            )
 
         return SandboxHandle(
             sandbox_id=sandbox_id,

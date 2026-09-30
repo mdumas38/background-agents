@@ -12,6 +12,32 @@ export function reportWithProposal(title?: string, evidence?: string): string {
 }
 
 describe("explicit Markdown proposals", () => {
+  it("rejects a whole-proposal Markdown wrapper with actionable framing guidance", () => {
+    const body = proposal();
+    // Observed live: an extra Markdown wrapper appeared before the proposal title.
+    const report = `\`\`\`openinspect-follow-up\n\`\`\`\`markdown\n${body}\n\`\`\`\`\n\`\`\``;
+    expect(parseProposals(report)).toEqual({
+      ok: false,
+      reason:
+        "Proposal must start with a '# Title' line directly inside its marker fence; do not wrap the entire proposal in another code fence.",
+    });
+    expect(parseProposals(`\`\`\`openinspect-follow-up\n${body}\n\`\`\``)).toEqual({
+      ok: true,
+      proposals: [{ title: "Inventory reporting consumers", markdown: body }],
+    });
+  });
+  it("distinguishes an overlong title without echoing its contents", () => {
+    expect(parseProposals(reportWithProposal("private-title-".repeat(16)))).toEqual({
+      ok: false,
+      reason: "Proposal title exceeds 200 characters.",
+    });
+  });
+  it("distinguishes excessive proposal content without echoing or truncating evidence", () => {
+    expect(parseProposals(reportWithProposal(undefined, "private-evidence-".repeat(400)))).toEqual({
+      ok: false,
+      reason: "Proposal exceeds 6000 characters; nothing was truncated.",
+    });
+  });
   it("preserves multiline evidence and inner code fences verbatim", () => {
     const evidence = "```sh\nrg 'tool' packages/\n```\n" + "long evidence ".repeat(50);
     expect(parseProposals(reportWithProposal(undefined, evidence))).toEqual({

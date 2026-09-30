@@ -25,6 +25,7 @@ const spawnSourceSchema = z.enum([
   "github-bot",
   "linear-bot",
   "slack-bot",
+  "agent-world",
 ] satisfies [SpawnSource, ...SpawnSource[]]);
 
 /**
@@ -191,7 +192,13 @@ export class SessionInitHandler {
       ? normalizeSandboxSettings(body.sandboxSettings, { invalid: "omit" })
       : null;
 
+    let fenced = false;
     this.sessionCoreRepository.transaction(() => {
+      if (this.sessionCoreRepository.getPreInitStopFence(sessionId)) {
+        fenced = true;
+        return;
+      }
+
       this.sessionCoreRepository.upsertSession({
         id: sessionId,
         sessionName,
@@ -260,6 +267,14 @@ export class SessionInitHandler {
         joinedAt: now,
       });
     });
+
+    if (fenced) {
+      log.info("Refused session initialization: pre-init stop fence is set", { sessionId });
+      return Response.json(
+        { error: "Session initialization was stopped", code: "SESSION_STOPPED" },
+        { status: 409 }
+      );
+    }
 
     log.info("Triggering sandbox spawn for new session");
     this.scheduleWarmSandbox();

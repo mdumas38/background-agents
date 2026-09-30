@@ -10,19 +10,16 @@ import {
   linearToolCallCallbackSchema,
   type LinearCompletionCallback,
 } from "@open-inspect/shared/types/session-api";
-import {
-  getLinearClient,
-  emitAgentActivity,
-  postIssueComment,
-  updateAgentSession,
-} from "./utils/linear-client";
+import { getLinearClient, emitAgentActivity, updateAgentSession } from "./utils/linear-client";
 import { extractAgentResponse, formatAgentResponse } from "./completion/extractor";
 import { resolveAppName } from "@open-inspect/shared/app-name";
+import { enqueueCompletion, type CompletionSender } from "./completion/delivery";
 import { makePlan } from "./plan";
 import { createLogger } from "./logger";
 import { createStartCallbackRouter } from "./callbacks/start-callback";
 import { rejectInvalidCallback } from "./callbacks/reject-invalid-callback";
 import { formatPublicationResult, requestFollowUpPublication } from "./follow-ups/publication";
+import { handleManagedCompletion } from "./managed/completion-handler";
 
 const log = createLogger("callback");
 
@@ -71,9 +68,7 @@ callbacksRouter.post("/complete", async (c) => {
   });
   if (rejection) return rejection;
 
-  c.executionCtx.waitUntil(handleCompletionCallback(payload, c.env, traceId));
-
-  return c.json({ ok: true });
+  return enqueueCompletion(payload, c.env, traceId);
 });
 
 // ─── Tool Call Callback ──────────────────────────────────────────────────────
@@ -225,17 +220,24 @@ callbacksRouter.post("/tool_call", async (c) => {
 
 // ─── Completion Callback ─────────────────────────────────────────────────────
 
-async function handleCompletionCallback(
+export async function handleCompletionCallback(
   payload: LinearCompletionCallback,
   env: Env,
-  traceId?: string
+  traceId: string,
+  send: CompletionSender
 ): Promise<void> {
+  if (payload.context.managedWork) {
+    return handleManagedCompletion(payload, env, traceId, send);
+  }
+
   const startTime = Date.now();
   const { sessionId, context } = payload;
 
   try {
     // Extract rich agent response from events
     const agentResponse = await extractAgentResponse(env, sessionId, payload.messageId, traceId);
+
+    if (payload.success && !agentResponse.success) throw new Error("Completion events unavailable");
 
     let message: string;
     let activityType: "response" | "error";
@@ -279,7 +281,9 @@ async function handleCompletionCallback(
     if (context.agentSessionId && context.organizationId && context.appUserId) {
       const client = await getLinearClient(env, context.organizationId, context.appUserId);
       if (client) {
-        const activityDelivered = await emitAgentActivity(client, context.agentSessionId, {
+        const activityDelivered = await send({
+          kind: "activity",
+          target: context.agentSessionId,
           type: activityType,
           body: message,
         });
@@ -296,7 +300,7 @@ async function handleCompletionCallback(
             delivery_outcome: "error",
             duration_ms: Date.now() - startTime,
           });
-          return;
+          throw new Error("Completion activity delivery unconfirmed");
         }
 
         // Update plan to completed/failed
@@ -323,7 +327,8 @@ async function handleCompletionCallback(
           outcome: payload.success ? "success" : "failed",
           has_pr: agentResponse.artifacts.some((a) => a.type === "pr" && a.url),
           agent_success: payload.success,
-          tool_call_count: agentResponse.toolCalls.length,
+          tool_call_count: agentResponse.toolUsage?.total,
+          tool_call_error_count: agentResponse.toolUsage?.errors,
           artifact_count: agentResponse.artifacts.length,
           delivery: "agent_activity",
           delivery_outcome: "success",
@@ -331,10 +336,9 @@ async function handleCompletionCallback(
         });
         return;
       }
-      log.warn("callback.no_oauth_token", {
-        trace_id: traceId,
-        org_id: context.organizationId,
-      });
+      // Authentication failed before an activity send; the configured comment
+      // fallback can still deliver. The durable sender retains any already frozen
+      // destination, so an uncertain activity never switches channels on retry.
     }
 
     // Fallback: post a comment (requires LINEAR_API_KEY)
@@ -345,12 +349,15 @@ async function handleCompletionCallback(
         issue_id: context.issueId,
         message: "LINEAR_API_KEY not configured, cannot post fallback comment",
       });
-      return;
+      throw new Error("Completion comment authentication unavailable");
     }
 
     const commentBody = formatCompletionComment(resolveAppName(env), payload.success, message);
 
-    const result = await postIssueComment(env.LINEAR_API_KEY, context.issueId, commentBody);
+    const result = {
+      success: await send({ kind: "comment", target: context.issueId, body: commentBody }),
+    };
+    if (!result.success) throw new Error("Completion comment delivery unconfirmed");
 
     log.info("callback.complete", {
       trace_id: traceId,
@@ -371,5 +378,6 @@ async function handleCompletionCallback(
       error: error instanceof Error ? error : new Error(String(error)),
       duration_ms: Date.now() - startTime,
     });
+    throw error;
   }
 }

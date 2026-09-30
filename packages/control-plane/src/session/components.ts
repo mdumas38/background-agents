@@ -23,6 +23,7 @@
 
 import { resolveAppName } from "@open-inspect/shared/app-name";
 import { DEFAULT_MODEL } from "@open-inspect/shared/models";
+import { CheckpointService } from "./checkpoint-service";
 import { generateId, hashToken, encryptToken } from "../auth/crypto";
 import { resolveSandboxBackendName } from "../sandbox/provider-name";
 import { createSandboxProviderFromEnv } from "../sandbox/provider-factory";
@@ -108,6 +109,7 @@ import { SessionBudgetHandler } from "./http/handlers/session-budget.handler";
 import { PullRequestHandler } from "./http/handlers/pull-request.handler";
 import { ParticipantsHandler } from "./http/handlers/participants.handler";
 import { MessageService } from "./services/message.service";
+import { revisionProvenance } from "./revision-provenance";
 import { createAlarmHandler } from "./alarm/handler";
 import {
   createEarliestAlarmScheduler,
@@ -354,6 +356,7 @@ export function createSessionRuntime(platform: SessionPlatform, env: Env): Sessi
 
   const scheduler = new Scheduler(db, env, backgroundTasks);
   const callbackService = new CallbackNotificationService({
+    scheduleRetry: (deadlineMs) => alarmScheduler.schedule(deadlineMs),
     repository: sessionCoreRepository,
     messageRepository,
     env,
@@ -385,13 +388,16 @@ export function createSessionRuntime(platform: SessionPlatform, env: Env): Sessi
     now: () => Date.now(),
   });
 
-  const diffService = new SessionDiffService(
-    new SessionDiffStore(sql),
-    sessionCoreRepository,
+  const diffStore = new SessionDiffStore(sql);
+  const checkpoints = new CheckpointService(
+    eventRepository,
+    messageRepository,
+    sandboxRepository,
     messenger,
-    log
+    diffStore
   );
-  const diffsHandler = new SessionDiffsHandler(diffService);
+  const diffService = new SessionDiffService(diffStore, sessionCoreRepository, messenger, log);
+  const diffsHandler = new SessionDiffsHandler(diffService, checkpoints);
   const eventStream = new SessionEventStream(eventRepository);
 
   // Tier 5 — the lifecycle manager.
@@ -472,6 +478,10 @@ export function createSessionRuntime(platform: SessionPlatform, env: Env): Sessi
     messageQueue,
     stopExecution: () => executionStop.stop(),
     parseArtifactMetadata: (artifact) => parseArtifactMetadata(artifact, log),
+    hasInitializedSession: () => sessionCoreRepository.getSession() !== null,
+    recordPreInitStopFence: () => {
+      sessionCoreRepository.recordPreInitStopFence(durableObjectId, Date.now());
+    },
   });
   const autofixHandler = new AutofixHandler(messageQueue);
   const budgetService = new SessionBudgetService(
@@ -542,7 +552,8 @@ export function createSessionRuntime(platform: SessionPlatform, env: Env): Sessi
     artifactEventHandler,
     executionEventHandler,
     runtimeEventHandler,
-    pushService
+    pushService,
+    checkpoints
   );
 
   const alarmHandler = createAlarmHandler({
@@ -778,8 +789,10 @@ export function createSessionRuntime(platform: SessionPlatform, env: Env): Sessi
     prompt: (request, _url, requestLog) => messagesHandler.enqueuePrompt(request, requestLog),
     autofix: (request, _url, requestLog) => autofixHandler.handle(request, requestLog),
     stop: () => messagesHandler.stop(),
+    checkpoint: (request) => checkpoints.handle(request),
+    checkpointStatus: () => checkpoints.status(),
     sandboxEvent: (request) => sandboxHandler.sandboxEvent(request),
-    sandboxError: (request) => sandboxHandler.sandboxError(request),
+    sandboxError: (request, _url, requestLog) => sandboxHandler.sandboxError(request, requestLog),
     createMediaArtifact: (request) => sandboxHandler.createMediaArtifact(request),
     recordAttachment: (request) => {
       const session = sessionCoreRepository.getSession();
@@ -789,7 +802,15 @@ export function createSessionRuntime(platform: SessionPlatform, env: Env): Sessi
       );
     },
     listParticipants: () => participantsHandler.listParticipants(),
-    listEvents: (_request, url) => messagesHandler.listEvents(url),
+    listEvents: async (_request, url) => {
+      const response = messagesHandler.listEvents(url);
+      if (!response.ok || url.searchParams.get("include_revision_provenance") !== "true")
+        return response;
+      return Response.json({
+        ...((await response.json()) as object),
+        revisionProvenance: revisionProvenance(sessionCoreRepository),
+      });
+    },
     listArtifacts: (_request, url) => messagesHandler.listArtifacts(url),
     listMessages: (_request, url) => messagesHandler.listMessages(url),
     createPr: (request, _url, requestLog) => pullRequestHandler.createPr(request, requestLog),
@@ -875,7 +896,11 @@ export function createSessionRuntime(platform: SessionPlatform, env: Env): Sessi
         alarmDeadlines,
         async () => {
           await wsManager.expireAuthorizationLeases(Date.now());
-          await alarmHandler.handle();
+          try {
+            await alarmHandler.handle();
+          } finally {
+            await callbackService.flushCompletions();
+          }
         },
         () => alarmScheduler.rearmPending()
       ),
@@ -912,6 +937,7 @@ export function createSessionRuntime(platform: SessionPlatform, env: Env): Sessi
             await wsManager.expireAuthorizationLeases(Date.now());
             await alarmScheduler.rehydrate();
             await terminalMessageProjection.rearm();
+            await callbackService.rearmCompletions();
           },
           {
             name: "alarm.rehydrate",

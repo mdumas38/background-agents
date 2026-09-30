@@ -44,6 +44,8 @@ function createMockRepository() {
       MessageRepository["getProcessingMessageWithStartedAt"]
     >(() => null),
     getSession: vi.fn(() => null),
+    listPendingLinearCompletions: vi.fn(() => []),
+    acceptLinearCompletion: vi.fn(),
   };
 }
 

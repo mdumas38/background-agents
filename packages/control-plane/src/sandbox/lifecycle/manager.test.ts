@@ -567,6 +567,7 @@ describe("SandboxLifecycleManager", () => {
         vi.mocked(storage.updateSandboxForSpawn).mockImplementation((data) => {
           calls.push("fence");
           sandbox.status = data.status;
+          sandbox.created_at = data.createdAt;
           sandbox.auth_token_hash = "";
           sandbox.modal_sandbox_id = data.modalSandboxId;
         });
@@ -741,7 +742,12 @@ describe("SandboxLifecycleManager", () => {
       expect(provider.createSandbox).toHaveBeenCalledWith(
         expect.objectContaining({ vncEnabled: true })
       );
-      expect(storage.updateSandboxAccess).toHaveBeenCalledWith("vnc", "https://vnc.test", "secret");
+      expect(storage.updateSandboxAccess).toHaveBeenCalledWith(
+        "vnc",
+        "https://vnc.test",
+        "secret",
+        expect.any(Function)
+      );
       expect(broadcaster.messages).not.toContainEqual({ type: "sandbox_access_changed" });
       expect(JSON.stringify(broadcaster.messages)).not.toContain("secret");
     });
@@ -1693,6 +1699,122 @@ describe("SandboxLifecycleManager", () => {
       expect(storage.calls).toContain("transitionSandboxStatus:spawning->connecting");
     });
 
+    it("keeps earlier boot failures counted when the provider merely accepts a spawn", async () => {
+      const now = Date.now();
+      const sandbox = createMockSandbox({
+        status: "failed" as SandboxStatus,
+        created_at: now - 60000,
+        spawn_failure_count: 2,
+        last_spawn_failure: now - 60000,
+      });
+      const storage = createMockStorage(createMockSession(), sandbox);
+      const provider = createMockProvider();
+      const manager = new SandboxLifecycleManager(
+        provider,
+        storage,
+        storage,
+        createMockBroadcaster(),
+        createMockWebSocketManager(false),
+        createMockAlarmScheduler(),
+        createMockIdGenerator(),
+        createTestConfig()
+      );
+
+      await manager.spawnSandbox();
+
+      expect(provider.createSandbox).toHaveBeenCalledOnce();
+      // The provider accepting the request says nothing about whether this
+      // boot will connect; only a connected bridge clears the streak.
+      expect(sandbox.spawn_failure_count).toBe(2);
+    });
+
+    it("leaves the boot-failure streak in place when the bridge connects", async () => {
+      // A connected bridge has not yet consumed anything: the pending prompt
+      // is claimed only after a further await, and a fatal report in that
+      // gap re-drives the same prompt. Clearing here would let a sandbox
+      // that connects and dies before taking a prompt loop unbounded.
+      const now = Date.now();
+      const sandbox = createMockSandbox({
+        status: "connecting" as SandboxStatus,
+        spawn_failure_count: 2,
+        last_spawn_failure: now - 60000,
+      });
+      const storage = createMockStorage(createMockSession(), sandbox);
+      const manager = new SandboxLifecycleManager(
+        createMockProvider(),
+        storage,
+        storage,
+        createMockBroadcaster(),
+        createMockWebSocketManager(true),
+        createMockAlarmScheduler(),
+        createMockIdGenerator(),
+        createTestConfig()
+      );
+
+      manager.onSandboxConnected();
+
+      expect(sandbox.spawn_failure_count).toBe(2);
+    });
+
+    it("clears the boot-failure streak once a prompt is dispatched to the sandbox", async () => {
+      // Dispatch is the first point where a failure costs something: from
+      // here a fatal report fails the prompt the sandbox was running, so
+      // every replacement after this consumes a queued prompt.
+      const now = Date.now();
+      const sandbox = createMockSandbox({
+        status: "ready" as SandboxStatus,
+        spawn_failure_count: 2,
+        last_spawn_failure: now - 60000,
+      });
+      const storage = createMockStorage(createMockSession(), sandbox);
+      const manager = new SandboxLifecycleManager(
+        createMockProvider(),
+        storage,
+        storage,
+        createMockBroadcaster(),
+        createMockWebSocketManager(true),
+        createMockAlarmScheduler(),
+        createMockIdGenerator(),
+        createTestConfig()
+      );
+
+      manager.onPromptDispatched();
+
+      expect(sandbox.spawn_failure_count).toBe(0);
+    });
+
+    it("fails and counts an attempt whose reservation broke after persisting it", async () => {
+      // Reservation persists `spawning` and then awaits the connect alarm.
+      // If that await throws, no watchdog was armed and no provider call was
+      // made, so nothing else will ever fail or count this attempt.
+      const sandbox = createMockSandbox({ status: "pending", created_at: Date.now() - 60000 });
+      const storage = createMockStorage(createMockSession(), sandbox);
+      const alarmScheduler = createMockAlarmScheduler();
+      alarmScheduler.schedule = vi.fn(async () => {
+        throw new Error("alarm storage unavailable");
+      });
+      const manager = new SandboxLifecycleManager(
+        createMockProvider(),
+        storage,
+        storage,
+        createMockBroadcaster(),
+        createMockWebSocketManager(false),
+        alarmScheduler,
+        createMockIdGenerator(),
+        createTestConfig()
+      );
+
+      await manager.spawnSandbox();
+
+      expect(sandbox.spawn_failure_count).toBe(1);
+      // Phase 1 already persisted `spawning` for this identity, and no
+      // watchdog was armed to fail it later, so this catch must: a row left
+      // in `spawning` would make the next prompt wait on an attempt that
+      // has already ended.
+      expect(sandbox.status).toBe("failed");
+      expect(sandbox.last_spawn_error).toContain("alarm storage unavailable");
+    });
+
     it("handles provider errors and increments failure count for permanent errors", async () => {
       const sandbox = createMockSandbox({ status: "pending", created_at: Date.now() - 60000 });
       const storage = createMockStorage(createMockSession(), sandbox);
@@ -2399,6 +2521,60 @@ describe("SandboxLifecycleManager", () => {
       expect(provider.takeSnapshot).not.toHaveBeenCalled();
     });
 
+    it("counts a connecting timeout toward the circuit breaker", async () => {
+      const now = Date.now();
+      const sandbox = createMockSandbox({
+        status: "connecting" as SandboxStatus,
+        created_at: now - (DEFAULT_LIFECYCLE_CONFIG.connectingTimeout.timeoutMs + 10_000),
+        last_heartbeat: null,
+      });
+      const storage = createMockStorage(createMockSession(), sandbox);
+      const manager = new SandboxLifecycleManager(
+        createMockProvider(),
+        storage,
+        storage,
+        createMockBroadcaster(),
+        createMockWebSocketManager(),
+        createMockAlarmScheduler(),
+        createMockIdGenerator(),
+        createTestConfig()
+      );
+
+      await expect(manager.handleAlarm()).resolves.toBe("sandbox_failed");
+
+      expect(sandbox.spawn_failure_count).toBe(1);
+      expect(sandbox.last_spawn_failure).toBeGreaterThanOrEqual(now);
+    });
+
+    it("restarts the streak when the previous failure is older than the breaker window", async () => {
+      // The window is measured from the latest failure. A failure that lands
+      // after the previous one expired starts a new streak of one; it must
+      // not resurrect and extend a streak the breaker would already ignore.
+      const now = Date.now();
+      const sandbox = createMockSandbox({
+        status: "connecting" as SandboxStatus,
+        created_at: now - (DEFAULT_LIFECYCLE_CONFIG.connectingTimeout.timeoutMs + 10_000),
+        last_heartbeat: null,
+        spawn_failure_count: 2,
+        last_spawn_failure: now - (DEFAULT_LIFECYCLE_CONFIG.circuitBreaker.windowMs + 60_000),
+      });
+      const storage = createMockStorage(createMockSession(), sandbox);
+      const manager = new SandboxLifecycleManager(
+        createMockProvider(),
+        storage,
+        storage,
+        createMockBroadcaster(),
+        createMockWebSocketManager(),
+        createMockAlarmScheduler(),
+        createMockIdGenerator(),
+        createTestConfig()
+      );
+
+      await expect(manager.handleAlarm()).resolves.toBe("sandbox_failed");
+
+      expect(sandbox.spawn_failure_count).toBe(1);
+    });
+
     it("does not timeout connecting sandbox within timeout window", async () => {
       const now = Date.now();
       const sandbox = createMockSandbox({
@@ -2541,7 +2717,142 @@ describe("SandboxLifecycleManager", () => {
       expect(manager.isSpawning()).toBe(false);
     });
 
-    it.each(["stopped", "stale"] as const)(
+    it("counts a fatal runtime termination toward the circuit breaker", async () => {
+      const now = Date.now();
+      const sandbox = createMockSandbox({ status: "ready" as SandboxStatus });
+      const storage = createMockStorage(createMockSession(), sandbox);
+      const manager = new SandboxLifecycleManager(
+        createMockProvider(),
+        storage,
+        storage,
+        createMockBroadcaster(),
+        createMockWebSocketManager(true),
+        createMockAlarmScheduler(),
+        createMockIdGenerator(),
+        createTestConfig()
+      );
+
+      await expect(manager.terminateFailedSandbox("OpenCode repeatedly crashed")).resolves.toBe(
+        true
+      );
+
+      expect(sandbox.spawn_failure_count).toBe(1);
+      expect(sandbox.last_spawn_failure).toBeGreaterThanOrEqual(now);
+    });
+
+    it("opens the circuit breaker after repeated fatal boots so the re-drive stops spawning", async () => {
+      // A boot that reports fatal before its bridge connects (setup.sh exits
+      // non-zero, the harness never comes up) re-drives the pending prompt
+      // onto a fresh sandbox that dies the same way. Nothing connects, so
+      // nothing clears the streak, and the breaker has to end it.
+      const sandbox = createMockSandbox({ status: "failed" as SandboxStatus });
+      const storage = createMockStorage(createMockSession(), sandbox);
+      const broadcaster = createMockBroadcaster();
+      const provider = createMockProvider();
+      const manager = new SandboxLifecycleManager(
+        provider,
+        storage,
+        storage,
+        broadcaster,
+        createMockWebSocketManager(false),
+        createMockAlarmScheduler(),
+        createMockIdGenerator(),
+        createTestConfig()
+      );
+
+      for (
+        let attempt = 0;
+        attempt < DEFAULT_LIFECYCLE_CONFIG.circuitBreaker.threshold;
+        attempt++
+      ) {
+        await manager.spawnSandbox();
+        expect(sandbox.status).toBe("connecting");
+        await expect(manager.terminateFailedSandbox("setup.sh exited 1")).resolves.toBe(true);
+      }
+      const spawnsBeforeOpen = vi.mocked(provider.createSandbox).mock.calls.length;
+
+      await manager.spawnSandbox();
+
+      expect(vi.mocked(provider.createSandbox).mock.calls.length).toBe(spawnsBeforeOpen);
+      expect(sandbox.last_spawn_error).toContain("temporarily disabled");
+    });
+
+    it("opens the circuit breaker when replacements connect but die before taking a prompt", async () => {
+      // The bridge connecting consumes nothing: the pending prompt is
+      // claimed only after a further await, and a fatal report in that gap
+      // re-drives the same prompt. So connect must not clear the streak, or
+      // this sequence would replace the sandbox forever.
+      const sandbox = createMockSandbox({ status: "failed" as SandboxStatus });
+      const storage = createMockStorage(createMockSession(), sandbox);
+      const provider = createMockProvider();
+      const manager = new SandboxLifecycleManager(
+        provider,
+        storage,
+        storage,
+        createMockBroadcaster(),
+        createMockWebSocketManager(true),
+        createMockAlarmScheduler(),
+        createMockIdGenerator(),
+        createTestConfig()
+      );
+
+      for (
+        let attempt = 0;
+        attempt < DEFAULT_LIFECYCLE_CONFIG.circuitBreaker.threshold;
+        attempt++
+      ) {
+        await manager.spawnSandbox();
+        // The production connection path calls this before publishing ready.
+        manager.onSandboxConnected();
+        sandbox.status = "ready";
+        await expect(manager.terminateFailedSandbox("OpenCode crashed")).resolves.toBe(true);
+      }
+      const spawnsBeforeOpen = vi.mocked(provider.createSandbox).mock.calls.length;
+
+      await manager.spawnSandbox();
+
+      expect(vi.mocked(provider.createSandbox).mock.calls.length).toBe(spawnsBeforeOpen);
+      expect(sandbox.last_spawn_error).toContain("temporarily disabled");
+    });
+
+    it("keeps replacing a sandbox that took a prompt before each fatal report", async () => {
+      // Once a prompt is dispatched, a fatal report fails that prompt, so
+      // each replacement costs a queued prompt and the queue bounds the
+      // sequence without the breaker.
+      const sandbox = createMockSandbox({ status: "failed" as SandboxStatus });
+      const storage = createMockStorage(createMockSession(), sandbox);
+      const provider = createMockProvider();
+      const manager = new SandboxLifecycleManager(
+        provider,
+        storage,
+        storage,
+        createMockBroadcaster(),
+        createMockWebSocketManager(true),
+        createMockAlarmScheduler(),
+        createMockIdGenerator(),
+        createTestConfig()
+      );
+
+      for (
+        let attempt = 0;
+        attempt < DEFAULT_LIFECYCLE_CONFIG.circuitBreaker.threshold;
+        attempt++
+      ) {
+        await manager.spawnSandbox();
+        manager.onSandboxConnected();
+        sandbox.status = "ready";
+        manager.onPromptDispatched();
+        await expect(manager.terminateFailedSandbox("OpenCode crashed")).resolves.toBe(true);
+        expect(sandbox.spawn_failure_count).toBe(1);
+      }
+      const spawnsBeforeLast = vi.mocked(provider.createSandbox).mock.calls.length;
+
+      await manager.spawnSandbox();
+
+      expect(vi.mocked(provider.createSandbox).mock.calls.length).toBe(spawnsBeforeLast + 1);
+    });
+
+    it.each(["stopped", "stale", "failed"] as const)(
       "does not overwrite or detach a %s sandbox",
       async (status) => {
         const storage = createMockStorage(createMockSession(), createMockSandbox({ status }));
@@ -2563,6 +2874,44 @@ describe("SandboxLifecycleManager", () => {
         expect(wsManager.detachSandboxWebSocket).not.toHaveBeenCalled();
       }
     );
+
+    it("reports nothing to terminate for a boot the connect watchdog already failed", async () => {
+      // A provider without explicit stop cannot kill the boot the watchdog
+      // gave up on, so it runs on and eventually reports a fatal error of its
+      // own. That report must not read as a fresh termination, or the caller
+      // re-drives the pending prompt onto yet another sandbox.
+      const now = Date.now();
+      const sandbox = createMockSandbox({
+        status: "connecting" as SandboxStatus,
+        created_at: now - (DEFAULT_LIFECYCLE_CONFIG.connectingTimeout.timeoutMs + 10_000),
+        last_heartbeat: null,
+      });
+      const storage = createMockStorage(createMockSession(), sandbox);
+      const wsManager = createMockWebSocketManager();
+      const manager = new SandboxLifecycleManager(
+        createMockProvider({ capabilities: { supportsExplicitStop: false } }),
+        storage,
+        storage,
+        createMockBroadcaster(),
+        wsManager,
+        createMockAlarmScheduler(),
+        createMockIdGenerator(),
+        createTestConfig()
+      );
+
+      await expect(manager.handleAlarm()).resolves.toBe("sandbox_failed");
+      expect(sandbox.status).toBe("failed");
+
+      await expect(
+        manager.terminateFailedSandbox("failed to fetch managed skills: 401 Unauthorized")
+      ).resolves.toBe(false);
+
+      expect(storage.calls.filter((c) => c === "updateSandboxStatus:failed")).toHaveLength(1);
+      expect(storage.calls).not.toContain(
+        "setLastSpawnError:failed to fetch managed skills: 401 Unauthorized"
+      );
+      expect(wsManager.detachSandboxWebSocket).not.toHaveBeenCalled();
+    });
   });
 
   describe("scheduleDisconnectCheck", () => {
@@ -4013,6 +4362,28 @@ describe("status writes after a provider await (COL-99)", () => {
     expect(sandbox.modal_object_id).toBe("provider-obj-late");
   });
 
+  it("counts an attempt once when the watchdog fails it before the provider rejects it", async () => {
+    // The connect alarm is armed at reservation, before the provider call,
+    // so it can fail the attempt while createSandbox() is still pending. The
+    // provider's later rejection is the same attempt, not a second failure.
+    vi.useFakeTimers();
+    try {
+      const sandbox = createMockSandbox({ status: "failed" });
+      const h = harness(sandbox, async () => {
+        vi.advanceTimersByTime(DEFAULT_LIFECYCLE_CONFIG.connectingTimeout.timeoutMs + 1000);
+        await expect(h.manager.handleAlarm()).resolves.toBe("sandbox_failed");
+        throw new SandboxProviderError("quota exceeded", "permanent");
+      });
+
+      await h.manager.spawnSandbox();
+
+      expect(sandbox.status).toBe("failed");
+      expect(sandbox.spawn_failure_count).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("leaves a sandbox that connected during the provider call ready when the call then fails", async () => {
     const sandbox = createMockSandbox({ status: "failed" });
     const { storage, broadcaster, manager } = harness(sandbox, async () => {
@@ -4334,5 +4705,209 @@ describe("spawn admission race (#1589)", () => {
       expect.stringContaining("superseded"),
       expect.anything()
     );
+  });
+});
+
+describe("cancelled pending startup (DIV-84)", () => {
+  function harness(sandbox = createMockSandbox({ status: "failed" })) {
+    const storage = createMockStorage(createMockSession(), sandbox);
+    const stopSandbox = vi.fn(async () => ({ success: true }));
+    const provider = createMockProvider({
+      stopSandbox,
+      capabilities: { supportsExplicitStop: true },
+    });
+    const broadcaster = createMockBroadcaster();
+    const sockets = createMockWebSocketManager(false);
+    const manager = new SandboxLifecycleManager(
+      provider,
+      storage,
+      storage,
+      broadcaster,
+      sockets,
+      createMockAlarmScheduler(),
+      createMockIdGenerator(),
+      createTestConfig()
+    );
+    return { sandbox, storage, provider, stopSandbox, broadcaster, sockets, manager };
+  }
+
+  it("retires failed startup so a delayed bridge cannot self-heal after cancellation", async () => {
+    const h = harness();
+    await h.manager.terminateUnresponsiveSandbox("pending_prompt_cancelled");
+    expect(h.sandbox.status).toBe("stale");
+    expect(h.sockets.detachSandboxWebSocket).toHaveBeenCalled();
+    expect(h.stopSandbox).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerObjectId: "modal-obj-123",
+        reason: "pending_prompt_cancelled",
+      })
+    );
+  });
+
+  it("never invokes create after cancellation during environment resolution", async () => {
+    const h = harness();
+    vi.mocked(h.storage.getUserEnvVars).mockImplementation(async () => {
+      await h.manager.terminateUnresponsiveSandbox("pending_prompt_cancelled");
+      return undefined;
+    });
+    await h.manager.spawnSandbox();
+    expect(h.provider.createSandbox).not.toHaveBeenCalled();
+    expect(h.sandbox.status).toBe("stale");
+    expect(h.storage.incrementCircuitBreakerFailure).not.toHaveBeenCalled();
+  });
+
+  it("stops the exact late create handle without publishing it or reviving the row", async () => {
+    const h = harness();
+    vi.mocked(h.provider.createSandbox).mockImplementation(async (config) => {
+      await h.manager.terminateUnresponsiveSandbox("pending_prompt_cancelled");
+      return {
+        sandboxId: config.sandboxId,
+        providerObjectId: "late-object",
+        status: "connecting",
+        createdAt: Date.now(),
+      };
+    });
+    await h.manager.spawnSandbox();
+    expect(h.sandbox.status).toBe("stale");
+    expect(h.sandbox.modal_object_id).not.toBe("late-object");
+    expect(h.stopSandbox).toHaveBeenCalledWith(
+      expect.objectContaining({ providerObjectId: "late-object", reason: "startup_cancelled" })
+    );
+    expect(h.broadcaster.messages).not.toContainEqual({
+      type: "sandbox_status",
+      status: "connecting",
+    });
+  });
+
+  it("leaves the fence intact when create fails after cancellation", async () => {
+    const h = harness();
+    vi.mocked(h.provider.createSandbox).mockImplementation(async () => {
+      await h.manager.terminateUnresponsiveSandbox("pending_prompt_cancelled");
+      throw new SandboxProviderError("provider timeout", "transient");
+    });
+    await h.manager.spawnSandbox();
+    expect(h.sandbox.status).toBe("stale");
+    expect(h.provider.createSandbox).toHaveBeenCalledTimes(1);
+    expect(h.storage.setLastSpawnError).not.toHaveBeenCalledWith(
+      "provider timeout",
+      expect.anything()
+    );
+  });
+
+  it("does not overwrite a newer reservation with a late successful create", async () => {
+    const h = harness();
+    vi.mocked(h.provider.createSandbox).mockImplementation(async (config) => {
+      h.sandbox.modal_sandbox_id = "new-generation";
+      h.sandbox.created_at += 1;
+      h.sandbox.modal_object_id = "new-object";
+      return {
+        sandboxId: config.sandboxId,
+        providerObjectId: "late-object",
+        status: "connecting",
+        createdAt: Date.now(),
+      };
+    });
+    await h.manager.spawnSandbox();
+    expect(h.sandbox.modal_object_id).toBe("new-object");
+    expect(h.stopSandbox).toHaveBeenCalledWith(
+      expect.objectContaining({ providerObjectId: "late-object" })
+    );
+    expect(h.stopSandbox).not.toHaveBeenCalledWith(
+      expect.objectContaining({ providerObjectId: "new-object" })
+    );
+  });
+  it.each(["cancelled", "archived"] as const)(
+    "does not publish access after the session becomes %s during encryption",
+    async (status) => {
+      const h = harness();
+      vi.mocked(h.provider.createSandbox).mockImplementation(async (config) => ({
+        sandboxId: config.sandboxId,
+        providerObjectId: "late-object",
+        status: "connecting",
+        createdAt: Date.now(),
+        codeServerUrl: "https://old.test",
+        codeServerPassword: "password",
+        tunnelUrls: { "3000": "https://tunnel.test" },
+      }));
+      vi.mocked(h.storage.updateSandboxAccess).mockImplementation(
+        async (_kind, _url, _secret, assertCurrent) => {
+          vi.mocked(h.storage.getSession).mockReturnValue(createMockSession({ status }));
+          assertCurrent?.();
+          throw new Error("stale writer passed guard");
+        }
+      );
+      await h.manager.spawnSandbox();
+      expect(h.storage.updateSandboxTunnelUrls).not.toHaveBeenCalled();
+      expect(h.sandbox.code_server_url).toBeNull();
+      expect(h.stopSandbox).toHaveBeenCalledWith(
+        expect.objectContaining({ providerObjectId: "late-object", reason: "startup_cancelled" })
+      );
+      expect(h.storage.incrementCircuitBreakerFailure).not.toHaveBeenCalled();
+    }
+  );
+
+  it("does not stop a provider object adopted by a newer generation", async () => {
+    const h = harness();
+    vi.mocked(h.provider.createSandbox).mockImplementation(async (config) => {
+      h.sandbox.created_at += 1;
+      h.sandbox.modal_object_id = "same-object";
+      return {
+        sandboxId: config.sandboxId,
+        providerObjectId: "same-object",
+        status: "connecting",
+        createdAt: Date.now(),
+      };
+    });
+    await h.manager.spawnSandbox();
+    expect(h.stopSandbox).not.toHaveBeenCalledWith(
+      expect.objectContaining({ providerObjectId: "same-object" })
+    );
+    expect(h.sandbox.modal_object_id).toBe("same-object");
+  });
+
+  it("does not invoke snapshot restore after pending cancellation", async () => {
+    const h = harness(
+      createMockSandbox({
+        status: "stopped",
+        snapshot_image_id: "snapshot-1",
+        snapshot_runtime_version: COMPATIBLE_RUNTIME_VERSION,
+      })
+    );
+    vi.mocked(h.storage.getUserEnvVars).mockImplementation(async () => {
+      await h.manager.terminateUnresponsiveSandbox("pending_prompt_cancelled");
+      return undefined;
+    });
+    await h.manager.spawnSandbox();
+    expect(h.provider.restoreFromSnapshot).not.toHaveBeenCalled();
+    expect(h.provider.createSandbox).not.toHaveBeenCalled();
+  });
+  it("fences a late Modal-style startup and logs its handle for operator reconciliation", async () => {
+    const h = harness();
+    h.provider.capabilities.supportsExplicitStop = false;
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      vi.mocked(h.provider.createSandbox).mockImplementation(async (config) => {
+        await h.manager.terminateUnresponsiveSandbox("pending_prompt_cancelled");
+        return {
+          sandboxId: config.sandboxId,
+          providerObjectId: "late-modal-object",
+          status: "connecting",
+          createdAt: Date.now(),
+        };
+      });
+      await h.manager.spawnSandbox();
+      expect(h.sandbox.status).toBe("stale");
+      expect(h.sockets.sendToSandbox).toHaveBeenCalledWith({ type: "shutdown" });
+      expect(h.stopSandbox).not.toHaveBeenCalled();
+      expect(h.sandbox.modal_object_id).not.toBe("late-modal-object");
+      expect(parseStructuredLogs(warning)).toContainEqual(
+        expect.objectContaining({
+          msg: "Late sandbox requires provider reconciliation",
+          provider_object_id: "late-modal-object",
+        })
+      );
+    } finally {
+      warning.mockRestore();
+    }
   });
 });

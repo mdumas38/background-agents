@@ -281,6 +281,11 @@ export const GITHUB_SERVICE_ROUTE = {
   supportedScmProviders: ["github"],
 } as const satisfies RoutePolicy;
 
+export const SCM_AGNOSTIC_SERVICE_ROUTE = {
+  authentication: { kind: "service" },
+  supportedScmProviders: "all",
+} as const satisfies RoutePolicy;
+
 export const SCM_AGNOSTIC_USER_OR_SERVICE_ROUTE = {
   authentication: { kind: "user-or-service" },
   supportedScmProviders: "all",

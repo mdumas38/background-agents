@@ -442,4 +442,91 @@ describe("SessionCoreRepository", () => {
       expect(mock.calls).toHaveLength(3);
     });
   });
+
+  // === PRE-INIT STOP FENCE ===
+
+  describe("pre-init stop fence", () => {
+    it("records the fence idempotently and reports whether it inserted", () => {
+      mock.setDefaultRowsWritten(1);
+      expect(repo.recordPreInitStopFence("sess-1", 1000)).toBe(true);
+      expect(mock.calls[0].query).toContain("INSERT INTO session_preinit_stop_fence");
+      expect(mock.calls[0].query).toContain("ON CONFLICT (session_id) DO NOTHING");
+      expect(mock.calls[0].params).toEqual(["sess-1", 1000]);
+
+      mock.setDefaultRowsWritten(0);
+      expect(repo.recordPreInitStopFence("sess-1", 2000)).toBe(false);
+      expect(mock.calls[1].params).toEqual(["sess-1", 2000]);
+    });
+
+    it("queries the fence by exact session identity", () => {
+      mock.setData(
+        `SELECT session_id, recorded_at FROM session_preinit_stop_fence WHERE session_id = ?`,
+        [{ session_id: "sess-1", recorded_at: 1000 }]
+      );
+
+      expect(repo.getPreInitStopFence("sess-1")).toEqual({
+        session_id: "sess-1",
+        recorded_at: 1000,
+      });
+      expect(mock.calls[0].query).toContain("FROM session_preinit_stop_fence");
+      expect(mock.calls[0].params).toEqual(["sess-1"]);
+    });
+
+    it("returns null when no fence exists", () => {
+      expect(repo.getPreInitStopFence("sess-1")).toBeNull();
+    });
+
+    it("records idempotently and never manufactures a session row", () => {
+      const db = new DatabaseSync(":memory:");
+      const storage = createNodeSqlStorage(db);
+      const realRepo = new SessionCoreRepository(storage.sql, storage.transactionSync);
+
+      try {
+        initSchema(storage.sql);
+        expect(realRepo.getPreInitStopFence("sess-1")).toBeNull();
+        expect(realRepo.recordPreInitStopFence("sess-1", 1000)).toBe(true);
+        expect(realRepo.recordPreInitStopFence("sess-1", 2000)).toBe(false);
+        expect(realRepo.getPreInitStopFence("sess-1")).toEqual({
+          session_id: "sess-1",
+          recorded_at: 1000,
+        });
+        expect(realRepo.getPreInitStopFence("sess-2")).toBeNull();
+        expect(realRepo.getSession()).toBeNull();
+      } finally {
+        db.close();
+      }
+    });
+
+    it("reads the fence inside the transaction that would initialize the session", () => {
+      const db = new DatabaseSync(":memory:");
+      const storage = createNodeSqlStorage(db);
+      const realRepo = new SessionCoreRepository(storage.sql, storage.transactionSync);
+
+      try {
+        initSchema(storage.sql);
+        realRepo.recordPreInitStopFence("sess-1", 1000);
+
+        const initialized = realRepo.transaction(() => {
+          if (realRepo.getPreInitStopFence("sess-1")) return false;
+          realRepo.upsertSession({
+            id: "sess-1",
+            sessionName: "sess-1",
+            title: null,
+            repoOwner: null,
+            repoName: null,
+            model: "claude-sonnet-4",
+            status: "created",
+            createdAt: 2000,
+            updatedAt: 2000,
+          });
+          return true;
+        });
+
+        expect(initialized).toBe(false);
+        expect(realRepo.getSession()).toBeNull();
+      } finally {
+        db.close();
+      }
+    });
+  });
 });

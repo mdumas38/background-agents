@@ -77,6 +77,13 @@ export class ChildSessionsHandler {
       return Response.json({ error: "Investigation sessions cannot delegate" }, { status: 403 });
     }
 
+    if (this.messageRepository.hasManagedWorkMessages()) {
+      return Response.json(
+        { error: "Managed work must delegate through its root coordinator" },
+        { status: 403 }
+      );
+    }
+
     const promptAuthor = resolvePromptAuthorParticipant(
       this.messageRepository,
       this.participantRepository

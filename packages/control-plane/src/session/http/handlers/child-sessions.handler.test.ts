@@ -63,6 +63,7 @@ function createParticipant(overrides: Partial<ParticipantRow> = {}): Participant
 function createHandler() {
   const repository = {
     listParticipants: vi.fn(),
+    hasManagedWorkMessages: vi.fn<() => boolean>(() => false),
     getProcessingMessageAuthor: vi.fn<() => { author_id: string } | null>(() => ({
       author_id: "participant-1",
     })),
@@ -243,6 +244,30 @@ describe("ChildSessionsHandler", () => {
     getSession.mockReturnValue(createSession({ execution_profile: "investigation" }));
     expect(handler.getSpawnContext().status).toBe(403);
     expect(repository.getProcessingMessageAuthor).not.toHaveBeenCalled();
+  });
+
+  it("denies ordinary child delegation for managed work sessions", async () => {
+    const { handler, getSession, repository } = createHandler();
+    getSession.mockReturnValue(createSession());
+    repository.hasManagedWorkMessages.mockReturnValue(true);
+
+    const response = handler.getSpawnContext();
+
+    expect(response.status).toBe(403);
+    expect(repository.getProcessingMessageAuthor).not.toHaveBeenCalled();
+    await expect(response.json()).resolves.toEqual({
+      error: "Managed work must delegate through its root coordinator",
+    });
+  });
+
+  it("allows ordinary child delegation when the session has no managed work", async () => {
+    const { handler, getSession, repository } = createHandler();
+    getSession.mockReturnValue(createSession());
+
+    const response = handler.getSpawnContext();
+
+    expect(response.status).toBe(200);
+    expect(repository.hasManagedWorkMessages).toHaveBeenCalled();
   });
 
   it("returns 404 when session is missing for spawn context", async () => {

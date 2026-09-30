@@ -8,7 +8,7 @@ import {
   makeLinearBotEnv,
 } from "../test-helpers";
 import { publishFollowUps, publicationKey, requestFollowUpPublication } from "./publication";
-import { callbacksRouter } from "../callbacks";
+import { callbacksRouter, handleCompletionCallback } from "../callbacks";
 import { buildPrompt } from "../webhook-handler";
 import type * as LinearClientModule from "../utils/linear-client";
 import type * as ExtractorModule from "../completion/extractor";
@@ -106,6 +106,10 @@ beforeEach(() => {
     success: true,
   });
   mocks.graphql.mockImplementation(async (_client, query, variables) => {
+    if (query.includes("CompletionActivity"))
+      return {
+        data: { agentActivityCreate: { success: true, agentActivity: { id: variables.input.id } } },
+      };
     if (query.includes("FollowUpSource")) return { data: { issue: source } };
     if (query.includes("PublishFollowUps"))
       return {
@@ -125,6 +129,50 @@ beforeEach(() => {
 });
 
 describe("durable publication", () => {
+  it("uses the configured comment fallback when Agent API authentication is unavailable", async () => {
+    const s = setup();
+    mocks.client.mockResolvedValue(null);
+    const send = vi.fn().mockResolvedValue(true);
+    await handleCompletionCallback(
+      payload,
+      { ...s.env, LINEAR_API_KEY: "fallback-key" },
+      "trace",
+      send
+    );
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "comment",
+        target: payload.context.issueId,
+        body: expect.stringContaining(report),
+      })
+    );
+    expect(mocks.activity).not.toHaveBeenCalled();
+  });
+  it("keeps delivery pending when neither activity nor comment credentials are available", async () => {
+    const s = setup();
+    mocks.client.mockResolvedValue(null);
+    const send = vi.fn();
+    await expect(
+      handleCompletionCallback(payload, { ...s.env, LINEAR_API_KEY: undefined }, "trace", send)
+    ).rejects.toThrow("Completion comment authentication unavailable");
+    expect(send).not.toHaveBeenCalled();
+  });
+  it("retries unavailable completion events instead of publishing an empty success", async () => {
+    const s = setup();
+    mocks.extract.mockResolvedValueOnce({
+      textContent: "",
+      toolCalls: [],
+      artifacts: [],
+      mediaArtifacts: [],
+      success: false,
+    });
+    const send = vi.fn();
+    await expect(handleCompletionCallback(payload, s.env, "trace", send)).rejects.toThrow(
+      "Completion events unavailable"
+    );
+    expect(send).not.toHaveBeenCalled();
+    expect(mutationCalls()).toHaveLength(0);
+  });
   it("reports missing output instead of silently treating it as no proposed work", async () => {
     const s = setup();
     expect((await s.run(payload, "")).status).toBe("unavailable");
@@ -174,9 +222,32 @@ describe("durable publication", () => {
       null
     );
     expect(prompt).toContain(report);
-    expect(s.env.CONTROL_PLANE.fetch).not.toHaveBeenCalled();
+    expect(s.env.CONTROL_PLANE.fetch).toHaveBeenCalledTimes(1);
+    expect(input.description).toContain("Validated session baselines unavailable");
     expect(mocks.activity).not.toHaveBeenCalled();
     expect(s.data.get(publicationKey(payload))).toMatchObject({ result, inputs: [input] });
+  });
+  it("freezes machine provenance with the durable publication record", async () => {
+    const s = setup();
+    vi.mocked(s.env.CONTROL_PLANE.fetch).mockResolvedValue(
+      Response.json({
+        revisionProvenance: {
+          source: "session_pinned_baselines",
+          status: "available",
+          repositories: [
+            { position: 0, repoOwner: "group/subgroup", repoName: "repo", baseSha: "a".repeat(40) },
+          ],
+        },
+      })
+    );
+    await s.run();
+    const description = mutationCalls()[0][2].input.issues[0].description;
+    expect(description).toContain("a".repeat(40));
+    expect(description).toContain(report);
+    vi.mocked(s.env.CONTROL_PLANE.fetch).mockRejectedValue(new Error("offline"));
+    await s.run();
+    expect(s.env.CONTROL_PLANE.fetch).toHaveBeenCalledTimes(1);
+    expect(mutationCalls()).toHaveLength(1);
   });
   it("deduplicates concurrent callbacks, changed timestamps, and coordinator restarts", async () => {
     const s = setup();
@@ -313,13 +384,26 @@ describe("signed completion-to-publication", () => {
     );
     expect(response.status).toBe(valid ? 200 : 401);
     await Promise.all(ctx.waitUntil.mock.calls.map((call) => call[0]));
-    expect(mutationCalls()).toHaveLength(valid ? 1 : 0);
-    if (valid) {
-      expect(mocks.activity.mock.calls[0][2].body).toContain(
-        "[ENG-2](https://linear.app/acme/issue/ENG-2)"
+    // The callback now acknowledges durable acceptance, not external completion.
+    if (valid)
+      await vi.waitFor(() =>
+        expect(
+          mocks.graphql.mock.calls.some((call) => call[1].includes("CompletionActivity"))
+        ).toBe(true)
       );
-      expect(mocks.activity.mock.calls[0][2].body).toContain("Useful report");
+    expect(mutationCalls().filter((call) => call[1].includes("PublishFollowUps"))).toHaveLength(
+      valid ? 1 : 0
+    );
+    if (valid) {
+      expect(
+        mocks.graphql.mock.calls.find((call) => call[1].includes("CompletionActivity"))![2].input
+          .content.body
+      ).toContain("[ENG-2](https://linear.app/acme/issue/ENG-2)");
+      expect(
+        mocks.graphql.mock.calls.find((call) => call[1].includes("CompletionActivity"))![2].input
+          .content.body
+      ).toContain("Useful report");
     }
-    expect(s.env.CONTROL_PLANE.fetch).not.toHaveBeenCalled();
+    expect(s.env.CONTROL_PLANE.fetch).toHaveBeenCalledTimes(valid ? 1 : 0);
   });
 });

@@ -9,6 +9,7 @@ import {
 } from "../../diffs/errors";
 import type { SessionDiffService } from "../../diffs/service";
 import { SessionDiffsHandler } from "./session-diffs.handler";
+import type { CheckpointService } from "../../checkpoint-service";
 
 function harness(overrides: Partial<SessionDiffService> = {}) {
   const service = {
@@ -26,6 +27,31 @@ const jsonRequest = (body: unknown) =>
   new Request("http://internal/diff", { method: "POST", body: JSON.stringify(body) });
 
 describe("SessionDiffsHandler", () => {
+  it("pins uploads only after exact checkpoint intent validation", async () => {
+    const { service } = harness();
+    const checkpoints = { acceptsUpload: vi.fn(() => true) };
+    const handler = new SessionDiffsHandler(service, checkpoints as unknown as CheckpointService);
+    const body = { triggerMessageId: "m1", checkpointRequestId: "r1" };
+    expect((await handler.storeBundle(jsonRequest(body))).status).toBe(200);
+    expect(checkpoints.acceptsUpload).toHaveBeenCalledWith("m1", "r1");
+    expect(service.publishBundle).toHaveBeenCalledWith(body, "r1");
+    vi.mocked(service.publishBundle).mockClear();
+    checkpoints.acceptsUpload.mockReturnValue(false);
+    expect((await handler.storeBundle(jsonRequest(body))).status).toBe(409);
+    expect(service.publishBundle).not.toHaveBeenCalled();
+  });
+
+  it("rejects checkpoint upload if intent service is unavailable", async () => {
+    const { handler, service } = harness();
+    expect(
+      (
+        await handler.storeBundle(
+          jsonRequest({ triggerMessageId: "m1", checkpointRequestId: "r1" })
+        )
+      ).status
+    ).toBe(409);
+    expect(service.publishBundle).not.toHaveBeenCalled();
+  });
   it("serializes the public state", async () => {
     const { handler } = harness();
 

@@ -308,6 +308,16 @@ describe("SandboxRepository", () => {
   });
 
   describe("access artifacts", () => {
+    it("does not restore access when cancellation wins during encryption", async () => {
+      let current = true;
+      const write = repository.updateSandboxAccess("vnc", "https://old.test", "secret", () => {
+        if (!current) throw new Error("startup superseded");
+      });
+      current = false;
+      await expect(write).rejects.toThrow("startup superseded");
+      expect(mock.calls).toEqual([]);
+    });
+
     it("stores encrypted credentials and clears them", async () => {
       await repository.updateSandboxAccess("vnc", "https://vnc.test", "vnc-secret");
       repository.clearSandboxAccess("vnc");

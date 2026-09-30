@@ -33,7 +33,7 @@ import {
 const BASE = "https://test.local";
 const BROWSER_USER_ID = "11111111111111111111111111111111";
 const SANDBOX_TOKEN = "matrix-sandbox-token";
-const BOT_SERVICES = ["slack-bot", "github-bot", "linear-bot"] as const;
+const BOT_SERVICES = ["slack-bot", "github-bot", "linear-bot", "agent-world"] as const;
 const PROTECTED_STATUSES = new Set([401, 403]);
 const ROUTE_MISS_BODY = JSON.stringify({ error: "Not found" });
 // Each pass issues one request per catalog route, and a fresh session per
@@ -236,21 +236,24 @@ describe("route admission matrix", { timeout: MATRIX_TIMEOUT_MS }, () => {
       const admitted = await serviceFetch(url, {
         method: route.method,
         service: allowedService,
-        body: "{}",
+        ...(isMutation(route) ? { body: "{}" } : {}),
       });
       expect(PROTECTED_STATUSES.has(admitted.status), `${identity} allowed bot`).toBe(false);
 
       const wrongBot = await serviceFetch(url, {
         method: route.method,
         service: deniedService,
-        body: "{}",
+        ...(isMutation(route) ? { body: "{}" } : {}),
       });
       expect(wrongBot.status, `${identity} wrong bot`).toBe(403);
       await expect(wrongBot.json(), identity).resolves.toMatchObject({
         code: "service_capability_required",
       });
 
-      const browser = await serviceFetch(url, { method: route.method, body: "{}" });
+      const browser = await serviceFetch(url, {
+        method: route.method,
+        ...(isMutation(route) ? { body: "{}" } : {}),
+      });
       expect(browser.status, `${identity} browser owner`).toBe(403);
       await expect(browser.json(), identity).resolves.toMatchObject({
         code: "service_capability_required",

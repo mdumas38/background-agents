@@ -77,12 +77,21 @@ export function makeLinearBotEnv(kv: KVNamespace, overrides: Partial<Env> = {}):
 
 export function createDispatchStorage() {
   const data = new Map<string, unknown>();
+  let alarm: number | null = null;
   let pending = Promise.resolve();
   const storage = {
-    get: async (key: string) => data.get(key),
+    get: async (key: string) => structuredClone(data.get(key)),
+    list: async ({ prefix }: { prefix: string }) =>
+      new Map(
+        [...data].filter(([key]) => key.startsWith(prefix)).map(([k, v]) => [k, structuredClone(v)])
+      ),
+    getAlarm: async () => alarm,
+    setAlarm: async (deadlineMs: number) => {
+      alarm = deadlineMs;
+    },
     put: async (key: string | Record<string, unknown>, value?: unknown) => {
-      if (typeof key === "string") data.set(key, value);
-      else for (const [k, v] of Object.entries(key)) data.set(k, v);
+      if (typeof key === "string") data.set(key, structuredClone(value));
+      else for (const [k, v] of Object.entries(key)) data.set(k, structuredClone(v));
     },
     delete: async (key: string) => data.delete(key),
     transaction: <T>(fn: (tx: unknown) => Promise<T>): Promise<T> => {
@@ -94,7 +103,7 @@ export function createDispatchStorage() {
       return next;
     },
   };
-  return { storage: storage as unknown as DurableObjectStorage, data };
+  return { storage: storage as unknown as DurableObjectStorage, data, getAlarm: () => alarm };
 }
 
 export function makeExecutionContext() {

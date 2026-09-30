@@ -27,6 +27,8 @@ interface MessageServiceDeps {
   parseArtifactMetadata: (
     artifact: Pick<ArtifactRow, "id" | "metadata">
   ) => Record<string, unknown> | null;
+  hasInitializedSession: () => boolean;
+  recordPreInitStopFence: () => void;
 }
 
 export class MessageService {
@@ -41,6 +43,9 @@ export class MessageService {
   }
 
   async stop(): Promise<{ status: "stopping" }> {
+    if (!this.deps.hasInitializedSession()) {
+      this.deps.recordPreInitStopFence();
+    }
     await this.deps.stopExecution();
     return { status: "stopping" };
   }

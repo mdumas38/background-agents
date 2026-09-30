@@ -6,11 +6,18 @@
  * The Linear-specific `formatAgentResponse` remains here.
  */
 
+import {
+  listEventsResponseSchema,
+  type EventResponse,
+} from "@open-inspect/shared/types/sandbox-events";
+import { countToolUsage, type ToolUsage } from "./tool-usage";
 import type { Env } from "../types";
 import type { AgentResponse } from "@open-inspect/shared/types/artifacts";
 import { extractAgentResponse as sharedExtract } from "@open-inspect/shared/completion/extractor";
 import { resolveOutboundCredential } from "@open-inspect/shared/service-auth";
 import { createLogger } from "../logger";
+
+export type LinearAgentResponse = AgentResponse & { toolUsage?: ToolUsage };
 
 const log = createLogger("extractor");
 
@@ -24,10 +31,29 @@ export async function extractAgentResponse(
   sessionId: string,
   messageId: string,
   traceId?: string
-): Promise<AgentResponse> {
-  return sharedExtract(
+): Promise<LinearAgentResponse> {
+  const events: EventResponse[] = [];
+  let complete = false;
+  const response = await sharedExtract(
     {
-      fetcher: env.CONTROL_PLANE,
+      fetcher: {
+        fetch: async (input, init) => {
+          const result = await env.CONTROL_PLANE.fetch(input, init);
+          if (new URL(String(input)).pathname.endsWith("/events")) {
+            const parsed = listEventsResponseSchema.safeParse(
+              await result
+                .clone()
+                .json()
+                .catch(() => null)
+            );
+            if (result.ok && parsed.success) {
+              events.push(...parsed.data.events);
+              complete = !parsed.data.hasMore;
+            } else complete = false;
+          }
+          return result;
+        },
+      },
       auth: resolveOutboundCredential("linear-bot", env),
       log,
     },
@@ -35,13 +61,24 @@ export async function extractAgentResponse(
     messageId,
     traceId
   );
+  return { ...response, toolUsage: complete ? countToolUsage(events) : undefined };
 }
 
 /**
  * Format an AgentResponse into a markdown string for Linear AgentActivity.
  */
-export function formatAgentResponse(agentResponse: AgentResponse, sessionUrl: string): string {
+export function formatAgentResponse(
+  agentResponse: LinearAgentResponse,
+  sessionUrl: string
+): string {
   const parts: string[] = [`[View full session and findings](${sessionUrl})`];
+
+  const usage = agentResponse.toolUsage;
+  parts.push(
+    usage
+      ? `**Recorded tool usage:** ${usage.total} calls (${usage.completed} completed, ${usage.errors} errors, ${usage.other} other/unfinished). ${usage.unidentified ? `${usage.unidentified} records lack call IDs and cannot be reliably deduplicated. ` : ""}Counts come from persisted events; report estimates below are not authoritative.`
+      : "**Recorded tool usage:** unavailable; do not treat model estimates as verified counts."
+  );
 
   // PR / artifacts
   const prArtifact = agentResponse.artifacts.find((a) => a.type === "pr" && a.url);

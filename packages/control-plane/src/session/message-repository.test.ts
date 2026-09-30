@@ -571,6 +571,40 @@ describe("MessageRepository", () => {
     expect(mock.calls[0].query).toContain("COALESCE(completed_at, started_at, created_at) DESC");
   });
 
+  it("recognizes completed managed work context", () => {
+    const query = `SELECT callback_context FROM messages WHERE source = 'linear' AND callback_context IS NOT NULL`;
+    mock.setData(query, [
+      {
+        callback_context: JSON.stringify({
+          source: "linear",
+          issueId: "issue-1",
+          managedWork: {
+            rootIssueId: "root-1",
+            runId: "run-1",
+            taskId: "task-1",
+            attemptId: "attempt-1",
+          },
+        }),
+      },
+    ]);
+
+    expect(repository.hasManagedWorkMessages()).toBe(true);
+    expect(mock.calls[0].query).not.toContain("status");
+  });
+
+  it("ignores legacy and malformed callback contexts for managed work", () => {
+    const query = `SELECT callback_context FROM messages WHERE source = 'linear' AND callback_context IS NOT NULL`;
+    mock.setData(query, [
+      { callback_context: "{" },
+      { callback_context: JSON.stringify({ source: "linear", issueId: "issue-1" }) },
+      { callback_context: JSON.stringify({ source: "slack", managedWork: { runId: "run-1" } }) },
+      { callback_context: JSON.stringify({ source: "linear", managedWork: "run-1" }) },
+      { callback_context: JSON.stringify({ source: "linear", managedWork: null }) },
+    ]);
+
+    expect(repository.hasManagedWorkMessages()).toBe(false);
+  });
+
   it("reads callback context and processing author", () => {
     mock.setData(`SELECT callback_context, source FROM messages WHERE id = ?`, [
       { callback_context: '{"channel":"C123"}', source: "slack" },

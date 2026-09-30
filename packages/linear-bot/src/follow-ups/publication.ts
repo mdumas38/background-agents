@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { LinearCompletionCallback } from "@open-inspect/shared/types/session-api";
 import type { Env } from "../types";
 import { getLinearClient, linearGraphQL } from "../utils/linear-client";
+import { fetchRevisionProvenance } from "./revision-provenance";
 import { abortable } from "../utils/abortable";
 import {
   MAX_DESCRIPTION_BYTES,
@@ -145,6 +146,12 @@ export async function publishFollowUps(
         issues: [],
       };
     }
+    const revisionProvenance = await fetchRevisionProvenance(
+      env,
+      payload.sessionId,
+      signal,
+      traceId
+    );
     const sourceUrl = `${env.WEB_APP_URL}/session/${encodeURIComponent(payload.sessionId)}`;
     const inputs: IssueInput[] = parsed.proposals.map((proposal, index) => ({
       id: crypto.randomUUID(),
@@ -155,6 +162,7 @@ export async function publishFollowUps(
         `Source issue: [${source.identifier}](${source.url})`,
         `Source session: [${payload.sessionId}](${sourceUrl})`,
         `Source message: \`${payload.messageId}\`; proposal ${index + 1}.`,
+        revisionProvenance,
         "## Selected worker proposal (verbatim)",
         proposal.markdown,
         "## Source issue description at publication (verbatim)",
