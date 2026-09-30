@@ -59,7 +59,10 @@ describe("sig1 service-credential authentication", () => {
         url: "https://test.local/sessions",
       });
       expect(response.status, service).toBe(403);
-      await expect(response.json()).resolves.toMatchObject({ code: "service_actor_required" });
+      // Agent World's route allowlist refuses the route before the actor check.
+      const code =
+        service === "agent-world" ? "service_route_not_allowed" : "service_actor_required";
+      await expect(response.json()).resolves.toMatchObject({ code });
     }
   });
 

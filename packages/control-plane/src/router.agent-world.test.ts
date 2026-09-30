@@ -7,6 +7,10 @@ import {
   TEST_BACKGROUND_TASK_CONTEXT,
   TEST_SERVICE_SECRETS,
 } from "./router.test-support";
+import {
+  serviceAllowsPermission,
+  serviceRouteAllowlist,
+} from "./authorization/service-permissions";
 
 const MEMBER_IDENTITY = {
   id: "ident-gh",
@@ -55,6 +59,21 @@ describe("agent-world service principal", () => {
     }
   });
 
+  it("allowlists only real routes that fit inside its permission ceiling", () => {
+    const allowlist = serviceRouteAllowlist("agent-world");
+    expect(allowlist).not.toBeNull();
+    for (const key of allowlist ?? []) {
+      const route = routes.find((entry) => `${entry.method} ${entry.path}` === key);
+      expect(route, key).toBeDefined();
+      if (route?.authorization.kind !== "active-user") continue;
+      for (const requirement of route.authorization.allOf) {
+        if (requirement.kind === "permission") {
+          expect(serviceAllowsPermission("agent-world", requirement.permission), key).toBe(true);
+        }
+      }
+    }
+  });
+
   it("requires an acting member to read session events", async () => {
     const { env, doFetch } = createEnv();
     const request = await signedServiceRequest("https://test.local/sessions/session-1/events", {
@@ -83,11 +102,15 @@ describe("agent-world service principal", () => {
   });
 
   it.each([
+    ["POST", "/sessions/session-1/pr"],
+    ["POST", "/sessions/session-1/slack-notify"],
+    ["POST", "/sessions/session-1/media"],
+    ["PATCH", "/sessions/session-1/budget"],
+    ["GET", "/sessions/session-1"],
     ["GET", "/environments"],
-    ["GET", "/integration-settings/slack"],
     ["GET", "/integration-settings/slack/watched-channels"],
-  ])("denies %s %s outside its permission ceiling", async (method, path) => {
-    const { env, doFetch } = createEnv(MEMBER_IDENTITY);
+  ])("denies %s %s outside its route allowlist", async (method, path) => {
+    const { env, doFetch, statement } = createEnv(MEMBER_IDENTITY);
     const request = await signedServiceRequest(`https://test.local${path}`, {
       method,
       service: "agent-world",
@@ -98,9 +121,8 @@ describe("agent-world service principal", () => {
     const response = await handleRequest(request, env as never, TEST_BACKGROUND_TASK_CONTEXT);
 
     expect(response.status).toBe(403);
-    await expect(response.json()).resolves.toMatchObject({
-      code: "service_capability_required",
-    });
+    await expect(response.json()).resolves.toMatchObject({ code: "service_route_not_allowed" });
+    expect(statement.run).not.toHaveBeenCalled();
     expect(doFetch).not.toHaveBeenCalled();
   });
 });
