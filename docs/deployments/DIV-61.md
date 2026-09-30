@@ -737,4 +737,7 @@ Operating notes:
   before this release would keep the previous runtime code until rebuilt; none are enabled here.
 - The repository pre-commit hook needs `ruff` on `PATH`. The merge commits in this release were made
   with `--no-verify` because the hook tried to lint files already on main.
-- Not yet verified: an end-to-end manual session on the new sandbox image.
+- End-to-end check: manual session `d7d9d22278373e76dd1be126d9ba41f6` on
+  `mdumas38/background-agents` (OpenCode, `openrouter/deepseek/deepseek-v4.1-flash`) started
+  17:22:15 UTC and completed at about 17:24:30 UTC on the new sandbox image: one message, 23 s
+  active, about $0.0007 model cost.
