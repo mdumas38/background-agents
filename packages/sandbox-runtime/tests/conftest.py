@@ -60,7 +60,9 @@ def isolate_runtime_file_paths(tmp_path, monkeypatch):
         "sandbox_runtime.repository_sync.CREDENTIAL_HELPER_INSTALL_PATH",
         runtime_bin / "oi-git-credentials",
     )
-    monkeypatch.setattr("sandbox_runtime.repository_sync.GH_WRAPPER_INSTALL_PATH", runtime_bin / "gh")
+    monkeypatch.setattr(
+        "sandbox_runtime.repository_sync.GH_WRAPPER_INSTALL_PATH", runtime_bin / "gh"
+    )
 
 
 def wire_opencode_transport(bridge: "AgentBridge", http_client: Any) -> Any:
