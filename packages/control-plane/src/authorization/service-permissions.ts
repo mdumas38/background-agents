@@ -41,6 +41,17 @@ const SERVICE_PERMISSION_CEILINGS: Record<ServiceName, readonly PermissionId[]> 
     "sessions.lifecycle",
     "skills.read",
   ],
+  // Agent World dispatches single-repository quests and observes their runs.
+  // Environments, integrations, and sandbox access stay outside its ceiling.
+  "agent-world": [
+    "repositories.read",
+    "repositories.use",
+    "sessions.create",
+    "sessions.read",
+    "sessions.collaborate",
+    "sessions.lifecycle",
+    "skills.read",
+  ],
 };
 
 /** Checks the hard permission ceiling for a trusted service, independent of user grants. */

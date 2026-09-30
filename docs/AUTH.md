@@ -144,6 +144,14 @@ This means an integration cannot bypass a suspended user or perform workspace ad
 because the acting user is an Owner. Calls that do not identify an acting user are denied unless a
 specific integration route explicitly permits that operation.
 
+Agent World, an optional external quest service, uses the same model with two stricter rules. It may
+act only for a GitHub identity that already belongs to a workspace member: an unknown actor is
+rejected rather than enrolled, and calls without an acting user are always denied. Its allowed
+operations cover creating single-repository sessions, reading their events and artifacts, sending
+prompts, and stopping them; environments, integrations, and sandbox access are outside it. It is
+disabled unless the deployment sets `enable_agent_world_service`. See
+[ADR 0006](adr/0006-agent-world-service-principal.md).
+
 Some integrations also apply their own ingress rules. For example, the GitHub integration may
 require an allowed trigger user or sufficient repository collaborator access before it sends a
 request to Open-Inspect.

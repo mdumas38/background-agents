@@ -6,7 +6,7 @@ import {
   type PermissionId,
 } from "@open-inspect/shared/rbac";
 import { authenticate, isAuthError } from "../auth/authenticate";
-import type { Principal } from "../auth/principal";
+import { ACTOR_ENROLLMENT, type Principal } from "../auth/principal";
 import type {
   AuthorizationDecisionRequirement,
   RouteAuthorizationDecision,
@@ -370,6 +370,11 @@ async function finalizeServiceActor(
   const principal = ctx.principal;
   if (principal?.kind !== "service" || !principal.actor || principal.actor.canonicalUserId) {
     return null;
+  }
+  // Authentication already rejects unknown actors for these services; never
+  // enroll one here if that ever changes.
+  if (ACTOR_ENROLLMENT[principal.service] === "existing-only") {
+    return authorizationUnavailable();
   }
 
   // Deployment capability does not depend on the caller: a request this
