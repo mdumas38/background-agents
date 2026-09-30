@@ -20,6 +20,8 @@ from sandbox_runtime.repository_sync import (
 from sandbox_runtime.runtime_config import BootMode
 from sandbox_runtime.supervisor import ImageBuildExecutionCancelled
 
+_REAL_ENSURE_CREDENTIALS_CONFIGURED = RepositorySynchronizer.ensure_credentials_configured
+
 
 @pytest.fixture(autouse=True)
 def isolate_credential_installation(monkeypatch):
@@ -154,6 +156,13 @@ class TestImageBuildMode:
     @pytest.mark.asyncio
     async def test_setup_uses_fixture_paths_not_host_paths(self, build_env, monkeypatch, tmp_path):
         """Startup reaches mocked sync without writing image-owned host paths."""
+        # Run the real installer: this test proves the conftest backstop keeps
+        # it inside the test workspace, which the module-wide mock would hide.
+        monkeypatch.setattr(
+            RepositorySynchronizer,
+            "ensure_credentials_configured",
+            _REAL_ENSURE_CREDENTIALS_CONFIGURED,
+        )
         real_gh = tmp_path / "real-gh"
         real_gh.touch()
         real_gh.chmod(0o755)
