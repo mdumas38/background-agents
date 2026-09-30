@@ -6,6 +6,7 @@ import { sessionChildSpawnRoutes } from "./session-child-spawn";
 import { sessionIndexRoutes } from "./session-index";
 import { sessionMediaRoutes } from "./session-media";
 import { sessionPromptRoutes } from "./session-prompt";
+import { sessionCheckpointRoutes } from "./session-checkpoint";
 import { sessionPullRequestRoutes } from "./session-pull-requests";
 import { sessionRuntimeProxyRoutes } from "./session-runtime-proxy";
 import { sessionAttachmentRoutes } from "./session-attachments";
@@ -21,6 +22,7 @@ for (const module of [
   sessionRuntimeProxyRoutes,
   sessionWsTokenRoutes,
   sessionPromptRoutes,
+  sessionCheckpointRoutes,
   sessionPullRequestRoutes,
   sessionMediaRoutes,
   sessionAttachmentRoutes,

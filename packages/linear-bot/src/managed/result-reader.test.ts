@@ -127,6 +127,22 @@ describe("readManagedResult report outcomes", () => {
     expect(JSON.stringify(result.outcome)).not.toContain("RAW_SECRET_DETAIL");
   });
 
+  it("keeps the captured XML-tag substitution visibly blocked without accepting or correcting it", async () => {
+    mocks.extractAgentResponse.mockResolvedValue({
+      success: true,
+      textContent:
+        '<openinspect-managed-work>{"kind":"split","summary":"Split.","children":[]}</openinspect-managed-work>',
+    });
+    const result = await readManagedResult(env(), callback(), "trace-1");
+    expect(result.outcome).toEqual({
+      kind: "blocked",
+      summary: MANAGED_UNREADABLE_REPORT_SUMMARY,
+      reason: "unknown",
+      evidence: MANAGED_UNREADABLE_REPORT_EVIDENCE,
+    });
+    expect(mocks.extractAgentResponse).toHaveBeenCalledTimes(1);
+  });
+
   it("maps an empty completed report to the same bounded blocked unknown report", async () => {
     mocks.extractAgentResponse.mockResolvedValue({ success: true, textContent: "" });
     const result = await readManagedResult(env(), callback());

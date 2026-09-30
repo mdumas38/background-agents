@@ -64,6 +64,8 @@ from .types import GitUser
 
 configure_logging()
 
+CHECKPOINT_ABORT_TIMEOUT_SECONDS = 5.0
+
 
 def parse_prompt_git_author(author_data: object) -> GitUser | None:
     """Parse the control plane's explicit Git author mode without inference."""
@@ -220,6 +222,12 @@ class AgentBridge:
 
         # Track the current prompt task so _handle_stop can cancel it
         self._current_prompt_task: asyncio.Task[None] | None = None
+        self._current_message_id: str | None = None
+        self._checkpoint_task: asyncio.Task[None] | None = None
+        self._checkpoint_request_id: str | None = None
+        self._checkpoint_message_id: str | None = None
+        self._checkpoint_hard_deadline_ms: int | float | None = None
+        self._checkpoint_result: dict[str, Any] | None = None
         self.diff_refresh = SessionDiffRefreshWorker(
             client=ControlPlaneDiffClient(
                 control_plane_url=self.control_plane_url,
@@ -261,6 +269,7 @@ class AgentBridge:
             "sandboxId": self.sandbox_id,
             "opencodeSessionId": self.agent_session_id,
             "harness": self.harness.id.value,
+            "capabilities": ["checkpoint-v1"],
             **({"runtimeVersion": runtime_version} if runtime_version else {}),
             "repositories": [
                 {
@@ -348,6 +357,10 @@ class AgentBridge:
                 await asyncio.sleep(delay)
 
         finally:
+            if self._checkpoint_task and not self._checkpoint_task.done():
+                self._checkpoint_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await self._checkpoint_task
             # Cancel any in-flight prompt task before closing resources
             if self._current_prompt_task and not self._current_prompt_task.done():
                 self._current_prompt_task.cancel()
@@ -586,9 +599,27 @@ class AgentBridge:
 
         if cmd_type == "prompt":
             message_id = cmd.get("messageId") or cmd.get("message_id", "unknown")
+            if (self._checkpoint_task and not self._checkpoint_task.done()) or (
+                self._checkpoint_message_id is not None
+                and self._checkpoint_message_id == self._current_message_id
+            ):
+                if message_id == self._current_message_id:
+                    # A delivery retry is not a new failed turn. Settling it
+                    # would remove the watchdog while the provider may run.
+                    return None
+                await self._send_event(
+                    {
+                        "type": "execution_complete",
+                        "messageId": message_id,
+                        "success": False,
+                        "error": "Cannot start a new prompt during checkpoint capture",
+                    }
+                )
+                return None
             self.diff_refresh.prompt_started()
             task = asyncio.create_task(self._handle_prompt(cmd))
             self._current_prompt_task = task
+            self._current_message_id = message_id
 
             def handle_task_exception(t: asyncio.Task[None], mid: str = message_id) -> None:
                 # Release the diff worker's idle gate before any refresh request
@@ -596,6 +627,7 @@ class AgentBridge:
                 self.diff_refresh.prompt_finished()
                 if self._current_prompt_task is t:
                     self._current_prompt_task = None
+                    self._current_message_id = None
                 if t.cancelled():
                     asyncio.create_task(
                         self._send_terminal_event_and_refresh(
@@ -628,6 +660,8 @@ class AgentBridge:
             return None
         elif cmd_type == "stop":
             await self._handle_stop()
+        elif cmd_type == "checkpoint":
+            await self._handle_checkpoint(cmd)
         elif cmd_type == "snapshot":
             await self._handle_snapshot()
         elif cmd_type == "shutdown":
@@ -784,11 +818,125 @@ class AgentBridge:
     async def _handle_stop(self) -> None:
         """Handle stop command - cancel prompt task and ask the harness to abort."""
         self.log.info("bridge.stop")
+        if self._checkpoint_task and not self._checkpoint_task.done():
+            self._checkpoint_task.cancel()
         task = self._current_prompt_task
         if task and not task.done():
             task.cancel()
         # Best-effort: also tell the agent to stop (saves LLM compute cost)
         await self.harness.abort()
+
+    async def _handle_checkpoint(self, cmd: dict[str, Any]) -> None:
+        """Fence one existing turn; never issue a replacement model prompt."""
+        message_id = cmd.get("messageId")
+        request_id = cmd.get("requestId")
+        hard_deadline_ms = cmd.get("hardDeadlineMs")
+        if (
+            not isinstance(message_id, str)
+            or not message_id
+            or not isinstance(request_id, str)
+            or not request_id
+            or isinstance(hard_deadline_ms, bool)
+            or not isinstance(hard_deadline_ms, (int, float))
+            or not math.isfinite(hard_deadline_ms)
+        ):
+            self.log.warn("bridge.checkpoint_invalid")
+            return
+        if request_id == self._checkpoint_request_id:
+            if (
+                message_id != self._checkpoint_message_id
+                or hard_deadline_ms != self._checkpoint_hard_deadline_ms
+            ):
+                self.log.warn("bridge.checkpoint_identity_mismatch")
+            elif self._checkpoint_result:
+                await self._send_event(dict(self._checkpoint_result))
+            return
+        task = self._current_prompt_task
+        if (
+            message_id != self._current_message_id
+            or task is None
+            or task.done()
+            or message_id == self._checkpoint_message_id
+            or (self._checkpoint_task and not self._checkpoint_task.done())
+        ):
+            await self._send_event(
+                {
+                    "type": "checkpoint_complete",
+                    "messageId": message_id,
+                    "requestId": request_id,
+                    "status": "skipped",
+                    "error": "The requested turn is no longer active or is already finalizing",
+                }
+            )
+            return
+        self._checkpoint_request_id = request_id
+        self._checkpoint_message_id = message_id
+        self._checkpoint_hard_deadline_ms = hard_deadline_ms
+        self._checkpoint_result = None
+        # Convert wall-clock deadline once; subsequent elapsed time uses the
+        # monotonic loop clock so a clock adjustment cannot extend this budget.
+        deadline = asyncio.get_running_loop().time() + max(
+            0.0, hard_deadline_ms / 1_000 - time.time()
+        )
+        self._checkpoint_task = asyncio.create_task(
+            self._run_checkpoint(message_id, request_id, task, deadline)
+        )
+
+    async def _run_checkpoint(
+        self, message_id: str, request_id: str, task: asyncio.Task[None], deadline: float
+    ) -> None:
+        result: dict[str, Any] = {
+            "type": "checkpoint_complete",
+            "messageId": message_id,
+            "requestId": request_id,
+            "status": "failed",
+            "error": "Checkpoint capture was interrupted",
+        }
+        try:
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining > CHECKPOINT_ABORT_TIMEOUT_SECONDS:
+                captured = await self.diff_refresh.capture_checkpoint(
+                    message_id=message_id,
+                    request_id=request_id,
+                    timeout_seconds=remaining - CHECKPOINT_ABORT_TIMEOUT_SECONDS,
+                )
+                result.update(captured)
+                if captured["status"] == "captured":
+                    # No harness offers in-flight steering or proven tool
+                    # quiescence. A pre-abort snapshot is always unverified.
+                    result.update(
+                        status="partial", error="Captured before abort; changes are unverified"
+                    )
+                result["capturedAtMs"] = int(time.time() * 1_000)
+            else:
+                result["error"] = "Insufficient time before the original hard deadline"
+            if self._current_prompt_task is task and not task.done():
+                remaining = deadline - asyncio.get_running_loop().time()
+                aborted = False
+                if remaining > 0:
+                    try:
+                        async with asyncio.timeout(
+                            min(CHECKPOINT_ABORT_TIMEOUT_SECONDS, remaining)
+                        ):
+                            aborted = await self.harness.abort()
+                    except Exception:
+                        self.log.warn("bridge.checkpoint_abort_failed")
+                if aborted and self._current_prompt_task is task and not task.done():
+                    task.cancel()
+                elif not aborted:
+                    # Do not emit execution_complete while paid provider work
+                    # may still run: the scheduler must retain its hard stop.
+                    result["error"] = "Runtime abort was not confirmed"
+        except asyncio.CancelledError:
+            # A hard stop can interrupt capture immediately; never defer it
+            # until Git, transport, or provider cooperation becomes available.
+            pass
+        except Exception:
+            result.update(status="failed", error="Checkpoint capture failed")
+            self.log.warn("bridge.checkpoint_failed")
+        finally:
+            self._checkpoint_result = result
+            await self._send_event(result)
 
     async def _handle_snapshot(self) -> None:
         """Handle snapshot command - prepare for snapshot."""

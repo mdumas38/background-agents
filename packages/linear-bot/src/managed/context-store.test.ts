@@ -9,6 +9,7 @@ import {
 } from "./context-store";
 import type { ManagedRunStorage } from "./store";
 import type { TaskSpec } from "./tree";
+import { createExecutionPolicy } from "./execution-policy";
 
 /** Map-backed storage whose transactions run one at a time, mirroring DurableObjectStorage. */
 class FakeTransactionalStorage implements ManagedTransactionalStorage {
@@ -77,6 +78,26 @@ const REPLACEMENT: TaskSpec = {
 };
 
 describe("managed context store", () => {
+  it("retains frozen resolved policy on replay instead of validating replacement routing", async () => {
+    const storage = new FakeTransactionalStorage();
+    const model = "openrouter/deepseek/deepseek-v4.1-flash";
+    const original = context({
+      model,
+      reasoningEffort: "low",
+      executionPolicy: createExecutionPolicy({
+        model,
+        reasoningEffort: "low",
+        workerTimeoutMs: DEFAULT_MANAGED_WORKER_TIMEOUT_MS,
+      }),
+    });
+    await enrollManagedRun(storage, original, SPEC);
+    const replay = await enrollManagedRun(
+      storage,
+      context({ model: "now-unsupported" }),
+      REPLACEMENT
+    );
+    expect(replay.context).toEqual(original);
+  });
   it("replays a matching enrollment without replacing frozen policy or tree", async () => {
     const storage = new FakeTransactionalStorage();
     const stored = context();

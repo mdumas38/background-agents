@@ -114,6 +114,25 @@ run "overrides_reach_each_bot_binding" {
   }
 }
 
+# OpenRouter model ids retain the upstream provider namespace as a third
+# segment. The shared model registry and Linear session resolver both use this
+# exact shape, so the deployment input must preserve it verbatim.
+run "accepts_a_nested_openrouter_linear_model" {
+  command = plan
+
+  variables {
+    linear_bot_default_model = "openrouter/deepseek/deepseek-v4.1-flash"
+  }
+
+  assert {
+    condition = (
+      module.linear_bot_worker[0].plain_text_bindings["DEFAULT_MODEL"] ==
+      "openrouter/deepseek/deepseek-v4.1-flash"
+    )
+    error_message = "A nested OpenRouter model id must reach the Linear bot unchanged."
+  }
+}
+
 # An unset CI variable renders as an empty string. Treating that as "use the
 # default" would silently deploy whichever model the configuration last shipped,
 # so a blank override must fail at plan time instead.
@@ -215,8 +234,8 @@ run "rejects_a_leading_space_before_the_provider" {
   expect_failures = [var.linear_bot_default_model]
 }
 
-# A canonical id names exactly one provider and one model. More segments than
-# that is not a namespace the bots can normalize, however the id begins.
+# A canonical id names exactly one provider and one model. Only the Linear
+# bot's OpenRouter form may retain one upstream provider namespace.
 run "rejects_more_than_one_slash" {
   command = plan
 
@@ -225,4 +244,24 @@ run "rejects_more_than_one_slash" {
   }
 
   expect_failures = [var.github_bot_default_model]
+}
+
+run "rejects_an_empty_openrouter_provider_segment" {
+  command = plan
+
+  variables {
+    linear_bot_default_model = "openrouter//deepseek-v4.1-flash"
+  }
+
+  expect_failures = [var.linear_bot_default_model]
+}
+
+run "rejects_an_extra_openrouter_model_segment" {
+  command = plan
+
+  variables {
+    linear_bot_default_model = "openrouter/deepseek/deepseek-v4.1-flash/preview"
+  }
+
+  expect_failures = [var.linear_bot_default_model]
 }

@@ -401,6 +401,19 @@ class OpenCodeServer:
             "model": f"{self.provider}/{self.model}",
             "permission": {"*": {"*": "allow"}},
             "provider": {
+                # OpenCode's automatic variants omit DeepSeek on OpenRouter. The
+                # OpenRouter SDK consumes reasoning.effort, not reasoningEffort.
+                # Keep these available across model switches and fresh starts.
+                "openrouter": {
+                    "models": {
+                        "deepseek/deepseek-v4.1-flash": {
+                            "variants": {
+                                effort: {"reasoning": {"effort": effort}}
+                                for effort in ("low", "high", "max")
+                            }
+                        }
+                    }
+                },
                 "anthropic": {
                     "models": {
                         model: {
@@ -415,7 +428,7 @@ class OpenCodeServer:
                             "claude-opus-4-5",
                         )
                     }
-                }
+                },
             },
         }
 

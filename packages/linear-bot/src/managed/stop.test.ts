@@ -6,6 +6,9 @@ import {
   MANAGED_STOP_INTENT_PREFIX,
   MANAGED_STOP_REASON_KEY,
   armManagedDeadline,
+  finalizeManagedAttempts,
+  checkManagedDeadline,
+  MANAGED_FINALIZATION_INTENT_PREFIX,
   stopManagedRun,
   type ManagedStopIntent,
   type ManagedStopStorage,
@@ -14,6 +17,8 @@ import {
 import { loadRun, saveRun } from "./store";
 import type { Env } from "../types";
 import { createFakeKV, makeLinearBotEnv } from "../test-helpers";
+import { settleRunAttempt } from "./settlement";
+import { createExecutionPolicy, freezeAttemptPolicy } from "./execution-policy";
 
 const ROOT_SPEC = {
   title: "Root task",
@@ -131,7 +136,237 @@ function withBoundMessage(run: ManagedRun, messageId: string): ManagedRun {
   };
 }
 
+describe("checkpoint finalization", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+  async function setup() {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    const storage = new FakeStopStorage();
+    const run = withBoundMessage(boundRun(), "message-1");
+    run.attempts["attempt-1"].executionPolicy = freezeAttemptPolicy(
+      createExecutionPolicy({
+        model: context().model,
+        workerTimeoutMs: 600_000,
+        checkpointCapability: "checkpoint-v1",
+      }),
+      NOW,
+      "routine-leaf"
+    );
+    await saveRun(storage, run);
+    await storage.put({ "managed:context": context() });
+    return { storage, env: stopEnv(storage) };
+  }
+  it("arms finalization, keeps earlier completion alarm, persists intent and hard deadline before IO", async () => {
+    const { storage, env } = await setup();
+    await armManagedDeadline(env);
+    expect(storage.alarm).toBe(NOW + 510_000);
+    storage.alarm = NOW + 100;
+    await armManagedDeadline(env);
+    expect(storage.alarm).toBe(NOW + 100);
+    // Firing a native alarm clears it before entering the handler.
+    storage.alarm = null;
+    vi.setSystemTime(NOW + 510_000);
+    const fetch = controlPlaneFetch(env);
+    fetch.mockImplementation(async (_url: string, init: RequestInit) => {
+      expect(storage.alarm).toBe(NOW + 600_000);
+      expect(await storage.get(MANAGED_FINALIZATION_INTENT_PREFIX + "attempt-1")).toMatchObject({
+        status: "claimed",
+      });
+      expect(JSON.parse(init.body as string)).toEqual({
+        messageId: "message-1",
+        requestId: "managed-finalize:attempt-1:message-1",
+        hardDeadlineMs: NOW + 600_000,
+      });
+      return new Response(null, { status: 202 });
+    });
+    await finalizeManagedAttempts(env);
+    await finalizeManagedAttempts(env);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(await storage.get(MANAGED_FINALIZATION_INTENT_PREFIX + "attempt-1")).toMatchObject({
+      status: "sent",
+    });
+    expect((await loadRun(storage))!.admission.stopped).toBe(false);
+  });
+  it.each([501, 500, "throw"])(
+    "does not retry failed delivery %s and preserves watchdog",
+    async (failure) => {
+      const { storage, env } = await setup();
+      vi.setSystemTime(NOW + 510_000);
+      controlPlaneFetch(env).mockImplementation(async () => {
+        if (typeof failure !== "number") throw new Error("network");
+        return new Response(null, { status: failure });
+      });
+      await finalizeManagedAttempts(env);
+      await finalizeManagedAttempts(env);
+      expect(storage.alarm).toBe(NOW + 600_000);
+      expect(controlPlaneFetch(env)).toHaveBeenCalledTimes(1);
+      expect(await storage.get(MANAGED_FINALIZATION_INTENT_PREFIX + "attempt-1")).toMatchObject({
+        status: failure === 501 ? "unsupported" : "uncertain",
+      });
+    }
+  );
+  it.each(["delivery_unknown", "skipped"])(
+    "does not promote a successful HTTP negative acknowledgement %s",
+    async (status) => {
+      const { storage, env } = await setup();
+      vi.setSystemTime(NOW + 510_000);
+      controlPlaneFetch(env).mockResolvedValue(Response.json({ status }));
+      await finalizeManagedAttempts(env);
+      expect(await storage.get(MANAGED_FINALIZATION_INTENT_PREFIX + "attempt-1")).toMatchObject({
+        status: "uncertain",
+      });
+      expect(storage.alarm).toBe(NOW + 600_000);
+    }
+  );
+  it("does not dispatch a later pending checkpoint after its hard deadline", async () => {
+    const { storage, env } = await setup();
+    const run = (await loadRun(storage))!;
+    run.attempts["attempt-2"] = {
+      ...run.attempts["attempt-1"],
+      sessionId: "session-2",
+      messageId: "message-2",
+    };
+    await saveRun(storage, run);
+    vi.setSystemTime(NOW + 599_999);
+    controlPlaneFetch(env).mockImplementation(async () => {
+      vi.setSystemTime(NOW + 600_000);
+      return new Response(null, { status: 202 });
+    });
+    await finalizeManagedAttempts(env);
+    expect(controlPlaneFetch(env)).toHaveBeenCalledOnce();
+    expect(await storage.get(MANAGED_FINALIZATION_INTENT_PREFIX + "attempt-2")).toMatchObject({
+      status: "uncertain",
+    });
+    expect(storage.alarm).toBe(NOW + 600_000);
+  });
+  it("skips completed and expired attempts without a new model turn", async () => {
+    const { storage, env } = await setup();
+    await finalizeManagedAttempts(env, NOW + 600_000);
+    expect(controlPlaneFetch(env)).not.toHaveBeenCalled();
+    const run = (await loadRun(storage))!;
+    run.attempts["attempt-1"].status = "settled";
+    await saveRun(storage, run);
+    await finalizeManagedAttempts(env, NOW + 510_000);
+    expect(controlPlaneFetch(env)).not.toHaveBeenCalled();
+  });
+  it("bounds a hung checkpoint request without losing the hard watchdog", async () => {
+    const { storage, env } = await setup();
+    vi.setSystemTime(NOW + 510_000);
+    vi.spyOn(AbortSignal, "timeout").mockImplementation((delayMs) => {
+      const controller = new AbortController();
+      setTimeout(() => controller.abort(), delayMs);
+      return controller.signal;
+    });
+    controlPlaneFetch(env).mockImplementation(async (_url: string, init: RequestInit) => {
+      return new Promise((_resolve, reject) =>
+        init.signal!.addEventListener("abort", () => reject(new Error("aborted")), { once: true })
+      );
+    });
+    const request = finalizeManagedAttempts(env);
+    // Signing uses WebCrypto; wait for delivery without advancing the fake wall clock.
+    await vi.waitFor(() => expect(controlPlaneFetch(env)).toHaveBeenCalledOnce());
+    expect(storage.alarm).toBe(NOW + 600_000);
+    await vi.advanceTimersByTimeAsync(5_000);
+    await request;
+    expect(await storage.get(MANAGED_FINALIZATION_INTENT_PREFIX + "attempt-1")).toMatchObject({
+      status: "uncertain",
+    });
+    expect(storage.alarm).toBe(NOW + 600_000);
+  });
+  it("stops at the original deadline when checkpoint IO crosses it", async () => {
+    const { storage, env } = await setup();
+    vi.setSystemTime(NOW + 599_999);
+    controlPlaneFetch(env).mockImplementation(async () => {
+      vi.setSystemTime(NOW + 600_000);
+      return new Response(null, { status: 202 });
+    });
+    await checkManagedDeadline(env);
+    expect(controlPlaneFetch(env).mock.calls.map(([url]) => url)).toEqual([
+      "https://internal/sessions/session-1/checkpoint",
+      "https://internal/sessions/session-1/stop",
+    ]);
+    expect((await loadRun(storage))!.admission.stopped).toBe(true);
+  });
+  it("preserves another attempt's earlier finalization wake-up before IO", async () => {
+    const { storage, env } = await setup();
+    const run = (await loadRun(storage))!;
+    const first = run.attempts["attempt-1"];
+    run.attempts["attempt-2"] = {
+      ...first,
+      sessionId: "session-2",
+      messageId: "message-2",
+      claimedAtMs: NOW + 10_000,
+      executionPolicy: {
+        ...first.executionPolicy!,
+        finalizeAtMs: NOW + 520_000,
+        hardDeadlineMs: NOW + 610_000,
+      },
+    };
+    await saveRun(storage, run);
+    controlPlaneFetch(env).mockImplementation(async () => {
+      expect(storage.alarm).toBe(NOW + 520_000);
+      return new Response(null, { status: 202 });
+    });
+    await finalizeManagedAttempts(env, NOW + 510_000);
+    expect(controlPlaneFetch(env)).toHaveBeenCalledOnce();
+  });
+});
+
 describe("stopManagedRun", () => {
+  it("does not stop a root when completion settled before the atomic deadline decision", async () => {
+    const storage = new FakeStopStorage();
+    const completed = settleRunAttempt(boundRun(), {
+      attemptId: "attempt-1",
+      taskId: "root",
+      sessionId: "session-1",
+      messageId: "message-1",
+      outcome: { kind: "complete", summary: "Done", evidence: "Tests passed" },
+      costUsd: 0.1,
+    });
+    await saveRun(storage, completed);
+    await storage.put({ "managed:context": context() });
+    const env = stopEnv(storage);
+    await stopManagedRun(env, "deadline", undefined, NOW + DEFAULT_MANAGED_WORKER_TIMEOUT_MS);
+    expect((await loadRun(storage))!.admission.stopped).toBe(false);
+    expect(await storage.get(MANAGED_STOP_REASON_KEY)).toBeUndefined();
+    expect(controlPlaneFetch(env)).not.toHaveBeenCalled();
+  });
+
+  it("rechecks settled attempts when claiming stop intent after the outer snapshot", async () => {
+    const storage = new FakeStopStorage();
+    await saveRun(storage, boundRun());
+    await storage.put({ "managed:context": context() });
+    const originalList = storage.list.bind(storage);
+    let completed = false;
+    vi.spyOn(storage, "list").mockImplementation(async (options) => {
+      if (options?.prefix === MANAGED_STOP_INTENT_PREFIX && !completed) {
+        completed = true;
+        const run = (await loadRun(storage))!;
+        await saveRun(
+          storage,
+          settleRunAttempt(run, {
+            attemptId: "attempt-1",
+            taskId: "root",
+            sessionId: "session-1",
+            messageId: "message-1",
+            outcome: { kind: "complete", summary: "Done", evidence: "Tests passed" },
+            costUsd: 0.1,
+          })
+        );
+      }
+      return originalList(options);
+    });
+    const env = stopEnv(storage);
+    await stopManagedRun(env, "deadline");
+    expect(controlPlaneFetch(env)).not.toHaveBeenCalled();
+    expect((await loadRun(storage))!.attempts["attempt-1"].terminalEvidence).toEqual({
+      stopTrigger: "deadline",
+      executionOutcome: "unknown",
+    });
+  });
   it("persists the stop admission before the network call and never resends or refunds", async () => {
     const storage = new FakeStopStorage();
     await saveRun(storage, boundRun());

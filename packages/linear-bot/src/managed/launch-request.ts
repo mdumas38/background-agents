@@ -6,11 +6,13 @@ import {
   type LinearCallbackContext,
   type SendPromptRequest,
 } from "@open-inspect/shared/types/session-api";
+import { MAX_WEB_PROMPT_CHARS } from "@open-inspect/shared/types/prompts";
 import type { ManagedTaskClaim } from "./claim-next";
 import type { ManagedContext } from "./context-store";
 import type { ManagedIssueRef } from "./issue-create";
-import { buildManagedPrompt } from "./prompts";
+import { buildManagedPrompt, MANAGED_FINAL_RESPONSE_REMINDER } from "./prompts";
 import type { Tree } from "./tree";
+import { assertExecutionPolicy } from "./execution-policy";
 
 export interface ManagedLaunchRequest {
   session: CreateSessionInput;
@@ -112,6 +114,13 @@ export function buildManagedLaunchRequest(
 
   const task = claim.run.tree.tasks[claim.taskId];
   if (!task) throw new Error(`Unknown managed task: ${claim.taskId}.`);
+  const policy = attempt.executionPolicy;
+  if (context.executionPolicy && !policy) {
+    throw new Error("Managed attempt is missing its frozen execution policy.");
+  }
+  if (policy) assertExecutionPolicy(policy);
+  const model = policy?.resolvedModel ?? context.model;
+  const reasoningEffort = policy?.resolvedReasoningEffort ?? context.reasoningEffort;
 
   const hasBaseline = context.baseSha !== undefined;
   const isRootFirstWork = task.parentId === null && task.phase === "work";
@@ -138,6 +147,27 @@ export function buildManagedLaunchRequest(
   }
   const ancestorPrerequisites = buildAncestorPrerequisites(claim.run.tree, claim.taskId);
   if (ancestorPrerequisites) sections.push("", ancestorPrerequisites);
+  if (policy) {
+    sections.push(
+      "",
+      "## Frozen time policy",
+      `- Hard deadline: ${new Date(policy.hardDeadlineMs).toISOString()} (includes startup; never resets).`,
+      `- Begin finalizing by ${new Date(policy.finalizeAtMs).toISOString()}. Stop optional exploration; preserve and push reviewed-in-scope changes and report focused checks.`,
+      "- Run the focused checks once per meaningful change. Do not rerun a passing suite without a relevant change or new failure evidence.",
+      "- If time is insufficient, report the preserved partial work and remaining checks honestly; never claim completion from an unverified patch.",
+      policy.finalizationMode === "checkpoint-v1"
+        ? "- At the finalization deadline the coordinator requests a runtime freeze-and-capture, without another model turn. Finish delivery before then; capture preserves partial work, not a successful completion. The hard stop never extends."
+        : "- These are worker instructions, not a promise of runtime interruption or an extension of the hard stop."
+    );
+  }
+  sections.push("", MANAGED_FINAL_RESPONSE_REMINDER);
+  const content = sections.join("\n");
+  if (content.length > MAX_WEB_PROMPT_CHARS) {
+    throw new Error(
+      `Complete managed launch prompt for task ${claim.taskId} is ${content.length} characters, ` +
+        `exceeding MAX_WEB_PROMPT_CHARS (${MAX_WEB_PROMPT_CHARS}); refusing to truncate evidence.`
+    );
+  }
 
   const callbackContext: LinearCallbackContext = {
     source: "linear",
@@ -161,8 +191,8 @@ export function buildManagedLaunchRequest(
     repoName: context.repoName,
     ...(hasBaseline ? { branch: context.baseSha } : {}),
     title: task.title,
-    model: context.model,
-    reasoningEffort: context.reasoningEffort,
+    model,
+    reasoningEffort,
     executionProfile: "implementation",
     maxCostUsd: claim.run.admission.limits.maxWorkerCostUsd,
     actorDisplayName: context.actorDisplayName,
@@ -171,7 +201,7 @@ export function buildManagedLaunchRequest(
   if (!session.success) throw new Error("Invalid managed launch session input.");
 
   const prompt = sendPromptRequestSchema.safeParse({
-    content: sections.join("\n"),
+    content,
     source: "linear",
     requiredExecutionProfile: "implementation",
     callbackContext,

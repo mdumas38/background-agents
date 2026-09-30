@@ -5,6 +5,7 @@ import { DEFAULT_MANAGED_WORKER_TIMEOUT_MS, type ManagedContext } from "./contex
 import { createRun, type ManagedRun } from "./run-state";
 import { loadRun, saveRun, type ManagedRunStorage } from "./store";
 import type { Task } from "./tree";
+import { createExecutionPolicy, DEFAULT_FINALIZATION_LEAD_MS } from "./execution-policy";
 
 const ROOT_SPEC = {
   title: "Root task",
@@ -124,6 +125,33 @@ function twoRunnableRun(): ManagedRun {
 }
 
 describe("claimNextTask", () => {
+  it("persists resolved policy and the original deadline across reconstruction", async () => {
+    const storage = new FakeAlarmTransactionalStorage();
+    const model = "openrouter/deepseek/deepseek-v4.1-flash";
+    await saveRun(storage, createRun("run-1", ROOT_SPEC, LIMITS));
+    await storage.put({
+      "managed:context": context({
+        model,
+        baseSha: "a".repeat(40),
+        executionPolicy: createExecutionPolicy({
+          model,
+          reasoningEffort: "low",
+          workerTimeoutMs: DEFAULT_MANAGED_WORKER_TIMEOUT_MS,
+        }),
+      }),
+    });
+    const claim = (await claimNextTask(storage, NOW))!;
+    const reconstructed = new FakeAlarmTransactionalStorage(storage.store);
+    const stored = (await loadRun(reconstructed))!.attempts[claim.attemptId];
+    expect(stored.executionPolicy).toMatchObject({
+      resolvedModel: model,
+      resolvedReasoningEffort: "low",
+      baselineSha: "a".repeat(40),
+      hardDeadlineMs: NOW + DEFAULT_MANAGED_WORKER_TIMEOUT_MS,
+      finalizeAtMs: NOW + DEFAULT_MANAGED_WORKER_TIMEOUT_MS - DEFAULT_FINALIZATION_LEAD_MS,
+    });
+    expect(storage.alarm).toBe(stored.executionPolicy!.hardDeadlineMs);
+  });
   it("claims exactly one runnable task under concurrent calls and persists the reservation", async () => {
     const storage = new FakeTransactionalStorage();
     await saveRun(storage, createRun("run-1", ROOT_SPEC, LIMITS));

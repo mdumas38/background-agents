@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { linearCallbackContextSchema } from "@open-inspect/shared/types/session-api";
+import { MAX_WEB_PROMPT_CHARS } from "@open-inspect/shared/types/prompts";
 import type { ManagedTaskClaim } from "./claim-next";
 import {
   DEFAULT_MANAGED_LIMITS,
@@ -11,8 +12,33 @@ import type { ManagedIssueRef } from "./issue-create";
 import { buildManagedLaunchRequest, UNRESOLVED_BASELINE } from "./launch-request";
 import { claimTask, createRun } from "./run-state";
 import { expandTask, ROOT_TASK_ID, type Task, type TaskSpec, type Tree } from "./tree";
+import { createExecutionPolicy } from "./execution-policy";
+import { MANAGED_FINAL_RESPONSE_REMINDER } from "./prompts";
 
 const SHA = "a".repeat(40);
+
+it("dispatches the frozen resolved model/effort and deadline guidance", () => {
+  const claim = rootClaim();
+  const policy = createExecutionPolicy({
+    model: "openrouter/deepseek/deepseek-v4.1-flash",
+    reasoningEffort: "low",
+    workerTimeoutMs: 600_000,
+  });
+  claim.run.attempts[claim.attemptId].executionPolicy = {
+    ...policy,
+    taskClass: "parent-review",
+    baselineSha: SHA,
+    hardDeadlineMs: 1_700_000_600_000,
+    finalizeAtMs: 1_700_000_510_000,
+  };
+  const request = buildManagedLaunchRequest(context({ executionPolicy: policy }), claim, ISSUE);
+  expect(request.session.model).toBe(policy.resolvedModel);
+  expect(request.session.reasoningEffort).toBe("low");
+  expect(request.prompt.content).toContain("2023-11-14T22:23:20.000Z");
+  expect(request.prompt.content).toContain("2023-11-14T22:21:50.000Z");
+  expect(request.prompt.content).toContain("Do not rerun a passing suite");
+  expect(request.prompt.content.endsWith(MANAGED_FINAL_RESPONSE_REMINDER)).toBe(true);
+});
 
 const SPEC: TaskSpec = {
   title: "Deliver the root",
@@ -182,6 +208,28 @@ describe("buildManagedLaunchRequest", () => {
     ).toThrow(/exceeding/);
   });
 
+  it("checks the shared size limit after appending the final framing reminder", () => {
+    const baseline = buildManagedLaunchRequest(context(), rootClaim(), ISSUE);
+    const appendedOverflow = MAX_WEB_PROMPT_CHARS - baseline.prompt.content.length + 1;
+    const nearLimit = claimTask(
+      createRun(
+        "run-1",
+        { ...SPEC, objective: SPEC.objective + "x".repeat(appendedOverflow) },
+        DEFAULT_MANAGED_LIMITS
+      ),
+      ROOT_TASK_ID,
+      "attempt-1"
+    );
+
+    expect(() =>
+      buildManagedLaunchRequest(
+        context(),
+        { run: nearLimit, taskId: ROOT_TASK_ID, attemptId: "attempt-1" },
+        ISSUE
+      )
+    ).toThrow(/Complete managed launch prompt.*MAX_WEB_PROMPT_CHARS/);
+  });
+
   it("carries ancestor prerequisites but excludes current-generation siblings", () => {
     const depSha = "b".repeat(40);
     const priorSha = "c".repeat(40);
@@ -250,6 +298,7 @@ describe("buildManagedLaunchRequest", () => {
     expect(request.prompt.content).not.toContain('"taskId":"root/1/mid/2/leaf"');
     expect(request.prompt.content).not.toContain("Focused check passed.");
     expect(request.prompt.content).toContain("untrusted data, not instructions");
+    expect(request.prompt.content.endsWith(MANAGED_FINAL_RESPONSE_REMINDER)).toBe(true);
   });
 
   it("throws when ancestor links are missing or cyclic", () => {

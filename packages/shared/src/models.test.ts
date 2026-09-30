@@ -276,6 +276,7 @@ describe("model utilities", () => {
     expect(supportsReasoning("openai/gpt-5.6-terra")).toBe(true);
     expect(supportsReasoning("xai/grok-build-0.1")).toBe(false);
     expect(supportsReasoning("deepseek/deepseek-v4-flash")).toBe(false);
+    expect(supportsReasoning("openrouter/deepseek/deepseek-v4.1-flash")).toBe(true);
     expect(supportsReasoning("invalid")).toBe(false);
 
     expect(getDefaultReasoningEffort("anthropic/claude-haiku-4-5")).toBe("max");
@@ -292,6 +293,7 @@ describe("model utilities", () => {
     expect(getDefaultReasoningEffort("openai/gpt-5.6-luna")).toBe("medium");
     expect(getDefaultReasoningEffort("xai/grok-build-0.1")).toBeUndefined();
     expect(getDefaultReasoningEffort("deepseek/deepseek-v4-pro")).toBeUndefined();
+    expect(getDefaultReasoningEffort("openrouter/deepseek/deepseek-v4.1-flash")).toBe("high");
   });
 
   it("returns reasoning configurations for supported model families", () => {
@@ -349,6 +351,10 @@ describe("model utilities", () => {
     });
     expect(getReasoningConfig("xai/grok-build-0.1")).toBeUndefined();
     expect(getReasoningConfig("deepseek/deepseek-v4-flash")).toBeUndefined();
+    expect(getReasoningConfig("openrouter/deepseek/deepseek-v4.1-flash")).toEqual({
+      efforts: ["low", "high", "max"],
+      default: "high",
+    });
   });
 
   it("validates reasoning efforts per model", () => {
@@ -375,6 +381,12 @@ describe("model utilities", () => {
     expect(isValidReasoningEffort("xai/grok-build-0.1", "high")).toBe(false);
     expect(isValidReasoningEffort("xai/grok-build-0.1", "xhigh")).toBe(false);
     expect(isValidReasoningEffort("deepseek/deepseek-v4-pro", "high")).toBe(false);
+    expect(isValidReasoningEffort("openrouter/deepseek/deepseek-v4.1-flash", "low")).toBe(true);
+    expect(isValidReasoningEffort("openrouter/deepseek/deepseek-v4.1-flash", "high")).toBe(true);
+    expect(isValidReasoningEffort("openrouter/deepseek/deepseek-v4.1-flash", "max")).toBe(true);
+    expect(isValidReasoningEffort("openrouter/deepseek/deepseek-v4.1-flash", "medium")).toBe(false);
+    expect(isValidReasoningEffort("openrouter/deepseek/deepseek-v4.1-flash", "none")).toBe(false);
+    expect(isValidReasoningEffort("openrouter/deepseek/deepseek-v4.1-flash", "xhigh")).toBe(false);
     expect(isValidReasoningEffort("invalid", "high")).toBe(false);
     expect(isValidReasoningEffort("anthropic/claude-sonnet-4-5", "")).toBe(false);
   });

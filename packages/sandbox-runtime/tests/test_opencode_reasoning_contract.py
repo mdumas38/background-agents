@@ -29,6 +29,29 @@ pytest_plugins = ["tests.test_reasoning_config"]
 BINARY = os.environ.get("OPENCODE_TEST_BINARY")
 pytestmark = pytest.mark.skipif(not BINARY, reason="set OPENCODE_TEST_BINARY for wire tests")
 CATALOG = Path(__file__).parent / "fixtures/reasoning-models.json"
+DEEPSEEK_MODEL = "deepseek/deepseek-v4.1-flash"
+
+
+def chat_events(model):
+    return [
+        {
+            "id": "chat_test",
+            "object": "chat.completion.chunk",
+            "created": 1,
+            "model": model,
+            "choices": [
+                {"index": 0, "delta": {"role": "assistant", "content": "OK"}, "finish_reason": None}
+            ],
+        },
+        {
+            "id": "chat_test",
+            "object": "chat.completion.chunk",
+            "created": 1,
+            "model": model,
+            "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        },
+    ]
 
 
 def openai_events(model):
@@ -100,6 +123,29 @@ def anthropic_events(model):
 async def wire_server(tmp_path, reasoning_config):
     assert subprocess.check_output([BINARY, "--version"], text=True).strip() == "1.18.29"
     captured = []
+    # Synthetic provider metadata extends the frozen catalog without changing its provenance.
+    catalog = json.loads(CATALOG.read_text())
+    catalog["openrouter"] = {
+        "id": "openrouter",
+        "name": "OpenRouter",
+        "env": ["OPENROUTER_API_KEY"],
+        "npm": "@openrouter/ai-sdk-provider",
+        "models": {
+            DEEPSEEK_MODEL: {
+                "id": DEEPSEEK_MODEL,
+                "name": "DeepSeek V4.1 Flash",
+                "reasoning": True,
+                "tool_call": True,
+                "attachment": False,
+                "temperature": True,
+                "release_date": "2026-09-01",
+                "modalities": {"input": ["text"], "output": ["text"]},
+                "limit": {"context": 1048576, "output": 32768},
+            }
+        },
+    }
+    catalog_path = tmp_path / "models.json"
+    catalog_path.write_text(json.dumps(catalog))
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_args):
@@ -111,16 +157,23 @@ async def wire_server(tmp_path, reasoning_config):
                 {key: body.get(key) for key in ("model", "reasoning", "thinking", "output_config")}
             )
             events = (
-                anthropic_events(body["model"])
-                if self.path.endswith("/messages")
-                else openai_events(body["model"])
+                chat_events(body["model"])
+                if self.path.endswith("/chat/completions")
+                else (
+                    anthropic_events(body["model"])
+                    if self.path.endswith("/messages")
+                    else openai_events(body["model"])
+                )
             )
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.end_headers()
             self.wfile.write(
                 "".join(
-                    "event: " + event["type"] + "\ndata: " + json.dumps(event) + "\n\n"
+                    ("event: " + event["type"] + "\n" if "type" in event else "")
+                    + "data: "
+                    + json.dumps(event)
+                    + "\n\n"
                     for event in events
                 ).encode()
             )
@@ -131,8 +184,9 @@ async def wire_server(tmp_path, reasoning_config):
     process = None
     try:
         config = reasoning_config
+        config["enabled_providers"] = ["openai", "anthropic", "openrouter"]
         config["agent"] = {"build": {"options": {"reasoningEffort": "high"}}}
-        for provider in ("openai", "anthropic"):
+        for provider in ("openai", "anthropic", "openrouter"):
             config["provider"].setdefault(provider, {})["options"] = {
                 "baseURL": f"http://127.0.0.1:{mock.server_port}/v1",
                 "apiKey": "test-only",
@@ -140,17 +194,19 @@ async def wire_server(tmp_path, reasoning_config):
         env = {key: os.environ[key] for key in ("PATH", "HOME", "SYSTEMROOT") if key in os.environ}
         env.update(
             {
+                "HOME": str(tmp_path),
                 "XDG_CONFIG_HOME": str(tmp_path / "config"),
                 "XDG_DATA_HOME": str(tmp_path / "data"),
                 "XDG_CACHE_HOME": str(tmp_path / "cache"),
                 "XDG_STATE_HOME": str(tmp_path / "state"),
                 "OPENCODE_CONFIG_DIR": str(tmp_path / "config/opencode"),
-                "OPENCODE_MODELS_PATH": str(CATALOG),
+                "OPENCODE_MODELS_PATH": str(catalog_path),
                 "OPENCODE_DISABLE_MODELS_FETCH": "1",
                 "OPENCODE_CONFIG_CONTENT": json.dumps(config),
                 "OPENCODE_CLIENT": "serve",
                 "OPENAI_API_KEY": "test-only",
                 "ANTHROPIC_API_KEY": "test-only",
+                "OPENROUTER_API_KEY": "test-only",
             }
         )
         with socket.socket() as sock:
@@ -164,19 +220,19 @@ async def wire_server(tmp_path, reasoning_config):
             stderr=subprocess.DEVNULL,
         )
 
-        def call(path, body=None):
+        def call(path, body=None, timeout_seconds=30):
             request = urllib.request.Request(
                 f"http://127.0.0.1:{port}" + path,
                 data=json.dumps(body).encode() if body is not None else None,
                 headers={"Content-Type": "application/json"},
             )
-            with urllib.request.urlopen(request, timeout=30) as response:
+            with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
                 return json.load(response)
 
         deadline = time.monotonic() + 30
         while True:
             try:
-                call("/global/health")
+                call("/global/health", timeout_seconds=2)
                 break
             except OSError:
                 if process.poll() is not None or time.monotonic() >= deadline:
@@ -211,6 +267,29 @@ def submit(call, captured, model, effort, session=None):
     sent = [item for item in captured if item["model"] == model_id]
     assert sent, f"no outbound request for {provider}/{model_id}"
     return sent[-1], session
+
+
+async def test_deepseek_efforts_reach_provider(wire_server):
+    call, captured = wire_server
+    for effort in ("low", "high", "max"):
+        sent, _ = submit(call, captured, f"openrouter/{DEEPSEEK_MODEL}", effort)
+        assert sent["reasoning"]["effort"] == effort
+
+
+async def test_deepseek_omission_and_model_switching(wire_server):
+    call, captured = wire_server
+    model = f"openrouter/{DEEPSEEK_MODEL}"
+    # Omission retains provider defaults, not the previous message's explicit effort.
+    sent, session = submit(call, captured, model, None)
+    assert sent["reasoning"] is None
+    sent, session = submit(call, captured, model, "low", session)
+    assert sent["reasoning"] == {"effort": "low"}
+    sent, session = submit(call, captured, model, None, session)
+    assert sent["reasoning"] is None
+    sent, session = submit(call, captured, "openai/gpt-5.6-sol", "low", session)
+    assert sent["reasoning"]["effort"] == "low"
+    sent, _ = submit(call, captured, model, "max", session)
+    assert sent["reasoning"] == {"effort": "max"}
 
 
 async def test_all_fixture_efforts_reach_provider(wire_server):

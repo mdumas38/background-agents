@@ -2,6 +2,8 @@ import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
 from sandbox_runtime.repository_boot import RepositoryBootResult
 from sandbox_runtime.runtime_config import BootMode, RuntimeConfig
 from sandbox_runtime.supervisor import SandboxSupervisor
@@ -78,6 +80,43 @@ async def test_regular_boot_phase_order(tmp_path, monkeypatch):
         "opencode",
         "bridge",
     ]
+    timings = [
+        call.kwargs
+        for call in supervisor.log.info.call_args_list
+        if call.args == ("boot.stage_completed",)
+    ]
+    assert [record["stage"] for record in timings] == [
+        "browser_start",
+        "skills",
+        "code_server_start",
+        "terminal_start",
+        "harness_start",
+        "bridge_start",
+    ]
+    assert all(record["outcome"] == "succeeded" for record in timings)
+
+
+@pytest.mark.parametrize("service", ["browser_desktop", "code_server", "web_terminal"])
+async def test_nonfatal_service_start_failure_has_failed_timing(tmp_path, monkeypatch, service):
+    supervisor, *_ = _supervisor(tmp_path, [])
+    for key in ("IMAGE_BUILD_MODE", "RESTORED_FROM_SNAPSHOT", "FROM_REPO_IMAGE"):
+        monkeypatch.delenv(key, raising=False)
+    getattr(supervisor, service).start.side_effect = RuntimeError("failure")
+    assert await supervisor.run() is True
+    failed = [
+        call.kwargs
+        for call in supervisor.log.info.call_args_list
+        if call.args == ("boot.stage_completed",) and call.kwargs["outcome"] == "failed"
+    ]
+    assert len(failed) == 1
+    assert (
+        failed[0]["stage"]
+        == {
+            "browser_desktop": "browser_start",
+            "code_server": "code_server_start",
+            "web_terminal": "terminal_start",
+        }[service]
+    )
 
 
 async def test_regular_boot_passes_repository_workspace_to_services(tmp_path, monkeypatch):
@@ -146,16 +185,33 @@ async def test_bridge_restart_exhaustion_is_fatal(tmp_path, monkeypatch):
 
 
 async def test_opencode_restarts_do_not_rematerialize_managed_skills(tmp_path, monkeypatch):
-    supervisor, _repository, opencode_server, *_ = _supervisor(tmp_path, [])
+    events = []
+    supervisor, _repository, opencode_server, *_ = _supervisor(tmp_path, events)
     supervisor._repository_boot_result = RepositoryBootResult(True, [], True, True, (), tmp_path)
     opencode_server.exit_code.return_value = 1
     supervisor._report_fatal_error = AsyncMock()
-    monkeypatch.setattr("sandbox_runtime.supervisor.asyncio.sleep", AsyncMock())
+    # Backoff now waits on the shutdown event, not asyncio.sleep. Stub the
+    # actual wait boundary while retaining the requested delays and ordering.
+    wait_for_shutdown = AsyncMock(
+        side_effect=lambda delay_seconds: events.append(("wait", delay_seconds)) or False
+    )
+    monkeypatch.setattr(supervisor, "_wait_for_shutdown", wait_for_shutdown)
 
     await SandboxSupervisor.monitor_processes(supervisor)
 
     assert opencode_server.start.await_count == supervisor.MAX_RESTARTS
     supervisor.managed_skills.materialize.assert_not_awaited()
+    assert events == [
+        event
+        for attempt in range(1, supervisor.MAX_RESTARTS + 1)
+        for event in (
+            ("wait", min(supervisor.BACKOFF_BASE**attempt, supervisor.BACKOFF_MAX)),
+            "opencode",
+            ("wait", 1.0),
+        )
+    ]
+    supervisor._report_fatal_error.assert_awaited_once()
+    assert supervisor.shutdown_event.is_set()
 
 
 async def test_code_server_restart_exhaustion_is_nonfatal(tmp_path, monkeypatch):

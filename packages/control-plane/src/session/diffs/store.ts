@@ -35,6 +35,48 @@ const sessionDiffFailureRowSchema = z.object({
 export class SessionDiffStore {
   constructor(private readonly sql: SqlStorage) {}
 
+  getCheckpointManifest(messageId?: string, requestId?: string) {
+    const row = this.readCheckpointRow();
+    if (
+      !row ||
+      (messageId !== undefined && row.message_id !== messageId) ||
+      (requestId !== undefined && row.request_id !== requestId)
+    )
+      return null;
+    const bundle = this.parseBundle(row);
+    return bundle ? toSessionDiffManifest(bundle) : null;
+  }
+
+  checkpointAvailable(messageId: string, requestId: string): boolean {
+    const row = this.readCheckpointRow();
+    return !row || (row.message_id === messageId && row.request_id === requestId);
+  }
+
+  /** A bounded, immutable recovery copy; a subsequent task cannot evict it. */
+  pinCheckpoint(bundle: SessionDiffUpload, revisionId: string, requestId: string): string {
+    if (!bundle.triggerMessageId) throw new Error("Checkpoint requires message identity");
+    if (!this.checkpointAvailable(bundle.triggerMessageId, requestId))
+      throw new Error("Checkpoint capacity reached");
+    this.sql.exec(
+      `INSERT INTO session_checkpoint_diff (singleton, revision_id, message_id, request_id, bundle_json)
+       VALUES (1, ?, ?, ?, ?) ON CONFLICT(singleton) DO NOTHING`,
+      revisionId,
+      bundle.triggerMessageId,
+      requestId,
+      JSON.stringify(bundle)
+    );
+    return this.getCheckpointManifest(bundle.triggerMessageId, requestId)!.revisionId;
+  }
+
+  private readCheckpointRow(): { message_id: string; request_id: string } | null {
+    return (
+      (this.sql.exec(`SELECT * FROM session_checkpoint_diff WHERE singleton = 1`).toArray()[0] as {
+        message_id: string;
+        request_id: string;
+      }) ?? null
+    );
+  }
+
   /** Atomically replace the current bundle and clear any prior refresh failure. */
   replaceBundle(bundle: SessionDiffUpload, revisionId: string, now: number): void {
     storedSessionDiffBundleSchema.parse({ ...bundle, revisionId });
@@ -93,9 +135,13 @@ export class SessionDiffStore {
    * stale identities. Throws DiffRevisionStaleError or DiffFileNotFoundError.
    */
   resolveFile(revisionId: string, fileId: string): string {
-    const bundle = this.parseBundle(this.readRow());
+    let bundle = this.parseBundle(this.readRow());
     const currentRevisionId = bundle?.revisionId ?? null;
     if (revisionId !== currentRevisionId) {
+      const checkpoint = this.parseBundle(this.readCheckpointRow());
+      if (checkpoint?.revisionId === revisionId) bundle = checkpoint;
+    }
+    if (revisionId !== bundle?.revisionId) {
       throw new DiffRevisionStaleError(currentRevisionId);
     }
     const file = bundle?.repositories

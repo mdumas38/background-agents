@@ -38,3 +38,10 @@ async def test_manual_variants_available_when_switching_from_adaptive_model(reas
                 "max": {"thinking": {"type": "enabled", "budgetTokens": 31_999}},
             }
         }
+
+
+async def test_deepseek_variants_use_openrouter_reasoning_shape(reasoning_config):
+    model = reasoning_config["provider"]["openrouter"]["models"]["deepseek/deepseek-v4.1-flash"]
+    assert model == {
+        "variants": {effort: {"reasoning": {"effort": effort}} for effort in ("low", "high", "max")}
+    }
