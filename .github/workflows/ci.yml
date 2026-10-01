@@ -1,6 +1,9 @@
 name: CI (TypeScript)
 
 on:
+  # This fork doesn't run push or pull_request workflows until they're enabled in its
+  # Actions tab, so CI can also be started by hand.
+  workflow_dispatch:
   push:
     branches: [main]
     paths:
