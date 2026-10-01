@@ -71,6 +71,7 @@ const SERVICE_ROUTE_ALLOWLISTS: Partial<Record<ServiceName, ReadonlySet<string>>
     "GET /sessions/:id/messages",
     "POST /sessions/:id/prompt",
     "POST /sessions/:id/stop",
+    "PATCH /sessions/:id/budget",
   ]),
 };
 

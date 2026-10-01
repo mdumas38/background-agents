@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { SessionIndexStore } from "./db/session-index";
 import {
   authorizationDatabase,
   fakeSessionRuntimeDispatch,
@@ -130,11 +131,47 @@ describe("agent-world service principal", () => {
     });
   });
 
+  it("raises the cost limit of a session its acting member owns, and no other", async () => {
+    const get = vi.spyOn(SessionIndexStore.prototype, "get");
+    const send = async (owner: string) => {
+      const { env, doFetch, statement } = createEnv(MEMBER_IDENTITY);
+      const roles = authorizationDatabase({ userId: MEMBER_IDENTITY.user_id });
+      env.DB.prepare = vi.fn((sql: string) =>
+        sql.includes("FROM users u") || sql.includes("FROM role_permissions")
+          ? roles.prepare(sql)
+          : statement
+      ) as never;
+      doFetch.mockImplementation(async () =>
+        Response.json({ totalCost: 1, maxSessionCostUsd: 1.5, budgetExhausted: false })
+      );
+      get.mockResolvedValue({ id: "session-1", userId: owner } as Awaited<
+        ReturnType<SessionIndexStore["get"]>
+      >);
+      const body = JSON.stringify({ maxCostUsd: 1.5 });
+      const request = await signedServiceRequest("https://test.local/sessions/session-1/budget", {
+        method: "PATCH",
+        service: "agent-world",
+        actor: "github:4242",
+        body,
+      });
+      const response = await handleRequest(request, env as never, TEST_BACKGROUND_TASK_CONTEXT);
+      return { response, doFetch };
+    };
+
+    const owned = await send(MEMBER_IDENTITY.user_id);
+    expect(owned.response.status).toBe(200);
+    expect(owned.doFetch).toHaveBeenCalledTimes(1);
+
+    const other = await send("someone-else");
+    expect(other.response.status).toBe(403);
+    expect(other.doFetch).not.toHaveBeenCalled();
+    get.mockRestore();
+  });
+
   it.each([
     ["POST", "/sessions/session-1/pr"],
     ["POST", "/sessions/session-1/slack-notify"],
     ["POST", "/sessions/session-1/media"],
-    ["PATCH", "/sessions/session-1/budget"],
     ["GET", "/sessions/session-1"],
     ["GET", "/environments"],
     ["GET", "/integration-settings/slack/watched-channels"],
