@@ -10,13 +10,19 @@ providers behave the same; only the platform adapters differ.
 
 ## What the stack contains
 
-| Service      | Image                   | Role                                                                                  |
-| ------------ | ----------------------- | ------------------------------------------------------------------------------------- |
-| `app`        | built from this repo    | The control plane: HTTP API, session WebSockets, cron jobs. Port 8787.                |
-| `minio`      | `quay.io/minio/minio`   | S3-compatible object storage for media and backups. Console on port 9001.             |
-| `minio-init` | `quay.io/minio/mc`      | Creates the `media` and `backups` buckets, then exits.                                |
-| `litestream` | `litestream/litestream` | Replicates the global store (`/data/global.db`) to the `backups` bucket every second. |
-| `caddy`      | `caddy` (profile `tls`) | Optional TLS termination for a public hostname.                                       |
+| Service      | Image                        | Role                                                                                  |
+| ------------ | ---------------------------- | ------------------------------------------------------------------------------------- |
+| `app`        | built from this repo         | The control plane: HTTP API, session WebSockets, cron jobs. Port 8787.                |
+| `minio`      | `bitnamilegacy/minio`        | S3-compatible object storage for media and backups. Console on port 9001.             |
+| `minio-init` | `bitnamilegacy/minio-client` | Creates the `media` and `backups` buckets, then exits.                                |
+| `litestream` | `litestream/litestream`      | Replicates the global store (`/data/global.db`) to the `backups` bucket every second. |
+| `caddy`      | `caddy` (profile `tls`)      | Optional TLS termination for a public hostname.                                       |
+
+MinIO no longer publishes its images on Docker Hub, and quay.io refuses anonymous pulls, so the
+stack uses Bitnami's frozen builds of the same MinIO release. They get no further updates. A
+`minio-data` volume created by an earlier version of this stack holds files written by root, and
+these images run as uid 1001; give the volume to that user once before upgrading, for example
+`docker compose run --rm --user 0 --entrypoint chown minio -R 1001:0 /bitnami/minio/data`.
 
 The web app is not part of the stack. It stays on Vercel in production and runs with `next dev`
 locally, pointed at the container (see below).
