@@ -355,6 +355,14 @@ function lifecycleProxy(internalPath: SessionInternalPath): ProxyHandler {
 }
 
 /**
+ * Services that may change a live limit, and only for a session their acting
+ * member owns. Agent World raises a capped session's limit after a person
+ * chooses to spend more (ADR 0006). Every other service is refused here,
+ * since the route's admission can't name services one by one.
+ */
+const BUDGET_SERVICES: ReadonlySet<string> = new Set(["agent-world"]);
+
+/**
  * Live limit changes are the session owner's alone: the runtime enforces the
  * limit for every participant, so raising or removing it is not collaboration.
  */
@@ -365,6 +373,9 @@ async function handleBudgetUpdate(
   ctx: SessionRouteContext
 ): Promise<Response> {
   const sessionId = params.id;
+  if (ctx.principal?.kind === "service" && !BUDGET_SERVICES.has(ctx.principal.service)) {
+    return error("This service cannot change a session's cost limit", 403);
+  }
 
   const body = await parseBody(request, sessionBudgetUpdateSchema, "Invalid budget request");
   if (body instanceof Response) return body;
@@ -535,7 +546,7 @@ sessionRuntimeProxyRoutes.post("/sessions/:id/unarchive", LIFECYCLE, (c) =>
 sessionRuntimeProxyRoutes.patch(
   "/sessions/:id/budget",
   admit({
-    ...SCM_AGNOSTIC_HUMAN_USER_ROUTE,
+    ...SCM_AGNOSTIC_USER_OR_SERVICE_ROUTE,
     authorization: requirePermission("sessions.lifecycle"),
   }),
   (c) => dispatchSession(c, handleBudgetUpdate)

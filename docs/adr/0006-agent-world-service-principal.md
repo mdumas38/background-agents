@@ -26,8 +26,9 @@ Add an `agent-world` sig1 service with its own key.
 - **Route allowlist.** Permissions are bundles: `sessions.collaborate` also admits pull-request
   creation, Slack notifications, and uploads. Agent World may therefore call only these routes,
   checked after authentication and before any RBAC lookup: `GET /repos`, `POST /sessions`,
-  `GET /sessions/:id/events|cost|artifacts|messages`, and `POST /sessions/:id/prompt|stop`. Anything
-  else, including routes later added to one of its permissions, returns `service_route_not_allowed`.
+  `GET /sessions/:id/events|cost|artifacts|messages`, `POST /sessions/:id/prompt|stop`, and
+  `PATCH /sessions/:id/budget`. Anything else, including routes later added to one of its
+  permissions, returns `service_route_not_allowed`.
 - **Preallocated session IDs.** Like the Linear bot, it may supply `managedSessionId` so it can
   persist the ID before creating a session and reconcile a lost response instead of blindly retrying
   it.
@@ -55,7 +56,14 @@ reads status from events, including `execution_complete`.
 **Amendment (2026-10-01).** Agent World meters spend while a session works, but `step_finish` events
 are not persisted, so events show cost only when a turn completes. `GET /sessions/:id/cost` returns
 only the session id, its running `totalCost`, and `settled` (no work outstanding), under
-`sessions.read`, and is added to the allowlist. The full snapshot stays human-only. The AWS
+`sessions.read`, and is added to the allowlist. The full snapshot stays human-only.
+
+**Amendment (2026-10-01, budget).** When a session nears or reaches its cost cap, Agent World stops
+and asks a person how to go on. If they choose to spend more, Agent World raises the cap with
+`PATCH /sessions/:id/budget`, which is added to the allowlist. The route now admits service
+principals, but its handler refuses every service except `agent-world`, and the existing rule still
+holds: only the session's owner, here the acting member, may change its limit. Agent World checks
+the raise against its own weekly ledger and records the person's choice before calling. The AWS
 deployment module does not bind this key.
 
 ## Revisit conditions

@@ -843,6 +843,36 @@ describe("session runtime proxy routes", () => {
       expect(fetch).not.toHaveBeenCalled();
     });
 
+    it("refuses budget updates from services other than agent-world", async () => {
+      ownedBy("user-1");
+      authenticateAs({
+        kind: "service",
+        service: "slack-bot",
+        actor: {
+          provider: "slack",
+          providerUserId: "U0123",
+          canonicalUserId: "user-1",
+          participantUserId: "slack:U0123",
+        },
+      });
+      const fetch = vi.fn(async () => Response.json({ maxSessionCostUsd: 20 }));
+
+      const response = await dispatch(
+        new Request("https://test.local/sessions/session-1/budget", {
+          method: "PATCH",
+          headers: JSON_HEADERS,
+          body: JSON.stringify({ maxCostUsd: 20 }),
+        }),
+        createEnv(fetch)
+      );
+
+      expect(response.status).toBe(403);
+      await expect(response.json()).resolves.toEqual({
+        error: "This service cannot change a session's cost limit",
+      });
+      expect(fetch).not.toHaveBeenCalled();
+    });
+
     it("rejects a malformed budget body before reading the session", async () => {
       const get = vi.spyOn(SessionIndexStore.prototype, "get");
       const fetch = vi.fn(async () => Response.json({ maxSessionCostUsd: 20 }));
