@@ -37,11 +37,13 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
 
-  # quay.io, not Docker Hub: MinIO withdrew both images from Hub, so a Hub
-  # reference now fails to pull anonymously. Same releases, same digests.
+  # Bitnami's frozen builds of the same MinIO release: MinIO withdrew its
+  # images from Docker Hub and quay.io now refuses anonymous pulls. These run
+  # as uid 1001 and start MinIO with Bitnami's own script, which serves the
+  # API on 9000 and the console on 9001 from /bitnami/minio/data. The legacy
+  # namespace gets no updates; MinIO stays reachable on loopback only.
   minio:
-    image: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z
-    command: server /data --console-address ":9001"
+    image: bitnamilegacy/minio:2025.4.22
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD must be set; generate one with openssl rand -hex 16}
@@ -51,7 +53,7 @@ services:
       - "127.0.0.1:9000:9000"
       - "127.0.0.1:9001:9001"
     volumes:
-      - minio-data:/data
+      - minio-data:/bitnami/minio/data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 5s
@@ -62,7 +64,7 @@ services:
   # Creates the media and backup buckets once, then exits. It sees only the
   # variables named here, never the app's secrets.
   minio-init:
-    image: quay.io/minio/mc:RELEASE.2025-04-16T18-13-26Z
+    image: bitnamilegacy/minio-client:2025.4.16
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD must be set; generate one with openssl rand -hex 16}
@@ -74,8 +76,8 @@ services:
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
-        mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" &&
-        mc mb --ignore-existing "local/$$MEDIA_BUCKET" "local/$$BACKUP_BUCKET"
+        mc --config-dir /tmp/mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" &&
+        mc --config-dir /tmp/mc mb --ignore-existing "local/$$MEDIA_BUCKET" "local/$$BACKUP_BUCKET"
 
   litestream:
     image: litestream/litestream:0.3.13
