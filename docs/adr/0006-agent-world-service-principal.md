@@ -52,11 +52,11 @@ Agent World sessions record `spawn_source = agent-world`, count as human-initiat
 resolve provider accounts in unattended mode. `GET /sessions/:id` stays human-only; Agent World
 reads status from events, including `execution_complete`.
 
-**Amendment (2026-10-01).** Agent World meters spend while a session works, but `step_finish`
-events are not persisted, so events show cost only when a turn completes. `GET /sessions/:id/cost`
-returns only the session id, its running `totalCost`, and `settled` (no work outstanding), under
-`sessions.read`, and is added to the allowlist. The full snapshot stays human-only. The AWS deployment module does not bind
-this key.
+**Amendment (2026-10-01).** Agent World meters spend while a session works, but `step_finish` events
+are not persisted, so events show cost only when a turn completes. `GET /sessions/:id/cost` returns
+only the session id, its running `totalCost`, and `settled` (no work outstanding), under
+`sessions.read`, and is added to the allowlist. The full snapshot stays human-only. The AWS
+deployment module does not bind this key.
 
 ## Revisit conditions
 

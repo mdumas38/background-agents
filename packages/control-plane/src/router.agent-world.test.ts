@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  authorizationDatabase,
   fakeSessionRuntimeDispatch,
   handleRequest,
   routeContracts as routes,
@@ -102,7 +103,15 @@ describe("agent-world service principal", () => {
   });
 
   it("reads a session's running cost for an existing member", async () => {
-    const { env, doFetch } = createEnv(MEMBER_IDENTITY);
+    const { env, doFetch, statement } = createEnv(MEMBER_IDENTITY);
+    // The member is a workspace owner: admission's role lookups answer for them,
+    // and every other statement still resolves the existing identity.
+    const roles = authorizationDatabase({ userId: MEMBER_IDENTITY.user_id });
+    env.DB.prepare = vi.fn((sql: string) =>
+      sql.includes("FROM users u") || sql.includes("FROM role_permissions")
+        ? roles.prepare(sql)
+        : statement
+    ) as never;
     doFetch.mockImplementation(async () =>
       Response.json({ id: "session-1", totalCost: 0.42, accountingReady: false })
     );
