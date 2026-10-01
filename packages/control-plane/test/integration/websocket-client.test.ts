@@ -905,7 +905,9 @@ describe("Client WebSocket (via SELF.fetch)", () => {
     ws.close();
   });
 
-  it("does not allow web clients to cancel integration-owned prompts", async () => {
+  // DIV-84: a pending integration prompt is cancelled by recording it failed, so
+  // its integration still hears the outcome; only a repeat is refused.
+  it("settles a pending integration-owned prompt as failed, then refuses a repeat cancel", async () => {
     const name = `ws-client-cancel-integration-${Date.now()}`;
     const { stub } = await initNamedSession(name);
     const [{ id: participantId }] = await queryDO<{ id: string }>(
@@ -933,23 +935,21 @@ describe("Client WebSocket (via SELF.fetch)", () => {
     expect(subscribed.promptQueue).toContainEqual(
       expect.objectContaining({ messageId: "message-linear" })
     );
-    const clientRequestId = crypto.randomUUID();
-    const rejected = collectMessages(ws, {
-      until: (message) => message.type === "error",
-      timeoutMs: 2000,
-    });
+    const cancel = async () => {
+      const clientRequestId = crypto.randomUUID();
+      const replies = collectMessages(ws, {
+        until: (message) => message.type === "prompt_cancelled" || message.type === "error",
+        timeoutMs: 2000,
+      });
+      ws.send(
+        JSON.stringify({ type: "cancel_prompt", messageId: "message-linear", clientRequestId })
+      );
+      return { clientRequestId, replies: await replies };
+    };
 
-    ws.send(
-      JSON.stringify({
-        type: "cancel_prompt",
-        messageId: "message-linear",
-        clientRequestId,
-      })
-    );
-
-    expect((await rejected).find((message) => message.type === "error")).toMatchObject({
-      code: "PROMPT_NOT_CANCELLABLE",
-      clientRequestId,
+    const first = await cancel();
+    expect(first.replies.find((message) => message.type === "prompt_cancelled")).toMatchObject({
+      clientRequestId: first.clientRequestId,
     });
     expect(
       await queryDO<{ status: string }>(
@@ -957,7 +957,13 @@ describe("Client WebSocket (via SELF.fetch)", () => {
         "SELECT status FROM messages WHERE id = ?",
         "message-linear"
       )
-    ).toEqual([{ status: "pending" }]);
+    ).toEqual([{ status: "failed" }]);
+
+    const repeat = await cancel();
+    expect(repeat.replies.find((message) => message.type === "error")).toMatchObject({
+      code: "PROMPT_NOT_CANCELLABLE",
+      clientRequestId: repeat.clientRequestId,
+    });
     ws.close();
   });
 
