@@ -216,6 +216,14 @@ describe("route policy table", () => {
     expect(routeFor("GET", "/sessions/session-1/media/artifact-1")?.authorization).toMatchObject({
       service: { kind: "actor", actorlessGrants: [{ service: "slack-bot" }] },
     });
+    expect(routeFor("GET", "/sessions/session-1/checkpoint")?.authorization).toMatchObject({
+      kind: "active-user",
+      allOf: [{ kind: "permission", permission: "sessions.read" }],
+    });
+    expect(routeFor("POST", "/sessions/session-1/checkpoint")?.authorization).toMatchObject({
+      kind: "active-user",
+      allOf: [{ kind: "permission", permission: "sessions.collaborate" }],
+    });
     expect(routeFor("POST", "/sessions/session-1/participants")).toBeUndefined();
     expect(routeFor("POST", "/sessions/parent/children")?.authorization).toMatchObject({
       kind: "active-user",
