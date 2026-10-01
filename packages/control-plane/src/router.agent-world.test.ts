@@ -101,6 +101,26 @@ describe("agent-world service principal", () => {
     expect(doFetch).not.toHaveBeenCalled();
   });
 
+  it("reads a session's running cost for an existing member", async () => {
+    const { env, doFetch } = createEnv(MEMBER_IDENTITY);
+    doFetch.mockImplementation(async () =>
+      Response.json({ id: "session-1", totalCost: 0.42, accountingReady: false })
+    );
+    const request = await signedServiceRequest("https://test.local/sessions/session-1/cost", {
+      service: "agent-world",
+      actor: "github:4242",
+    });
+
+    const response = await handleRequest(request, env as never, TEST_BACKGROUND_TASK_CONTEXT);
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      id: "session-1",
+      totalCost: 0.42,
+      settled: false,
+    });
+  });
+
   it.each([
     ["POST", "/sessions/session-1/pr"],
     ["POST", "/sessions/session-1/slack-notify"],

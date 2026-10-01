@@ -58,6 +58,17 @@ const managedAccountingSchema = z.object({
   accountingReady: z.boolean(),
 });
 
+/**
+ * The running cost a service may read while a session works. `totalCost`
+ * rises with every `step_finish`; `settled` says no work is outstanding, so
+ * the figure can no longer move. Malformed records are refused, as above.
+ */
+const sessionCostSchema = z.object({
+  id: z.string(),
+  totalCost: z.number().finite().nonnegative(),
+  accountingReady: z.boolean(),
+});
+
 const SANDBOX_ERROR_BODY_MAX_BYTES = 2 * 1024;
 
 type SessionParams = { id: string };
@@ -226,6 +237,31 @@ async function handleManagedAccounting(
   return Response.json({ id: parsed.data.id, totalCost: parsed.data.totalCost });
 }
 
+/**
+ * Read only a session's running cost, for callers such as Agent World that
+ * meter work in progress. Unlike managed accounting it answers while the
+ * session is still working, and says whether the figure is settled.
+ */
+async function handleSessionCost(
+  _request: Request,
+  _env: Env,
+  params: SessionParams,
+  ctx: SessionRouteContext
+): Promise<Response> {
+  const response = await ctx.sessionRuntime.fetch(params.id, SessionInternalPaths.state);
+  if (response.status === 404) return error("Session not found", 404);
+  if (!response.ok) return response;
+
+  const parsed = sessionCostSchema.safeParse(await response.json().catch(() => null));
+  if (!parsed.success) return error("Invalid session accounting", 502);
+
+  return Response.json({
+    id: parsed.data.id,
+    totalCost: parsed.data.totalCost,
+    settled: parsed.data.accountingReady,
+  });
+}
+
 async function handleCreatePR(
   request: Request,
   _env: Env,
@@ -374,6 +410,14 @@ sessionRuntimeProxyRoutes.get(
     authorization: serviceAuthorized("linear-bot"),
   }),
   (c) => dispatchSession(c, handleManagedAccounting)
+);
+sessionRuntimeProxyRoutes.get(
+  "/sessions/:id/cost",
+  admit({
+    ...GITHUB_USER_OR_SERVICE_ROUTE,
+    authorization: requirePermission("sessions.read"),
+  }),
+  (c) => dispatchSession(c, handleSessionCost)
 );
 sessionRuntimeProxyRoutes.post(
   "/sessions/:id/stop",
