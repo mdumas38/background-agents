@@ -66,6 +66,7 @@ const SERVICE_ROUTE_ALLOWLISTS: Partial<Record<ServiceName, ReadonlySet<string>>
     "GET /repos",
     "POST /sessions",
     "GET /sessions/:id/events",
+    "GET /sessions/:id/cost",
     "GET /sessions/:id/artifacts",
     "GET /sessions/:id/messages",
     "POST /sessions/:id/prompt",

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  authorizationDatabase,
   fakeSessionRuntimeDispatch,
   handleRequest,
   routeContracts as routes,
@@ -99,6 +100,34 @@ describe("agent-world service principal", () => {
     expect(response.status).toBe(401);
     expect(statement.run).not.toHaveBeenCalled();
     expect(doFetch).not.toHaveBeenCalled();
+  });
+
+  it("reads a session's running cost for an existing member", async () => {
+    const { env, doFetch, statement } = createEnv(MEMBER_IDENTITY);
+    // The member is a workspace owner: admission's role lookups answer for them,
+    // and every other statement still resolves the existing identity.
+    const roles = authorizationDatabase({ userId: MEMBER_IDENTITY.user_id });
+    env.DB.prepare = vi.fn((sql: string) =>
+      sql.includes("FROM users u") || sql.includes("FROM role_permissions")
+        ? roles.prepare(sql)
+        : statement
+    ) as never;
+    doFetch.mockImplementation(async () =>
+      Response.json({ id: "session-1", totalCost: 0.42, accountingReady: false })
+    );
+    const request = await signedServiceRequest("https://test.local/sessions/session-1/cost", {
+      service: "agent-world",
+      actor: "github:4242",
+    });
+
+    const response = await handleRequest(request, env as never, TEST_BACKGROUND_TASK_CONTEXT);
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      id: "session-1",
+      totalCost: 0.42,
+      settled: false,
+    });
   });
 
   it.each([

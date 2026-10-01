@@ -118,6 +118,7 @@ describe("session runtime proxy routes", () => {
       init: { headers: SANDBOX_HEADERS, body: JSON.stringify({ error: "crash", fatal: true }) },
     },
     { method: "GET", path: "/sessions/session-1/events", internal: "events" },
+    { method: "GET", path: "/sessions/session-1/cost", internal: "state", status: 502 },
     { method: "GET", path: "/sessions/session-1/artifacts", internal: "artifacts" },
     { method: "GET", path: "/sessions/session-1/participants", internal: "participants" },
     {
@@ -327,6 +328,45 @@ describe("session runtime proxy routes", () => {
     }
 
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("projects only the running cost, settled or not, and refuses malformed records", async () => {
+    const fetch = vi.fn(async () =>
+      Response.json({
+        id: "session-1",
+        title: "private title",
+        agentSessionId: "agent-1",
+        totalCost: 0.42,
+        accountingReady: false,
+        sandbox: { id: "sandbox-1" },
+      })
+    );
+
+    const response = await dispatch(
+      new Request("https://test.local/sessions/session-1/cost"),
+      createEnv(fetch)
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      id: "session-1",
+      totalCost: 0.42,
+      settled: false,
+    });
+
+    for (const invalid of [
+      { id: "session-1", accountingReady: true },
+      { id: "session-1", totalCost: -0.01, accountingReady: true },
+      { id: "session-1", totalCost: Number.NaN, accountingReady: true },
+      { id: "session-1", totalCost: "0.42", accountingReady: true },
+      { id: "session-1", totalCost: 0.42 },
+    ]) {
+      const invalidResponse = await dispatch(
+        new Request("https://test.local/sessions/session-1/cost"),
+        createEnv(vi.fn(async () => Response.json(invalid)))
+      );
+      expect(invalidResponse.status).toBe(502);
+    }
   });
 
   it("forwards event query strings through the session runtime dependency", async () => {

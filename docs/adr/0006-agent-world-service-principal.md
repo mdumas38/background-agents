@@ -26,7 +26,7 @@ Add an `agent-world` sig1 service with its own key.
 - **Route allowlist.** Permissions are bundles: `sessions.collaborate` also admits pull-request
   creation, Slack notifications, and uploads. Agent World may therefore call only these routes,
   checked after authentication and before any RBAC lookup: `GET /repos`, `POST /sessions`,
-  `GET /sessions/:id/events|artifacts|messages`, and `POST /sessions/:id/prompt|stop`. Anything
+  `GET /sessions/:id/events|cost|artifacts|messages`, and `POST /sessions/:id/prompt|stop`. Anything
   else, including routes later added to one of its permissions, returns `service_route_not_allowed`.
 - **Preallocated session IDs.** Like the Linear bot, it may supply `managedSessionId` so it can
   persist the ID before creating a session and reconcile a lost response instead of blindly retrying
@@ -50,8 +50,13 @@ Add an `agent-world` sig1 service with its own key.
 
 Agent World sessions record `spawn_source = agent-world`, count as human-initiated in analytics, and
 resolve provider accounts in unattended mode. `GET /sessions/:id` stays human-only; Agent World
-reads status from events, including `execution_complete`. The AWS deployment module does not bind
-this key.
+reads status from events, including `execution_complete`.
+
+**Amendment (2026-10-01).** Agent World meters spend while a session works, but `step_finish` events
+are not persisted, so events show cost only when a turn completes. `GET /sessions/:id/cost` returns
+only the session id, its running `totalCost`, and `settled` (no work outstanding), under
+`sessions.read`, and is added to the allowlist. The full snapshot stays human-only. The AWS
+deployment module does not bind this key.
 
 ## Revisit conditions
 
