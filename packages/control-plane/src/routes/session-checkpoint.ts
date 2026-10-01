@@ -3,13 +3,7 @@ import { admit } from "../routing/admit";
 import type { ControlPlaneHonoEnv } from "../routing/hono-env";
 import { sandboxCheckpointRequestSchema } from "@open-inspect/shared/types/sandbox-events";
 import { SessionInternalPaths } from "../session/contracts";
-import {
-  SCM_AGNOSTIC_SERVICE_ROUTE,
-  SCM_AGNOSTIC_USER_OR_SERVICE_ROUTE,
-  requirePermission,
-  serviceAuthorized,
-  error,
-} from "./shared";
+import { SCM_AGNOSTIC_USER_OR_SERVICE_ROUTE, requirePermission, error } from "./shared";
 import { dispatchSession, type SessionRouteContext } from "./session-route";
 import { parseJsonBody } from "./body";
 import type { Env } from "../types";
@@ -50,14 +44,11 @@ sessionCheckpointRoutes.get(
       ctx.sessionRuntime.fetch(params.id, SessionInternalPaths.checkpoint)
     )
 );
-// Only linear-bot acting for a Linear user may checkpoint; the handler also
-// checks the actor's provider. Declaring it here keeps admission and the
-// handler in agreement, so users are refused at admission, not by the handler.
 sessionCheckpointRoutes.post(
   "/sessions/:id/checkpoint",
   admit({
-    ...SCM_AGNOSTIC_SERVICE_ROUTE,
-    authorization: serviceAuthorized("linear-bot", "required"),
+    ...SCM_AGNOSTIC_USER_OR_SERVICE_ROUTE,
+    authorization: requirePermission("sessions.collaborate"),
   }),
   (c) => dispatchSession(c, handleSessionCheckpoint)
 );

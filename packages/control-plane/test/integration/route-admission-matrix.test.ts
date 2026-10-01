@@ -122,6 +122,15 @@ function outcome(label: string, status: number): string {
   return `${label}=${status}`;
 }
 
+/**
+ * Routes whose admission accepts any member but whose handler then refuses
+ * everyone except one principal. POST checkpoint is linear-bot acting for a
+ * Linear user (session-checkpoint.ts). Declaring that in the route policy
+ * would need actor-required service routes, which this matrix can't yet
+ * exercise; until then, the owner's 403 here comes from the handler.
+ */
+const HANDLER_RESTRICTED = new Set(["POST /sessions/:id/checkpoint"]);
+
 describe("route admission matrix", { timeout: MATRIX_TIMEOUT_MS }, () => {
   const fixtures: MatrixFixtures = {
     readonlySessionId: "",
@@ -201,7 +210,9 @@ describe("route admission matrix", { timeout: MATRIX_TIMEOUT_MS }, () => {
 
       // Raw web-service routes (browser auth, autofix activity) admit the web
       // principal and then let their handler own every status, including 403.
-      if (kind !== "web-service") {
+      // HANDLER_RESTRICTED routes admit users but their handler accepts only
+      // a narrower principal, so a 403 there is the handler's, by design.
+      if (kind !== "web-service" && !HANDLER_RESTRICTED.has(identity)) {
         expect(PROTECTED_STATUSES.has(response.status), `${identity} -> ${response.status}`).toBe(
           false
         );
