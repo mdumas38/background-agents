@@ -108,6 +108,7 @@ class ProductionReleasePlanTests(unittest.TestCase):
                     with self.subTest(phase=phase, name=name, value=value):
                         with self.assertRaises(policy.PlanRejected) as result:
                             policy.inspect_plan(plan, phase, REVISION)
+                        self.assertIn(name, str(result.exception))
                         self.assertNotIn("TEST_SECRET_NEVER_LOG", str(result.exception))
 
     def test_exact_release_replacements_are_allowed_but_other_resources_are_not(self):
