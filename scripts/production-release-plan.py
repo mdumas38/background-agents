@@ -56,6 +56,10 @@ def inspect_plan(plan, phase, revision):
     for name, value in expected.items():
         if variables.get(name) != value:
             raise PlanRejected(f"Production configuration mismatch: {name}.")
+    for name in ("github_app_id", "github_app_installation_id", "github_app_private_key"):
+        value = variables.get(name)
+        if not isinstance(value, str) or not value.strip():
+            raise PlanRejected(f"Production GitHub App credential is missing: {name}.")
 
     changes = sorted(plan.get("resource_changes", []), key=lambda item: item["address"])
     by_address = {item["address"]: item["change"] for item in changes}
