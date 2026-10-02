@@ -35,6 +35,8 @@ def fixture(phase="release"):
         "enable_durable_object_bindings": enabled,
         "enable_linear_dispatch_binding": enabled,
         "enable_service_bindings": enabled,
+        "github_app_id": "123456",
+        "github_app_installation_id": "789012",
         "github_app_private_key": "TEST_SECRET_NEVER_LOG",
     }
     resources = []
@@ -96,6 +98,17 @@ class ProductionReleasePlanTests(unittest.TestCase):
             plan["variables"][name]["value"] = value
             with self.assertRaises(policy.PlanRejected):
                 policy.inspect_plan(plan, "release", REVISION)
+
+    def test_missing_github_app_credentials_are_rejected_without_printing_values(self):
+        for phase in ("bootstrap", "activate", "release"):
+            for name in ("github_app_id", "github_app_installation_id", "github_app_private_key"):
+                for value in (None, "", "   "):
+                    plan = fixture(phase)
+                    plan["variables"][name]["value"] = value
+                    with self.subTest(phase=phase, name=name, value=value):
+                        with self.assertRaises(policy.PlanRejected) as result:
+                            policy.inspect_plan(plan, phase, REVISION)
+                        self.assertNotIn("TEST_SECRET_NEVER_LOG", str(result.exception))
 
     def test_exact_release_replacements_are_allowed_but_other_resources_are_not(self):
         plan = fixture()

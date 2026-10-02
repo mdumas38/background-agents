@@ -71,6 +71,11 @@ plans again, compares the fingerprint of the inputs and changes, then applies th
 plan. A new commit, changed credentials, or drift requires another preview. Terraform's planning
 timestamp is excluded from the fingerprint; planned values and sensitive inputs are included.
 
+Previews also require nonempty GitHub App ID, installation ID, and private key inputs. GitHub
+browser sign-in uses separate OAuth credentials; successful sign-in alone does not prove that the
+App can list or clone repositories. Verify the App's selected-repository installation and use a
+PKCS#8 private key before previewing a release.
+
 Deletion of a database, bucket, namespace, worker, or other persistent resource is blocked.
 Replacements are allowed only for the explicit worker-version/build/deploy addresses in
 `scripts/production-release-plan.py`. The pinned Cloudflare provider also replaces deployment
