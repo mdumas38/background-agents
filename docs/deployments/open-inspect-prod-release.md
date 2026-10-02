@@ -73,8 +73,12 @@ timestamp is excluded from the fingerprint; planned values and sensitive inputs 
 
 Deletion of a database, bucket, namespace, worker, or other persistent resource is blocked.
 Replacements are allowed only for the explicit worker-version/build/deploy addresses in
-`scripts/production-release-plan.py`. Pure deletion is always blocked. There is no `allow_destroy`
-override. Handle resource retirement or migration in a separate reviewed change.
+`scripts/production-release-plan.py`. The pinned Cloudflare provider also replaces deployment
+records when switching worker versions. This is permitted only for version changes to the same
+production control-plane or Linear worker in the same account, with the percentage strategy
+unchanged. Moving the deployment to another worker or account is blocked. Pure deletion is always
+blocked. There is no `allow_destroy` override. Handle resource retirement or migration in a separate
+reviewed change.
 
 ## First deployment
 

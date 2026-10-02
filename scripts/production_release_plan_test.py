@@ -119,6 +119,56 @@ class ProductionReleasePlanTests(unittest.TestCase):
         with self.assertRaises(policy.PlanRejected):
             policy.inspect_plan(plan, "release", REVISION)
 
+    def test_production_deployment_version_switches_are_allowed(self):
+        for phase in ("activate", "release"):
+            plan = fixture(phase)
+            for address, script in policy.DEPLOYMENT_REPLACEMENTS.items():
+                before = {
+                    "account_id": "587d515339a419dbeb598a402aba0a12",
+                    "script_name": script,
+                    "strategy": "percentage",
+                    "versions": [{"percentage": 100, "version_id": "previous-version"}],
+                }
+                after = {**before, "versions": [{"percentage": 100}]}
+                plan["resource_changes"].append({
+                    "address": address,
+                    "change": {
+                        "actions": ["delete", "create"],
+                        "before": before,
+                        "after": after,
+                        "replace_paths": [["versions"]],
+                    },
+                })
+            policy.inspect_plan(plan, phase, REVISION)
+
+            for side, key, value in (
+                ("before", "account_id", "another-account"),
+                ("after", "account_id", "another-account"),
+                ("before", "script_name", "open-inspect-control-plane-div61-dev"),
+                ("after", "script_name", "another-worker"),
+                ("after", "strategy", "another-strategy"),
+            ):
+                changed = copy.deepcopy(plan)
+                changed["resource_changes"][-1]["change"][side][key] = value
+                with self.subTest(phase=phase, side=side, key=key):
+                    with self.assertRaises(policy.PlanRejected):
+                        policy.inspect_plan(changed, phase, REVISION)
+            for paths in ([], [["script_name"]], [["versions"], ["account_id"]]):
+                changed = copy.deepcopy(plan)
+                changed["resource_changes"][-1]["change"]["replace_paths"] = paths
+                with self.assertRaises(policy.PlanRejected):
+                    policy.inspect_plan(changed, phase, REVISION)
+            changed = copy.deepcopy(plan)
+            changed["resource_changes"][-1]["change"]["actions"] = ["delete"]
+            with self.assertRaises(policy.PlanRejected):
+                policy.inspect_plan(changed, phase, REVISION)
+            changed = copy.deepcopy(plan)
+            changed["resource_changes"][-1]["address"] = (
+                "module.github_bot_worker[0].cloudflare_workers_deployment.this"
+            )
+            with self.assertRaises(policy.PlanRejected):
+                policy.inspect_plan(changed, phase, REVISION)
+
     def test_fingerprint_binds_values_inputs_and_revision_but_not_timestamp_or_order(self):
         plan = fixture()
         digest, summary = policy.inspect_plan(plan, "release", REVISION)

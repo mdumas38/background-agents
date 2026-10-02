@@ -8,6 +8,10 @@ from pathlib import Path
 
 CONTROL_VERSION = "module.control_plane_worker.cloudflare_worker_version.this"
 LINEAR_VERSION = "module.linear_bot_worker[0].cloudflare_worker_version.this"
+DEPLOYMENT_REPLACEMENTS = {
+    "module.control_plane_worker.cloudflare_workers_deployment.this": "open-inspect-control-plane-prod",
+    "module.linear_bot_worker[0].cloudflare_workers_deployment.this": "open-inspect-linear-bot-prod",
+}
 RELEASE_REPLACEMENTS = {
     CONTROL_VERSION,
     LINEAR_VERSION,
@@ -68,11 +72,29 @@ def inspect_plan(plan, phase, revision):
             raise PlanRejected("Durable Object bindings are missing; use activate first.")
 
     for item in changes:
-        actions = item["change"]["actions"]
-        if "delete" in actions and not (
-            "create" in actions and item["address"] in RELEASE_REPLACEMENTS
-        ):
-            raise PlanRejected(f"Deletion or replacement requires separate review: {item['address']}.")
+        change = item["change"]
+        actions = change["actions"]
+        if "delete" not in actions:
+            continue
+        if "create" in actions:
+            if item["address"] in RELEASE_REPLACEMENTS:
+                continue
+            script = DEPLOYMENT_REPLACEMENTS.get(item["address"])
+            if script and phase != "bootstrap":
+                # The pinned provider replaces immutable deployment records
+                # when switching versions; its Delete does not delete a worker.
+                target = {
+                    "account_id": expected["cloudflare_account_id"],
+                    "script_name": script,
+                    "strategy": "percentage",
+                }
+                if change.get("replace_paths") == [["versions"]] and all(
+                    isinstance(change.get(side), dict)
+                    and all(change[side].get(key) == value for key, value in target.items())
+                    for side in ("before", "after")
+                ):
+                    continue
+        raise PlanRejected(f"Deletion or replacement requires separate review: {item['address']}.")
 
     # Terraform's top-level timestamp changes every plan. Inputs and actual
     # changes bind the review instead; all values remain private to the runner.
