@@ -1,0 +1,242 @@
+name: Deploy Open-Inspect Production
+
+# Plans and builds run on GitHub-hosted runners. Applies are manual, gated by
+# the production environment, and must match a previously reviewed fingerprint.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/deploy-open-inspect-prod.yml"
+      - "scripts/production-release-plan*"
+      - "scripts/production_release_plan_test.py"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/deploy-open-inspect-prod.yml"
+      - "scripts/production-release-plan*"
+      - "scripts/production_release_plan_test.py"
+      - "terraform/**"
+      - "packages/**"
+      - "package.json"
+      - "package-lock.json"
+      - "scripts/wrangler-secrets.sh"
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: "Preview, or apply a previously reviewed preview"
+        type: choice
+        options: [plan, apply]
+        default: plan
+      phase:
+        description: "bootstrap: create classes; activate: enable bindings; release: normal updates"
+        type: choice
+        options: [bootstrap, activate, release]
+        default: release
+      expected_fingerprint:
+        description: "For apply: fingerprint from a successful preview of this exact commit and phase"
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+env:
+  TF_VERSION: "1.14.8"
+  TF_DIR: terraform/environments/production
+  TF_IN_AUTOMATION: "true"
+  OPERATION: ${{ inputs.operation || 'plan' }}
+  PHASE: ${{ inputs.phase || 'release' }}
+  EXPECTED_FINGERPRINT: ${{ inputs.expected_fingerprint || '' }}
+  # Public homelab backup recipient. The private age key never enters CI.
+  AGE_RECIPIENT: age1xyvezzamfk6e94cmyjd6h5nxd3rxzraph3u5kyvuccu8cy2q55qste93pl
+
+jobs:
+  verify:
+    name: Verify production release policy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - run: python3 -m unittest discover -s scripts -p 'production_release_plan_test.py' -v
+
+  deploy:
+    name: ${{ inputs.operation || 'plan' }} (${{ inputs.phase || 'release' }})
+    needs: verify
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'mdumas38/background-agents' && github.ref == 'refs/heads/main'
+    concurrency:
+      group: open-inspect-prod
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    environment: open-inspect-prod
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Check apply review input
+        run: |
+          if [[ "$OPERATION" == apply && ! "$EXPECTED_FINGERPRINT" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::Apply requires the fingerprint from a successful preview."
+            exit 1
+          fi
+
+      - name: Install review encryption tool
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install --no-install-recommends -y age
+
+      - name: Setup Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies and build workers
+        run: |
+          npm ci
+          npm run build -w @open-inspect/shared
+          npm run build -w @open-inspect/control-plane
+          npm run build -w @open-inspect/linear-bot
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          enable-cache: false
+
+      - name: Install Modal dependencies
+        run: uv sync --frozen
+        working-directory: packages/modal-infra
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Write private configuration and stage bindings
+        env:
+          TFVARS: ${{ secrets.TFVARS }}
+          BACKEND_TFVARS: ${{ secrets.BACKEND_TFVARS }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$TFVARS" || -z "$BACKEND_TFVARS" ]]; then
+            echo "::error::Set TFVARS and BACKEND_TFVARS on the open-inspect-prod environment."
+            exit 1
+          fi
+          umask 077
+          printf '%s\n' "$TFVARS" > "$TF_DIR/terraform.tfvars"
+          printf '%s\n' "$BACKEND_TFVARS" > "$TF_DIR/backend.tfvars"
+          enabled=true
+          if [[ "$PHASE" == bootstrap ]]; then enabled=false; fi
+          printf '{"enable_durable_object_bindings":%s,"enable_linear_dispatch_binding":%s,"enable_service_bindings":%s}\n' \
+            "$enabled" "$enabled" "$enabled" > "$TF_DIR/release.auto.tfvars.json"
+
+      - name: Initialize production state and validate
+        run: |
+          umask 077
+          if ! terraform init -input=false -no-color -lockfile=readonly \
+            -backend-config=backend.tfvars \
+            -backend-config=bucket=open-inspect-tfstate-prod \
+            -backend-config=key=open-inspect-prod/terraform.tfstate > init.log 2>&1; then
+            echo "::error::Terraform initialization failed; see encrypted diagnostics."
+            exit 1
+          fi
+          if ! terraform validate -no-color > validate.log 2>&1; then
+            echo "::error::Terraform validation failed; see encrypted diagnostics."
+            exit 1
+          fi
+        working-directory: ${{ env.TF_DIR }}
+
+      - name: Plan the full production stack
+        run: |
+          umask 077
+          if ! terraform plan -input=false -no-color -parallelism=1 -lock-timeout=60s \
+            -var="project_root=$GITHUB_WORKSPACE" -out=tfplan > plan.log 2>&1; then
+            echo "::error::Terraform planning failed; see encrypted diagnostics."
+            exit 1
+          fi
+          terraform show -json tfplan > plan.json 2> show.log
+        working-directory: ${{ env.TF_DIR }}
+
+      - name: Check policy and match the reviewed plan
+        run: |
+          python3 scripts/production-release-plan.py "$TF_DIR/plan.json" \
+            --phase "$PHASE" --revision "$GITHUB_SHA" --operation "$OPERATION" \
+            --expected-fingerprint "$EXPECTED_FINGERPRINT" --summary "$GITHUB_STEP_SUMMARY"
+
+      - name: Capture state before apply
+        if: env.OPERATION == 'apply'
+        run: |
+          umask 077
+          if ! terraform state pull > state-before.json 2> state-read.log; then
+            if [[ "$PHASE" != bootstrap ]] || ! grep -q 'No state file was found' state-read.log; then
+              echo "::error::Could not capture the existing state; see encrypted diagnostics."
+              exit 1
+            fi
+            rm -f state-before.json
+          fi
+        working-directory: ${{ env.TF_DIR }}
+
+      - name: Apply the checked saved plan
+        if: env.OPERATION == 'apply'
+        run: |
+          umask 077
+          if ! terraform apply -input=false -no-color -parallelism=1 tfplan > apply.log 2>&1; then
+            echo "::error::Terraform apply failed; see encrypted diagnostics and inspect state before retrying."
+            exit 1
+          fi
+          echo "Production apply completed." >> "$GITHUB_STEP_SUMMARY"
+        working-directory: ${{ env.TF_DIR }}
+
+      - name: Check activated services
+        if: env.OPERATION == 'apply' && env.PHASE != 'bootstrap'
+        run: |
+          for url in \
+            https://open-inspect-control-plane-prod.mason-587.workers.dev/health \
+            https://open-inspect-web-prod.mason-587.workers.dev/ \
+            https://open-inspect-linear-bot-prod.mason-587.workers.dev/health \
+            https://mason-94865-production--open-inspect-api-health.modal.run; do
+            healthy=false
+            for attempt in {1..12}; do
+              if curl --fail --silent --max-time 10 "$url" > /dev/null; then healthy=true; break; fi
+              sleep 10
+            done
+            if [[ "$healthy" != true ]]; then echo "::error::Service health check failed: $url"; exit 1; fi
+          done
+          echo "Service health checks passed. OAuth, webhooks, and a sandbox session still require acceptance." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Encrypt review files and diagnostics
+        if: always()
+        run: |
+          umask 077
+          mkdir -p "$RUNNER_TEMP/production-review"
+          for name in tfplan plan.log plan.json init.log validate.log show.log state-before.json state-read.log apply.log; do
+            if [[ -s "$TF_DIR/$name" ]]; then
+              age --recipient "$AGE_RECIPIENT" --output "$RUNNER_TEMP/production-review/$name.age" "$TF_DIR/$name"
+            fi
+          done
+
+      - name: Upload encrypted review files
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: open-inspect-prod-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/production-review/*.age
+          if-no-files-found: ignore
+          retention-days: 90
+
+      - name: Remove private configuration and plaintext plans
+        if: always()
+        run: |
+          rm -f "$TF_DIR/terraform.tfvars" "$TF_DIR/backend.tfvars" "$TF_DIR/release.auto.tfvars.json" \
+            "$TF_DIR/tfplan" "$TF_DIR/plan.log" "$TF_DIR/plan.json" "$TF_DIR/init.log" \
+            "$TF_DIR/validate.log" "$TF_DIR/show.log" "$TF_DIR/state-before.json" \
+            "$TF_DIR/state-read.log" "$TF_DIR/apply.log"
+          rm -rf "$TF_DIR/.terraform"
