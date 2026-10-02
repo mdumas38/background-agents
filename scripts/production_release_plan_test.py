@@ -158,6 +158,20 @@ class ProductionReleasePlanTests(unittest.TestCase):
                 changed["resource_changes"][-1]["change"]["replace_paths"] = paths
                 with self.assertRaises(policy.PlanRejected):
                     policy.inspect_plan(changed, phase, REVISION)
+            for side in ("before", "after"):
+                for versions in (
+                    [],
+                    [{"percentage": 50}],
+                    [{"percentage": 50}, {"percentage": 50}],
+                    [{"percentage": 100}, {"percentage": 100}],
+                    [{"version_id": "another-version"}],
+                    None,
+                ):
+                    changed = copy.deepcopy(plan)
+                    changed["resource_changes"][-1]["change"][side]["versions"] = versions
+                    with self.subTest(phase=phase, side=side, versions=versions):
+                        with self.assertRaises(policy.PlanRejected):
+                            policy.inspect_plan(changed, phase, REVISION)
             changed = copy.deepcopy(plan)
             changed["resource_changes"][-1]["change"]["actions"] = ["delete"]
             with self.assertRaises(policy.PlanRejected):

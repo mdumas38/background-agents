@@ -91,6 +91,10 @@ def inspect_plan(plan, phase, revision):
                 if change.get("replace_paths") == [["versions"]] and all(
                     isinstance(change.get(side), dict)
                     and all(change[side].get(key) == value for key, value in target.items())
+                    and isinstance(change[side].get("versions"), list)
+                    and len(change[side]["versions"]) == 1
+                    and isinstance(change[side]["versions"][0], dict)
+                    and change[side]["versions"][0].get("percentage") == 100
                     for side in ("before", "after")
                 ):
                     continue
