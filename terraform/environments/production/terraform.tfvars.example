@@ -242,6 +242,11 @@ linear_webhook_secret = ""   # Webhook Signing Secret from the application confi
 # From: https://console.anthropic.com/
 anthropic_api_key = ""
 
+# OpenRouter key for "openrouter/..." session models, injected into Modal
+# sandboxes. Optional: leave it blank to supply it as a secret in the web app.
+# From: https://openrouter.ai/keys
+openrouter_api_key = ""
+
 # OpenAI credential for the Slack/Linear bot classifiers. Required when
 # classification_model names an OpenAI model AND at least one of the Slack or
 # Linear bots is enabled; an Anthropic classifier model is served by

@@ -64,7 +64,8 @@ locals {
   # all. An empty value means sandboxes take that provider's credential from the
   # per-repository secret store, which overrides this secret either way.
   modal_llm_secret_values = {
-    ANTHROPIC_API_KEY = trimspace(var.anthropic_api_key)
+    ANTHROPIC_API_KEY  = trimspace(var.anthropic_api_key)
+    OPENROUTER_API_KEY = trimspace(var.openrouter_api_key)
   }
 
   # OpenComputer reads its sandbox credentials from the control plane rather than
