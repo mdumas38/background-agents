@@ -51,11 +51,12 @@ gh secret set BACKEND_TFVARS --env open-inspect-prod -R mdumas38/background-agen
 
 ## Preview, review, and apply
 
-Pushes to `main` produce a **preview only**. A manual run defaults to `operation=plan`. After
-approving the environment job, read the resource/action summary and download the encrypted review
-artifact. It contains the full plan text (`plan.log.age`), the plan JSON and binary, and
-diagnostics. Only age-encrypted files are uploaded; plaintext inputs, plans, state, and apply output
-never enter Actions logs or summaries.
+Pushes and pull requests run release-policy checks. Production runs start manually from Actions and
+default to `operation=plan`; merging this workflow does not queue a production run. After approving
+the environment job, read the resource/action summary and download the encrypted review artifact. It
+contains the full plan text (`plan.log.age`), the plan JSON and binary, and diagnostics. Only
+age-encrypted files are uploaded; plaintext inputs, plans, state, and apply output never enter
+Actions logs or summaries.
 
 Decrypt on a trusted machine using the homelab age identity:
 
