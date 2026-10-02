@@ -1,0 +1,192 @@
+name: Deploy div61-dev
+
+# Releases this fork's own Open-Inspect stack (div61-dev) from GitHub's runner,
+# so a release needs neither a local monorepo install nor a local copy of the
+# private configuration.
+#
+# - The private terraform.tfvars and backend.tfvars are the TFVARS and
+#   BACKEND_TFVARS secrets of the `div61-dev` environment. Its required
+#   reviewer approves every run before any secret is read.
+# - A push to main that changes the control plane plans and applies only the
+#   control-plane worker. `all` (manual only) plans the whole stack.
+# - The plan stops if it would delete or replace anything other than the
+#   worker version and the build step, which every release replaces.
+# - Plan files carry secret values in plain text and this repository is
+#   public, so nothing is uploaded: the summary lists resource addresses and
+#   actions only.
+# - terraform.yml stays inert: its plan and apply only run when
+#   repository-level Cloudflare and R2 secrets exist, and these are
+#   environment secrets.
+#
+# Setup and use: docs/deployments/div61-dev-release.md.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/control-plane/**"
+      - "packages/shared/**"
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: "control-plane: only the control-plane worker. all: the whole stack."
+        type: choice
+        options: [control-plane, all]
+        default: control-plane
+      plan_only:
+        description: "Plan and report, apply nothing"
+        type: boolean
+        default: false
+      allow_destroy:
+        description: "Apply even if the plan deletes or replaces other resources"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-div61-dev
+  cancel-in-progress: false
+
+env:
+  TF_VERSION: "1.14.8"
+  TF_DIR: terraform/environments/production
+  SCOPE: ${{ inputs.scope || 'control-plane' }}
+  PLAN_ONLY: ${{ inputs.plan_only || false }}
+  ALLOW_DESTROY: ${{ inputs.allow_destroy || false }}
+
+jobs:
+  deploy:
+    name: ${{ inputs.plan_only && 'Plan' || 'Plan and apply' }} (${{ inputs.scope || 'control-plane' }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: div61-dev
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build worker packages
+        run: |
+          npm run build -w @open-inspect/shared
+          npm run build -w @open-inspect/control-plane
+          if [ "$SCOPE" = all ]; then
+            npm run build -w @open-inspect/slack-bot
+            npm run build -w @open-inspect/github-bot
+            npm run build -w @open-inspect/linear-bot
+          fi
+
+      - name: Setup uv
+        if: env.SCOPE == 'all'
+        uses: astral-sh/setup-uv@v8.2.0
+
+      - name: Install Modal and Python dependencies
+        if: env.SCOPE == 'all'
+        run: uv sync --frozen
+        working-directory: packages/modal-infra
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Write private configuration
+        env:
+          TFVARS: ${{ secrets.TFVARS }}
+          BACKEND_TFVARS: ${{ secrets.BACKEND_TFVARS }}
+        run: |
+          if [ -z "$TFVARS" ] || [ -z "$BACKEND_TFVARS" ]; then
+            echo "::error::Set the TFVARS and BACKEND_TFVARS secrets on the div61-dev environment (docs/deployments/div61-dev-release.md)."
+            exit 1
+          fi
+          umask 077
+          printf '%s\n' "$TFVARS" > "$TF_DIR/terraform.tfvars"
+          printf '%s\n' "$BACKEND_TFVARS" > "$TF_DIR/backend.tfvars"
+
+      - name: Terraform init
+        run: |
+          terraform init -input=false -no-color \
+            -backend-config=backend.tfvars \
+            -backend-config="bucket=${{ vars.TF_STATE_BUCKET || 'open-inspect-tfstate-mdumas38-div61-dev' }}" \
+            -backend-config="key=${{ vars.TF_STATE_KEY || 'div61-dev/terraform.tfstate' }}"
+        working-directory: ${{ env.TF_DIR }}
+
+      # Same as terraform.yml: retire SchedulerDO when the deployed worker is still on v2.
+      - name: Stage SchedulerDO deletion migration
+        run: |
+          set -euo pipefail
+          state="$(terraform state pull)"
+          current_tag="$(printf '%s' "$state" | jq -r '.resources[]? | select(.module == "module.control_plane_worker" and .type == "cloudflare_worker_version" and .name == "this") | .instances[0].attributes.migration_tag // empty')"
+          if [ "$current_tag" = "v2" ]; then
+            printf '%s\n' '{"control_plane_migration_tag":"v3","control_plane_migration_old_tag":"v2","control_plane_deleted_classes":["SchedulerDO"]}' > scheduler-do-retirement.auto.tfvars.json
+          fi
+        working-directory: ${{ env.TF_DIR }}
+
+      - name: Terraform plan
+        run: |
+          set -euo pipefail
+          targets=()
+          if [ "$SCOPE" = control-plane ]; then
+            targets=(-target=null_resource.control_plane_build -target=module.control_plane_worker)
+          fi
+          # Builds run inside the plan's apply, so project_root must be this checkout.
+          terraform plan -input=false -no-color -parallelism=1 \
+            -var="project_root=$GITHUB_WORKSPACE" "${targets[@]}" -out=tfplan > plan.log
+          tail -n 3 plan.log
+          terraform show -json tfplan > plan.json
+        working-directory: ${{ env.TF_DIR }}
+
+      - name: Summarize and check the plan
+        run: |
+          set -euo pipefail
+          # Addresses and actions only: values never reach the log or summary.
+          changes="$(jq -r '.resource_changes[] | select(.change.actions != ["no-op"] and .change.actions != ["read"]) | "\(.change.actions | join("+"))\t\(.address)"' plan.json)"
+          {
+            echo "### div61-dev plan (${SCOPE}, ${GITHUB_SHA::7})"
+            echo
+            if [ -z "$changes" ]; then echo "No changes."; else
+              echo '| Action | Resource |'
+              echo '| --- | --- |'
+              printf '%s\n' "$changes" | awk -F'\t' '{ printf "| %s | `%s` |\n", $1, $2 }'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          # Every release replaces the worker version and reruns the build; anything else deleted needs a person.
+          risky="$(jq -r '.resource_changes[] | select(.change.actions | index("delete")) | select(.type != "cloudflare_worker_version" and .type != "null_resource") | .address' plan.json)"
+          rm -f plan.json
+          if [ -n "$risky" ] && [ "$ALLOW_DESTROY" != true ]; then
+            echo "::error::The plan deletes or replaces: $(echo $risky). Review it, then rerun by hand with allow_destroy."
+            exit 1
+          fi
+        working-directory: ${{ env.TF_DIR }}
+
+      - name: Terraform apply
+        if: env.PLAN_ONLY != 'true'
+        run: terraform apply -input=false -no-color -parallelism=1 tfplan
+        working-directory: ${{ env.TF_DIR }}
+
+      - name: Check the control plane answers
+        if: env.PLAN_ONLY != 'true'
+        run: |
+          host="$(terraform output -raw control_plane_url 2>/dev/null || true)"
+          if [ -z "$host" ]; then echo "::notice::No control_plane_url output; skipping the health check."; exit 0; fi
+          for i in $(seq 1 12); do
+            if curl -fsS -m 10 "${host%/}/health" > /dev/null; then echo "Control plane healthy at $host"; exit 0; fi
+            sleep 10
+          done
+          echo "::error::$host/health did not answer after the release."
+          exit 1
+        working-directory: ${{ env.TF_DIR }}
+
+      - name: Remove private configuration
+        if: always()
+        run: rm -f "$TF_DIR/terraform.tfvars" "$TF_DIR/backend.tfvars" "$TF_DIR/tfplan" "$TF_DIR/plan.json" "$TF_DIR/plan.log"
