@@ -375,6 +375,14 @@ variable "anthropic_api_key" {
   }
 }
 
+variable "openrouter_api_key" {
+  description = "OpenRouter API key injected into Modal session sandboxes for \"openrouter/...\" models. Optional: leave blank to supply it as a scoped secret, which overrides this value."
+  type        = string
+  sensitive   = true
+  default     = ""
+  nullable    = false
+}
+
 variable "classification_model" {
   description = "Model backing the Slack and Linear bots' target classifiers. An \"anthropic/\"-prefixed or bare \"claude-\" id is served by anthropic_api_key; an \"openai/\"-prefixed or bare \"gpt-\" id is served by classification_openai_api_key."
   type        = string
