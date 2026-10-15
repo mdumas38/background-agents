@@ -11,7 +11,7 @@ import {
   issueClientWsToken,
 } from "./helpers";
 import { DEFAULT_REPLAY_LIMIT } from "../../src/session/event-stream";
-import { MAX_UNFINISHED_PROMPTS } from "@open-inspect/shared/types/prompts";
+import { MAX_UNFINISHED_PROMPTS, MAX_WEB_PROMPT_CHARS } from "@open-inspect/shared/types/prompts";
 
 describe("Client WebSocket (via SELF.fetch)", () => {
   it("rejects a nonexistent session before initializing its Durable Object", async () => {
@@ -969,7 +969,7 @@ describe("Client WebSocket (via SELF.fetch)", () => {
 
   it.each([
     ["blank", "  \n"],
-    ["oversized", "x".repeat(64_001)],
+    ["oversized", "x".repeat(MAX_WEB_PROMPT_CHARS + 1)],
   ])("returns correlated INVALID_PROMPT for a %s prompt", async (_case, content) => {
     const name = `ws-client-invalid-prompt-${_case}-${Date.now()}`;
     await initNamedSession(name);
