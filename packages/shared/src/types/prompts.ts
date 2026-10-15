@@ -1,7 +1,14 @@
 import { z } from "zod";
 import { sessionAttachmentReferencesSchema } from "./session-attachments";
 
-export const MAX_WEB_PROMPT_CHARS = 64_000;
+/**
+ * The longest prompt accepted, in characters. Model context windows (200K-1M
+ * tokens) are far larger; the binding limit is transport. Every hop carrying a
+ * prompt (the control-plane WebSocket's MAX_MESSAGE_BYTES, Cloudflare's, and the
+ * sandbox's websockets client) caps a message at 1 MiB, and JSON escaping costs
+ * at most 6 bytes per character, so 150,000 characters always fit.
+ */
+export const MAX_WEB_PROMPT_CHARS = 150_000;
 export const MAX_UNFINISHED_PROMPTS = 50;
 export const BLANK_PROMPT_MESSAGE = "Prompt content must not be blank without attachments";
 

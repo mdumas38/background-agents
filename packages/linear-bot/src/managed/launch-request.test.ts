@@ -195,7 +195,11 @@ describe("buildManagedLaunchRequest", () => {
     ).toThrow(/requires a pinned baseline/);
 
     const oversized = claimTask(
-      createRun("run-1", { ...SPEC, objective: "x".repeat(70_000) }, DEFAULT_MANAGED_LIMITS),
+      createRun(
+        "run-1",
+        { ...SPEC, objective: "x".repeat(MAX_WEB_PROMPT_CHARS + 6_000) },
+        DEFAULT_MANAGED_LIMITS
+      ),
       ROOT_TASK_ID,
       "attempt-1"
     );
