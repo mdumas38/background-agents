@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { MAX_WEB_PROMPT_CHARS } from "@open-inspect/shared/types/prompts";
 import { createFakeKV, makeLinearBotEnv } from "../test-helpers";
 import type * as ContextStoreModule from "./context-store";
 import type * as EnrollmentInputModule from "./enrollment-input";
@@ -169,7 +170,7 @@ describe("startManagedWork", () => {
   it("rejects an oversized root prompt without enrolling or allocating", async () => {
     mocks.buildManagedEnrollment.mockReturnValue({
       context: context(),
-      spec: spec("x".repeat(70_000)),
+      spec: spec("x".repeat(MAX_WEB_PROMPT_CHARS + 6_000)),
     });
 
     await expect(startManagedWork(env(), INPUT, "trace-1")).rejects.toThrow(/MAX_WEB_PROMPT_CHARS/);

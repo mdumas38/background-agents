@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
+import { MAX_WEB_PROMPT_CHARS } from "@open-inspect/shared/types/prompts";
 import {
   buildFollowUpPrompt,
   buildInitialPrompt,
@@ -22,6 +23,10 @@ import {
 import { lookupIssueSession, storeIssueSession } from "./kv-store";
 import * as enrollment from "./managed/enrollment";
 import * as rootCommands from "./managed/root-commands";
+
+/** Text `factor` times the prompt limit, so the oversize cases follow MAX_WEB_PROMPT_CHARS. */
+const oversized = (unit: string, factor: number) =>
+  unit.repeat(Math.ceil((factor * MAX_WEB_PROMPT_CHARS) / unit.length));
 
 describe("escapeHtml", () => {
   it("escapes & to &amp;", () => {
@@ -356,7 +361,7 @@ describe("handleAgentSessionEvent environment targets", () => {
     return { env, fetchMock: stubControlPlane(env) };
   }
 
-  it.each([63_999, 64_000, 64_001])(
+  it.each([MAX_WEB_PROMPT_CHARS - 1, MAX_WEB_PROMPT_CHARS, MAX_WEB_PROMPT_CHARS + 1])(
     "admits the final publication prompt at %i characters only within the limit",
     async (length) => {
       const { env, fetchMock } = admissionEnv();
@@ -381,14 +386,16 @@ describe("handleAgentSessionEvent environment targets", () => {
       expect(withDescription).toBeGreaterThan(overhead);
       webhook.agentSession.issue!.description = "x".repeat(length - withDescription + 1);
       await handleAgentSessionEvent(webhook, env, "boundary");
-      if (length <= 64_000) {
+      if (length <= MAX_WEB_PROMPT_CHARS) {
         expect(String(promptBody(fetchMock)?.content)).toHaveLength(length);
         expect(createSessionBody(fetchMock)).not.toBeNull();
       } else {
         expect(createSessionBody(fetchMock)).toBeNull();
         expect(promptBody(fetchMock)).toBeNull();
         expect(JSON.stringify((console.warn as Mock).mock.calls)).toContain("content:too_big");
-        expect(JSON.stringify((console.warn as Mock).mock.calls)).toContain("content_length=64001");
+        expect(JSON.stringify((console.warn as Mock).mock.calls)).toContain(
+          `content_length=${MAX_WEB_PROMPT_CHARS + 1}`
+        );
         expect(JSON.stringify((console.warn as Mock).mock.calls)).not.toContain("xxxx");
       }
     }
@@ -399,7 +406,7 @@ describe("handleAgentSessionEvent environment targets", () => {
     async (provider) => {
       const { env, fetchMock } = admissionEnv();
       const webhook = makeWebhook();
-      if (provider) webhook.promptContext = "provider-private-history".repeat(4_000);
+      if (provider) webhook.promptContext = oversized("provider-private-history", 1.5);
       webhook.agentSession.comment = {
         body: "  Preserve this exact current instruction.  ",
         userId: "human-user-1",
@@ -409,7 +416,7 @@ describe("handleAgentSessionEvent environment targets", () => {
         "full report\n".repeat(1_000) +
         "REPORT_END";
       webhook.agentSession.issue!.description = description;
-      stubIssueDetails(webhook, [{ body: "optional-private-history".repeat(4_000) }]);
+      stubIssueDetails(webhook, [{ body: oversized("optional-private-history", 1.5) }]);
       await handleAgentSessionEvent(webhook, env, "fallback");
       const body = promptBody(fetchMock)!;
       expect(body.content).toContain(webhook.agentSession.comment.body);
@@ -456,12 +463,12 @@ describe("handleAgentSessionEvent environment targets", () => {
     async (kind) => {
       const { env, fetchMock } = admissionEnv();
       const webhook = makeWebhook();
-      webhook.promptContext = "provider-private-history".repeat(4_000);
+      webhook.promptContext = oversized("provider-private-history", 1.5);
       if (kind !== "unknown-instruction")
         webhook.agentSession.comment = {
           body:
             kind === "instruction"
-              ? "secret-instruction".repeat(5_000)
+              ? oversized("secret-instruction", 1.4)
               : kind === "blank-instruction"
                 ? "  "
                 : "Exact instruction",
@@ -469,7 +476,7 @@ describe("handleAgentSessionEvent environment targets", () => {
         };
       if (kind === "report")
         webhook.agentSession.issue!.description =
-          "## Proposed work — awaiting human dispatch\n" + "secret-report".repeat(6_000);
+          "## Proposed work — awaiting human dispatch\n" + oversized("secret-report", 1.22);
       stubIssueDetails(webhook);
       await handleAgentSessionEvent(webhook, env, "required-overflow");
       expect(createSessionBody(fetchMock)).toBeNull();

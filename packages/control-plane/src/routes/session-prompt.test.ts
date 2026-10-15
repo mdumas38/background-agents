@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { MAX_WEB_PROMPT_CHARS } from "@open-inspect/shared/types/prompts";
 import { handleSessionPrompt } from "./session-prompt";
 import type { SessionRouteContext } from "./session-route";
 import type { Env } from "../types";
@@ -28,7 +29,11 @@ describe("prompt validation diagnostics", () => {
     [{}, "content:invalid_type", "not_string"],
     [{ content: 42 }, "content:invalid_type", "not_string"],
     [{ content: "  " }, "content:custom", "2"],
-    [{ content: "x".repeat(64_001) }, "content:too_big", "64001"],
+    [
+      { content: "x".repeat(MAX_WEB_PROMPT_CHARS + 1) },
+      "content:too_big",
+      String(MAX_WEB_PROMPT_CHARS + 1),
+    ],
     [{ content: "private prompt", source: "private invalid source" }, "source:invalid_value", "14"],
     [
       { content: "private prompt", requiredExecutionProfile: "private profile" },
@@ -42,18 +47,21 @@ describe("prompt validation diagnostics", () => {
     const diagnostic = JSON.stringify(await response.json());
     expect(diagnostic).toContain(code);
     expect(diagnostic).toContain(`content_length=${length}`);
-    expect(diagnostic).toContain("max_content_length=64000");
+    expect(diagnostic).toContain(`max_content_length=${MAX_WEB_PROMPT_CHARS}`);
     expect(diagnostic).not.toContain("private");
     expect(diagnostic).not.toContain("xxxx");
     expect(ctx.sessionRuntime.fetch).not.toHaveBeenCalled();
     expect(ctx.executionCtx.submit).not.toHaveBeenCalled();
   });
 
-  it.each([63_999, 64_000])("enqueues an admitted %i-character prompt", async (length) => {
-    const ctx = context();
-    expect((await send({ content: "x".repeat(length) }, ctx)).status).toBe(200);
-    expect(ctx.sessionRuntime.fetch).toHaveBeenCalledOnce();
-  });
+  it.each([MAX_WEB_PROMPT_CHARS - 1, MAX_WEB_PROMPT_CHARS])(
+    "enqueues an admitted %i-character prompt",
+    async (length) => {
+      const ctx = context();
+      expect((await send({ content: "x".repeat(length) }, ctx)).status).toBe(200);
+      expect(ctx.sessionRuntime.fetch).toHaveBeenCalledOnce();
+    }
+  );
 
   it("retains identity rejection before prompt validation", async () => {
     const ctx = context();
